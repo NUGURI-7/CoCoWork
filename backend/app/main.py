@@ -6,6 +6,7 @@ from tortoise.contrib.fastapi import RegisterTortoise
 
 from app.api import api_router
 from app.core.config import settings
+from app.core.redis import RedisClient
 from app.db.postgresql import TORTOISE_CONFIG
 
 logging.basicConfig(
@@ -17,8 +18,14 @@ logging.basicConfig(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with RegisterTortoise(app, config=TORTOISE_CONFIG):
+        redis_conn = RedisClient()
+        await redis_conn.connect()
+        app.state.redis = redis_conn
         print(f"🚀 {settings.APP_NAME} v{settings.APP_VERSION} 启动完成")
-        yield
+        try:
+            yield
+        finally:
+            await redis_conn.close()
     print("👋 应用已停止")
 
 
