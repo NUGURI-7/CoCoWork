@@ -1,0 +1,33 @@
+[project]
+name = "cocowork-backend"
+version = "0.1.0"
+description = "CoCoWork backend — AI Agent management platform"
+readme = "../README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[all]>=0.128.0",
+    "tortoise-orm[asyncpg]>=1.1.7",
+    "redis>=6.2.0",
+    "pydantic-settings>=2.6.0",
+    "bcrypt==4.0.1",
+    "passlib[argon2,bcrypt]>=1.7.4",
+    "pyjwt>=2.11.0",
+    "uuid-utils>=0.14.0",
+    "pyyaml>=6.0.3",
+    "boto3>=1.42.67",
+    "tavily-python>=0.7.23",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "httpx>=0.28.0",
+]
+
+[tool.tortoise]
+tortoise_orm = "app.db.postgresql.TORTOISE_CONFIG"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
