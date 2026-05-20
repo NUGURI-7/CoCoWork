@@ -21,16 +21,16 @@
 
 ## 当前已有功能
 - 后端骨架可启动：`uv run python -m app.main` 跑通 lifespan，FastAPI 接 Tortoise + Redis，中间件 + 异常 + 日志全链路就绪。
-- 仍**无业务路由 / 无 model**（app/models 是空包），数据库内无表 —— D1 阶段开始填充。
-- 生产级日志系统就位：colorlog 开发模式 / JSON 生产模式（按 DEBUG_MODE 切），每条日志带 `[req-xxx]`。
-- 认证薄层就位：JWT 编/解码 + argon2/bcrypt 密码哈希；`get_current_token_payload` 依赖可用，`get_current_user` 等 D1。
+- 生产级日志系统：colorlog 开发模式 / JSON 生产模式（按 DEBUG_MODE 切），每条日志带 `[req-xxx]`。
+- **User 业务全栈可用**：`users` 表已建（迁移 0001_init_user），三个接口 `/api/v1/users/{register,login,me}` 实测通过。
+- **内置 admin 启动自动 seed**（admin / 020121 / is_admin=True，邮箱 nuguri990717@gmail.com）。
+- 认证完整：JWT + argon2 哈希，`get_current_user` 每请求查 DB + is_active。
 
 ## 下一步
-- **进入 Phase 3（D1 User 业务全栈）**：app/models/user_model.py + app/schemas/user_schema.py + app/services/user_service.py + app/api/routes/user.py。
-- 同步在 depends.py 追加 `get_current_user`（基于 `get_current_token_payload` 二次组合 + Tortoise 查询 User 实体）。
-- main.py 把 user 路由挂到 api_router。
-- Phase 4（首次迁移）：`tortoise init` 初始化 migrations 目录，`makemigrations -n init_user`，`migrate` 应用到远端 PG 的 `cocowork` 库。
-- 之后：Phase 5–7 前端 + Phase 4+ 真生产用的功能（Email 校验、限流、密码重置等）按需开。
+- 后端方向（可选）：D2/D3 更多业务模块；或 RBAC / Email 校验 / 密码重置 / 限流等生产功能。
+- 前端方向（可选）：Phase 5–7（Vite + Tailwind v4 + shadcn-vue 初始化 + 通用模块 + 登录注册页）。
+- Agent 平台核心（远期）：LangGraph 接入、ARQ 任务队列、pgvector RAG。
+- 具体走哪个方向待定，下次对话开始时再选。
 
 ## 开发注意事项
 - 项目 UI 统一使用 `@phosphor-icons/vue`，不要引入手写 SVG 或第二套 icon library。
@@ -44,6 +44,17 @@
 - 如果某次改动不足以影响项目理解，就不要把噪音写进来。
 
 ## 最近迭代
+
+### 2026-05-20 — D1 User 业务全栈完成 + 首次迁移 + admin seeding
+- User 模型：UUID7 单主键（`UUIDBaseModel`）+ `TimestampMixin`；username/email 唯一、password_hash、nick_name、avatar_url、is_active/is_admin。表名 `users`（复数，避开 PG 保留字 user）。
+- Schema：UserRegister/UserLogin/UserOut/TokenOut；EmailStr 校验、username 限字母数字下划线、password ≥6（从 8 降到 6 以兼容 admin 弱密码 020121）、nick_name ≥2 必填。
+- Service（类风格，自带 `get_user_service` provider）：register 双唯一校验 + IntegrityError 兜底；authenticate 用户名枚举防御（统一错误消息）；login 签 token。密码哈希在 service 调 security，不耦合 model。
+- 路由 `/register /login /me`：采纳 fastapi skill 推荐 —— Annotated 依赖别名、`-> ResponseModel[T]` 返回类型（走 Pydantic Rust 序列化）、prefix 写在 router 自身。
+- depends.py 追加 `get_current_user`：基于 `get_current_token_payload` 二次组合，每请求查 DB + is_active（封禁即时生效）。
+- success/page 改返 ResponseModel 实例（配合返回类型）。
+- 迁移：`tortoise init` + `makemigrations -n init_user` + `migrate`，0001_init_user 建 users 表。注意：模型要在 `app/models/__init__.py` re-export，否则 Tortoise 检测不到（"No changes detected" 坑）。
+- admin seeding：方案 A（独立脚本）+ 方案 B（lifespan 自动）合一，幂等 + IntegrityError 并发安全；密码定死 020121，邮箱 nuguri990717@gmail.com（注意 EmailStr 拒绝 `.local` 等保留 TLD）。
+- 决策：User 主键 UUID7 单主键（不用 BigInt+UUID 双 ID）；密码哈希放 service 不放 model；is_active+is_admin 保留（RBAC 留待专门一轮）。
 
 ### 2026-05-20 — Phase 2 后端通用模块全部完成（B2–B7 + 日志系统）
 - B2 Redis 客户端 + lifespan 接入。
