@@ -1,3 +1,4 @@
+import logging
 from typing import Optional
 
 from redis import asyncio as aioredis
@@ -5,6 +6,8 @@ from redis.asyncio import ConnectionPool
 from starlette.requests import Request
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class RedisClient:
@@ -28,9 +31,9 @@ class RedisClient:
         self._client = aioredis.Redis(connection_pool=self._pool)
         try:
             await self._client.ping()
-            print("✅ Redis 连接成功")
-        except Exception as e:
-            print(f"❌ Redis 连接失败: {e}")
+            logger.info("✅ Redis 连接成功")
+        except Exception:
+            logger.exception("❌ Redis 连接失败")
             raise
 
     async def close(self):
@@ -38,7 +41,7 @@ class RedisClient:
             await self._client.close()
         if self._pool:
             await self._pool.disconnect()
-        print("👋 Redis 连接已关闭")
+        logger.info("👋 Redis 连接已关闭")
 
     @property
     def client(self) -> aioredis.Redis:

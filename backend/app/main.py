@@ -8,13 +8,12 @@ from app.api import api_router
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.http import register_middlewares
+from app.core.logging import setup_logging
 from app.core.redis import RedisClient
 from app.db.postgresql import TORTOISE_CONFIG
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
+setup_logging()
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -23,12 +22,12 @@ async def lifespan(app: FastAPI):
         redis_conn = RedisClient()
         await redis_conn.connect()
         app.state.redis = redis_conn
-        print(f"🚀 {settings.APP_NAME} v{settings.APP_VERSION} 启动完成")
+        logger.info("🚀 %s v%s 启动完成", settings.APP_NAME, settings.APP_VERSION)
         try:
             yield
         finally:
             await redis_conn.close()
-    print("👋 应用已停止")
+    logger.info("👋 应用已停止")
 
 
 app = FastAPI(

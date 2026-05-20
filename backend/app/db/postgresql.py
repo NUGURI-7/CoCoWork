@@ -1,6 +1,10 @@
+import logging
+
 from tortoise import Tortoise
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 # Tortoise ORM 配置字典
@@ -47,16 +51,16 @@ class PostgreSQLClient:
         try:
             await Tortoise.init(config=TORTOISE_CONFIG)
             self._initialized = True
-            print("✅ PostgreSQL 连接成功")
-        except Exception as e:
-            print(f"❌ PostgreSQL 连接失败: {e}")
+            logger.info("✅ PostgreSQL 连接成功")
+        except Exception:
+            logger.exception("❌ PostgreSQL 连接失败")
             raise
 
     async def close(self):
         if self._initialized:
             await Tortoise.close_connections()
             self._initialized = False
-            print("👋 PostgreSQL 连接已关闭")
+            logger.info("👋 PostgreSQL 连接已关闭")
 
     @property
     def is_connected(self) -> bool:
