@@ -22,8 +22,13 @@ class PageData(BaseModel, Generic[T]):
     page_size: int
 
 
-def success(data: Any = None, message: str = "success") -> dict[str, Any]:
-    return {"code": 200, "message": message, "data": data}
+def success(data: Any = None, message: str = "success") -> ResponseModel:
+    """成功响应：返回 ResponseModel 实例。
+
+    路由配合 `-> ResponseModel[XxxOut]` 返回类型，让 FastAPI 走 Pydantic
+    Rust 序列化路径（比 jsonable_encoder 快）+ 自动过滤敏感字段 + 完整 swagger 文档。
+    """
+    return ResponseModel(message=message, data=data)
 
 
 def page(
@@ -31,14 +36,13 @@ def page(
     records: list,
     current_page: int = 1,
     page_size: int = 10,
-) -> dict[str, Any]:
-    return {
-        "code": 200,
-        "message": "success",
-        "data": {
-            "total": total,
-            "records": records,
-            "current_page": current_page,
-            "page_size": page_size,
-        },
-    }
+) -> ResponseModel[PageData]:
+    """分页响应：data 字段为 PageData 实例。"""
+    return ResponseModel(
+        data=PageData(
+            total=total,
+            records=records,
+            current_page=current_page,
+            page_size=page_size,
+        ),
+    )

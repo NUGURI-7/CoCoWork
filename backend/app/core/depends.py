@@ -5,12 +5,15 @@
 """
 
 from typing import Any
+from uuid import UUID
 
 from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.exceptions.types import AppAuthenticationFailed
 from app.core.security import verify_token
+from app.models.user_model import User
+from app.services.user_service import UserService, get_user_service
 
 # auto_error=False：缺失 Authorization header 时不让 FastAPI 自己抛 403，
 # 我们要自己抛 AppAuthenticationFailed 走统一异常响应。
@@ -28,3 +31,33 @@ async def get_current_token_payload(
     if credentials is None:
         raise AppAuthenticationFailed("未提供认证 token")
     return verify_token(credentials.credentials)
+
+
+async def get_current_user(
+    payload: dict[str, Any] = Depends(get_current_token_payload),
+    user_service: UserService = Depends(get_user_service),
+) -> User:
+    """从 JWT payload 加载真实 User 实体。
+
+    基于 `get_current_token_payload` 二次组合：底层依赖只解 token，
+    本依赖额外做 DB 查询 + 账户状态检查。
+
+    每次请求都重新查 DB + 检查 is_active，确保用户被禁用后即刻失效
+    （而非等 token 过期）。
+    """
+    user_id_raw = payload.get("sub")
+    if not user_id_raw:
+        raise AppAuthenticationFailed("token 缺少 sub 声明")
+
+    try:
+        user_id = UUID(user_id_raw)
+    except (ValueError, TypeError) as e:
+        raise AppAuthenticationFailed("token sub 格式非法") from e
+
+    user = await user_service.get_user_by_id(user_id)
+    if user is None:
+        raise AppAuthenticationFailed("用户不存在")
+    if not user.is_active:
+        raise AppAuthenticationFailed("账户已被禁用")
+
+    return user
