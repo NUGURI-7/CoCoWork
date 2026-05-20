@@ -6,6 +6,8 @@ from tortoise.contrib.fastapi import RegisterTortoise
 
 from app.api import api_router
 from app.core.config import settings
+from app.core.exceptions import register_exception_handlers
+from app.core.http import register_middlewares
 from app.core.redis import RedisClient
 from app.db.postgresql import TORTOISE_CONFIG
 
@@ -36,6 +38,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+register_middlewares(app)
+register_exception_handlers(app)
 app.include_router(api_router, prefix=settings.API_PREFIX)
 
 
