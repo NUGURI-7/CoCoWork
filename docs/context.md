@@ -20,13 +20,17 @@
 - 数据库：复用 DaisyWind 同一个远端 PG 容器，仅 `PG_DATABASE` 不同（本项目 = `cocowork`）
 
 ## 当前已有功能
-- 后端骨架可启动：`uv run python -m app.main` 跑通 lifespan，FastAPI 启动并接 Tortoise（Redis、异常、中间件未挂，留待 Phase 2）。
-- 无业务路由 / 无 model（app/models 是空包），数据库内无表。
+- 后端骨架可启动：`uv run python -m app.main` 跑通 lifespan，FastAPI 接 Tortoise + Redis，中间件 + 异常 + 日志全链路就绪。
+- 仍**无业务路由 / 无 model**（app/models 是空包），数据库内无表 —— D1 阶段开始填充。
+- 生产级日志系统就位：colorlog 开发模式 / JSON 生产模式（按 DEBUG_MODE 切），每条日志带 `[req-xxx]`。
+- 认证薄层就位：JWT 编/解码 + argon2/bcrypt 密码哈希；`get_current_token_payload` 依赖可用，`get_current_user` 等 D1。
 
 ## 下一步
-- 进入 Phase 2（后端通用模块 B 组）：Redis 客户端、异常处理器、中间件、统一响应、JWT 工具、依赖注入。逐个文件搬，搬完后回到 main.py 把 Redis / 异常 / 中间件接入。
-- 顺序：B1 db 已完成 → B2 redis → B3 exceptions → B4 middlewares → B5 response → B6 security → B7 depends。
-- 之后是 Phase 3（User 业务全栈：D1）+ Phase 4（首次迁移）+ Phase 5–7（前端）。
+- **进入 Phase 3（D1 User 业务全栈）**：app/models/user_model.py + app/schemas/user_schema.py + app/services/user_service.py + app/api/routes/user.py。
+- 同步在 depends.py 追加 `get_current_user`（基于 `get_current_token_payload` 二次组合 + Tortoise 查询 User 实体）。
+- main.py 把 user 路由挂到 api_router。
+- Phase 4（首次迁移）：`tortoise init` 初始化 migrations 目录，`makemigrations -n init_user`，`migrate` 应用到远端 PG 的 `cocowork` 库。
+- 之后：Phase 5–7 前端 + Phase 4+ 真生产用的功能（Email 校验、限流、密码重置等）按需开。
 
 ## 开发注意事项
 - 项目 UI 统一使用 `@phosphor-icons/vue`，不要引入手写 SVG 或第二套 icon library。
@@ -40,6 +44,17 @@
 - 如果某次改动不足以影响项目理解，就不要把噪音写进来。
 
 ## 最近迭代
+
+### 2026-05-20 — Phase 2 后端通用模块全部完成（B2–B7 + 日志系统）
+- B2 Redis 客户端 + lifespan 接入。
+- B3 异常体系：5 个业务异常类 + 4 个 handler，统一 `{code, message, data}` 响应壳（沿用 DaisyWind "全 200" 风格）。
+- B4 中间件：AccessLog + CORS；后续日志任务追加了 RequestIDMiddleware（纯 ASGI 实现规避 contextvar 跨 Task 丢失）。
+- B5 统一响应壳：ResponseModel[T] / PageData[T] + success/page 函数；删掉了 DaisyWind 的 `error()` 反模式。
+- B6 安全：argon2 主推 + bcrypt 兼容，`verify_token` 失败抛 `AppAuthenticationFailed`（不再返回 None），token 加 `iat` claim。
+- B7 认证依赖薄层：`bearer_scheme` + `get_current_token_payload`；User 实体加载 (`get_current_user`) 推迟到 D1 完成 User 模型后再加。
+- 中途插入：生产级日志系统（colorlog + python-json-logger，按 `DEBUG_MODE` 切换文本/JSON，RequestIDFilter 把 request_id 注入每条日志，接管 uvicorn 三个 logger，压低 9 个第三方库到 WARNING）。
+- 中途插入：`app/core/` 重组成子包（`exceptions/`、`http/`、`logging/`），避免 11 文件平铺。
+- 决策：分页字段沿用 DaisyWind 中式命名（records / current_page）；HTTP 状态码策略沿用 DaisyWind "全 200" 风格（与生产级 REST 偏好不同，按用户决策保留）。
 
 ### 2026-05-19 — Phase 1 后端骨架完成
 - 决策：
