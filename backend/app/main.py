@@ -11,6 +11,7 @@ from app.core.http import register_middlewares
 from app.core.logging import setup_logging
 from app.core.redis import RedisClient
 from app.db.postgresql import TORTOISE_CONFIG
+from app.scripts.seed_admin import seed_admin
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -22,6 +23,7 @@ async def lifespan(app: FastAPI):
         redis_conn = RedisClient()
         await redis_conn.connect()
         app.state.redis = redis_conn
+        await seed_admin()
         logger.info("🚀 %s v%s 启动完成", settings.APP_NAME, settings.APP_VERSION)
         try:
             yield

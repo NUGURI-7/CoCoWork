@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1800
 
+    # ==================== 内置管理员（seed 脚本用）====================
+    ADMIN_USERNAME: str = "admin"
+    ADMIN_EMAIL: str = "nuguri990717@gmail.com"
+    ADMIN_PASSWORD: str = "020121"  # 留空则 seed 脚本跳过创建
+
     # ==================== Redis ====================
     REDIS_HOST: str = "127.0.0.1"
     REDIS_PORT: int = 6379
