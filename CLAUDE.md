@@ -3,9 +3,10 @@
 1. Prefer production-grade, industry-standard solutions over quick fixes or ad hoc hacks. When a widely accepted standard approach exists, use it instead of inventing a custom workaround.
 2. 所有任务动手前都需要先描述步骤/方案，等用户审批后再编写代码。对于架构设计、模块搭建、技术选型等复杂任务，代码方案需额外经过一轮审批后才能写入文件。
 3. If the user's request is ambiguous or missing key details, ask clarifying questions before writing code.
-4. 每次开始新任务时，如果存在 `docs/context.md`，先读取它。
-5. 每次完成有意义的项目改动后，更新 `docs/context.md`，同步最新的当前状态。
-6. 保持 `docs/context.md` 精简：优先重写摘要，只保留最近迭代，并将更早内容压缩进历史摘要。
+4. **每次开始新对话时，必须先读取 `../CODING-STYLE.md`（Amoy 根目录），这是项目编码规范，严格遵循其中的代码风格、架构模式和设计思维。如果你是 Claude 模型则不用读（这些规范本来就是你写的）。**
+5. 每次开始新任务时，如果存在 `docs/context.md`，先读取它。
+6. 每次完成有意义的项目改动后，更新 `docs/context.md`，同步最新的当前状态。
+7. 保持 `docs/context.md` 精简：优先重写摘要，只保留最近迭代，并将更早内容压缩进历史摘要。
 
 # CoCoWork — Claude Code 指南
 
@@ -60,7 +61,7 @@ CoCoWork/
 
 ## 图标规范
 
-**静态图标统一使用 `@phosphor-icons/vue`；动态 loader / spinner 类动画使用 `ldrs`。禁止手写 SVG 或引入其他图标库。**
+**静态图标统一使用 `lucide-vue-next`（shadcn-vue 生态默认）；动态 loader / spinner 类动画使用 `ldrs`。禁止手写 SVG 或引入其他图标库。**
 
 > **例外**：第三方组件库内部自带的图标，保持原样，不做替换。只通过 CSS 统一颜色即可。
 
@@ -68,15 +69,17 @@ CoCoWork/
 
 ```vue
 <script setup>
-import { PhPlus, PhNotePencil, PhSliders } from '@phosphor-icons/vue'
+import { Plus, Pencil, Settings } from 'lucide-vue-next'
 </script>
 
-<PhNotePencil :size="16" />
+<Pencil :size="16" />
 ```
+
+> **注**：`lucide-vue-next` 已被官方 deprecate，新包名是 `@lucide/vue`。但 shadcn-vue CLI 当前生成的组件仍 import `lucide-vue-next`，业务代码与组件库保持一致即可；等 CLI 默认切换后再跟随。
 
 ### CSS mask-image 方式（适合伪元素场景）
 
-仅当无法注入 DOM 时（如 `::before` 内），才用 SVG data URI mask，且 SVG path 必须从 Phosphor 官方图标提取，不自行绘制。
+仅当无法注入 DOM 时（如 `::before` 内），才用 SVG data URI mask，且 SVG path 必须从 Lucide 官方图标提取，不自行绘制。
 
 ## Tailwind CSS 注意事项
 

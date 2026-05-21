@@ -14,7 +14,7 @@
 
 ## 技术栈
 - Backend: FastAPI, Tortoise ORM, PostgreSQL (pgvector 计划，本期未启用), Redis, LangGraph (未实装), ARQ (未实装)
-- Frontend: Vue 3, Vite, TypeScript, Pinia, Vue Router, Tailwind CSS v4, shadcn-vue (Reka UI v2), `@phosphor-icons/vue` —— 本期未启动
+- Frontend: Vue 3, Vite, TypeScript, Pinia, Vue Router, Tailwind CSS v4, shadcn-vue (Reka UI v2, style=new-york, baseColor=zinc), `lucide-vue-next`（图标）+ `ldrs`（loader）+ `vue-sonner`（toast）+ `vee-validate`+`zod`（表单校验）+ `nprogress`（路由进度条）+ `@fontsource/instrument-serif`（self-host 衬线）。包管理 npm，dev 端口 7777，走 vite proxy `/api` → 后端 7999。
 - Python: 3.13.0（venv 在 `backend/.venv/`，由 uv 管理），Tortoise ORM 1.1.7 内置迁移（`tortoise` CLI 自动读 `pyproject.toml` 的 `[tool.tortoise]`，不引入 aerich）
 - API prefix: `/api/v1`（写在 `settings.API_PREFIX`，main.py 通过 `app.include_router(api_router, prefix=settings.API_PREFIX)` 挂载）
 - 数据库：复用 DaisyWind 同一个远端 PG 容器，仅 `PG_DATABASE` 不同（本项目 = `cocowork`）
@@ -25,15 +25,16 @@
 - **User 业务全栈可用**：`users` 表已建（迁移 0001_init_user），三个接口 `/api/v1/users/{register,login,me}` 实测通过。
 - **内置 admin 启动自动 seed**（admin / 020121 / is_admin=True，邮箱 nuguri990717@gmail.com）。
 - 认证完整：JWT + argon2 哈希，`get_current_user` 每请求查 DB + is_active。
+- **前端 User 全栈打通**：登录/注册页（Claude 风双栏 + Instrument Serif + 两张 gopher 错落）→ auth store → router 守卫 → Home 显示 user，admin 浏览器端到端实测通过（含字段校验 / 业务错误 toast / 刷新保活 / 退出 / 404）。
 
 ## 下一步
+- **前端：登录后的产品内页方向待定**（sidebar 传统软件式 vs 其他形态，用户还没想好）→ 想清楚再做 layout(C4) / composables(C5) / common 组件(C7)。
 - 后端方向（可选）：D2/D3 更多业务模块；或 RBAC / Email 校验 / 密码重置 / 限流等生产功能。
-- 前端方向（可选）：Phase 5–7（Vite + Tailwind v4 + shadcn-vue 初始化 + 通用模块 + 登录注册页）。
 - Agent 平台核心（远期）：LangGraph 接入、ARQ 任务队列、pgvector RAG。
 - 具体走哪个方向待定，下次对话开始时再选。
 
 ## 开发注意事项
-- 项目 UI 统一使用 `@phosphor-icons/vue`，不要引入手写 SVG 或第二套 icon library。
+- 项目 UI 统一使用 `lucide-vue-next`（shadcn-vue 生态默认）作为图标库，`ldrs` 作为 loader 动画，不要引入手写 SVG 或第二套 icon library。
 - 这个 context 文件应该保持紧凑，服务于 AI 快速读取，而不是承担完整项目历史归档。
 
 ## 维护规则
@@ -44,6 +45,17 @@
 - 如果某次改动不足以影响项目理解，就不要把噪音写进来。
 
 ## 最近迭代
+
+### 2026-05-21 — 前端从零搭建 + User 全栈打通（A7/A8 + C1-C3/C6 + D1 前端）
+- 脚手架（A7）：Vite + Vue3 + TS + Pinia + Router + ESLint/Prettier/oxlint，结构参照 DaisyWind 但精简（删 D2/D3 的 milkdown/mermaid/highlight 等依赖）；端口 7777，vite proxy `/api`→7999（沿用 DaisyWind 开发套路）。
+- 样式系统（A8）：Tailwind v4 CSS-config + shadcn-vue（new-york/zinc，单主题不切换，但保留 .dark tokens 预留）；加 `--color-brand:#2f6b53`（流式/品牌专用）+ success/warning 语义色；nprogress 进度条走 brand 色。
+- types（C8）：`types/api.ts`(ResponseModel/PageData) + `types/user.ts` + barrel，对齐后端 schema（决定抽 types 而非 DaisyWind 的 inline 风）。
+- request（C1）：axios 拦截器**解包到 data**（调用方直接拿 T）+ `ApiBusinessError` Error 实例 + `silent` 双轨 toast（声明式，替代 DaisyWind 硬编码路径）+ 401 防循环登出；删掉 DaisyWind 的 loading-Ref 参数（UI 状态归组件）。
+- auth（C3）：Pinia composition store（token 持久化 localStorage，user 不持久化）+ `api/auth.ts`。
+- router（C2）：`meta.requiresAuth/guestOnly` 守卫 + 刷新后 `fetchMe` 保活 + `?redirect=` 跳回。
+- 组件（C6）：shadcn-vue add button/input/label/form/sonner/card + vee-validate+zod 校验。
+- 登录注册（D1 前端 + C9）：`AuthShell` 双栏（Claude 版式 + shadcn zinc 配色）+ Instrument Serif 大标题 + 两张 gopher（dao + fcb-glass）错落叠放 + zod 字段校验 + 业务错误 toast。admin 端到端实测通过。
+- 决策：图标库 phosphor→**lucide-vue-next**（shadcn 生态默认）；字体 **self-host @fontsource**（避 Google CDN 被墙 + 消 FOUT）；**主题切换不做**；登录页只学 Claude 版式、配色用 shadcn 默认；layout/sidebar(C4)/composables(C5)/common(C7) **暂缓**（等登录后页面方向想清楚）。
 
 ### 2026-05-20 — D1 User 业务全栈完成 + 首次迁移 + admin seeding
 - User 模型：UUID7 单主键（`UUIDBaseModel`）+ `TimestampMixin`；username/email 唯一、password_hash、nick_name、avatar_url、is_active/is_admin。表名 `users`（复数，避开 PG 保留字 user）。
