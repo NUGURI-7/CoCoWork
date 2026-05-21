@@ -219,3 +219,6 @@ __marimo__/
 
 # macOS
 .DS_Store
+
+# 个人学习笔记（不入仓库）
+/notes/
