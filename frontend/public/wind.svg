@@ -1,0 +1,221 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500">
+  <defs>
+    <!-- 主渐变 - 天空蓝到深蓝 -->
+    <linearGradient id="windGradient1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#7DD3FC; stop-opacity:0.9"/>
+      <stop offset="50%" style="stop-color:#38BDF8; stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#0EA5E9; stop-opacity:0.8"/>
+    </linearGradient>
+    
+    <!-- 次渐变 - 更浅的风 -->
+    <linearGradient id="windGradient2" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#BAE6FD; stop-opacity:0.7"/>
+      <stop offset="50%" style="stop-color:#7DD3FC; stop-opacity:0.9"/>
+      <stop offset="100%" style="stop-color:#38BDF8; stop-opacity:0.6"/>
+    </linearGradient>
+    
+    <!-- 轻柔渐变 -->
+    <linearGradient id="windGradient3" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#E0F2FE; stop-opacity:0.5"/>
+      <stop offset="50%" style="stop-color:#BAE6FD; stop-opacity:0.7"/>
+      <stop offset="100%" style="stop-color:#7DD3FC; stop-opacity:0.5"/>
+    </linearGradient>
+    
+    <!-- 深色强调渐变 -->
+    <linearGradient id="windGradient4" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#0284C7; stop-opacity:0.8"/>
+      <stop offset="50%" style="stop-color:#0369A1; stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#075985; stop-opacity:0.7"/>
+    </linearGradient>
+    
+    <!-- 柔和阴影 -->
+    <filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    
+    <!-- 轻微模糊效果 -->
+    <filter id="gentleBlur" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="1"/>
+    </filter>
+  </defs>
+  
+  <!-- 背景装饰 - 极淡的风痕 -->
+  <g opacity="0.3" filter="url(#gentleBlur)">
+    <path d="M 20 400 
+             Q 60 395, 100 400 
+             Q 150 406, 200 398 
+             Q 260 388, 320 395
+             Q 370 402, 400 392" 
+          fill="none" stroke="#BAE6FD" stroke-width="8" stroke-linecap="round"/>
+    <path d="M 50 440 
+             Q 100 435, 160 442 
+             Q 220 450, 280 438
+             Q 340 426, 380 435" 
+          fill="none" stroke="#E0F2FE" stroke-width="6" stroke-linecap="round"/>
+  </g>
+  
+  <!-- 第一层风 - 最上层，轻柔 -->
+  <g filter="url(#softGlow)">
+    <path d="M 30 120
+             C 60 115, 90 112, 130 108
+             C 180 102, 220 98, 270 102
+             C 330 107, 370 100, 410 92
+             C 435 88, 455 85, 470 90
+             C 485 95, 490 105, 480 112
+             C 470 119, 450 118, 430 115
+             C 400 111, 360 114, 320 118" 
+          fill="none" 
+          stroke="url(#windGradient3)" 
+          stroke-width="12" 
+          stroke-linecap="round"
+          stroke-linejoin="round"/>
+  </g>
+  
+  <!-- 第二层风 - 主风流，较强 -->
+  <g filter="url(#softGlow)">
+    <path d="M 10 185
+             C 50 180, 100 173, 160 177
+             C 230 182, 290 170, 360 165
+             C 410 161, 450 163, 480 170
+             C 505 176, 515 190, 505 203
+             C 495 216, 470 215, 445 210
+             C 410 203, 365 200, 320 205
+             C 270 211, 220 217, 170 213" 
+          fill="none" 
+          stroke="url(#windGradient1)" 
+          stroke-width="18" 
+          stroke-linecap="round"
+          stroke-linejoin="round"/>
+  </g>
+  
+  <!-- 第三层风 - 核心风流，最强 -->
+  <g filter="url(#softGlow)">
+    <path d="M 5 260
+             C 45 250, 105 242, 175 248
+             C 255 255, 325 238, 395 232
+             C 445 228, 485 235, 510 250
+             C 530 262, 535 282, 520 298
+             C 505 314, 475 312, 445 305
+             C 400 294, 345 290, 290 298
+             C 230 307, 170 318, 110 312
+             C 70 308, 40 302, 20 308" 
+          fill="none" 
+          stroke="url(#windGradient4)" 
+          stroke-width="22" 
+          stroke-linecap="round"
+          stroke-linejoin="round"/>
+  </g>
+  
+  <!-- 第四层风 - 中层流动 -->
+  <g filter="url(#softGlow)">
+    <path d="M 25 340
+             C 75 333, 135 327, 200 333
+             C 275 340, 340 325, 400 320
+             C 440 317, 470 323, 485 335
+             C 498 345, 495 360, 480 367
+             C 465 374, 440 370, 410 365
+             C 365 357, 310 355, 255 363" 
+          fill="none" 
+          stroke="url(#windGradient2)" 
+          stroke-width="14" 
+          stroke-linecap="round"
+          stroke-linejoin="round"/>
+  </g>
+  
+  <!-- 风的细节装饰 - 小气流 -->
+  <g opacity="0.7">
+    <!-- 上方小气流 -->
+    <path d="M 80 85
+             C 110 80, 145 77, 180 83
+             C 210 88, 235 83, 255 75
+             C 270 69, 280 71, 275 80
+             C 270 89, 255 87, 240 90" 
+          fill="none" 
+          stroke="url(#windGradient3)" 
+          stroke-width="6" 
+          stroke-linecap="round"/>
+    
+    <!-- 中间穿插气流 -->
+    <path d="M 150 220
+             C 190 213, 240 210, 290 217
+             C 330 223, 360 217, 380 210
+             C 395 205, 400 210, 395 220" 
+          fill="none" 
+          stroke="url(#windGradient2)" 
+          stroke-width="5" 
+          stroke-linecap="round"/>
+    
+    <!-- 下方装饰气流 -->
+    <path d="M 120 295
+             C 160 288, 210 285, 260 292
+             C 300 298, 330 292, 350 285" 
+          fill="none" 
+          stroke="url(#windGradient1)" 
+          stroke-width="4" 
+          stroke-linecap="round"/>
+  </g>
+  
+  <!-- 风的尾迹粒子效果 -->
+  <g opacity="0.5">
+    <circle cx="50" cy="125" r="3" fill="#7DD3FC"/>
+    <circle cx="35" cy="190" r="4" fill="#38BDF8"/>
+    <circle cx="25" cy="265" r="5" fill="#0EA5E9"/>
+    <circle cx="45" cy="343" r="3" fill="#7DD3FC"/>
+    
+    <circle cx="480" cy="108" r="4" fill="#BAE6FD"/>
+    <circle cx="510" cy="200" r="5" fill="#7DD3FC"/>
+    <circle cx="525" cy="295" r="6" fill="#38BDF8"/>
+    <circle cx="488" cy="363" r="4" fill="#BAE6FD"/>
+  </g>
+  
+  <!-- 漩涡装饰 - 风的卷曲末端 -->
+  <g filter="url(#softGlow)" opacity="0.8">
+    <!-- 右上漩涡 -->
+    <path d="M 470 90
+             C 490 85, 500 92, 498 105
+             C 496 118, 480 125, 465 120
+             C 450 115, 448 102, 458 95
+             C 465 90, 475 92, 478 100" 
+          fill="none" 
+          stroke="url(#windGradient1)" 
+          stroke-width="4" 
+          stroke-linecap="round"/>
+    
+    <!-- 右中漩涡 -->
+    <path d="M 505 203
+             C 528 193, 542 205, 538 223
+             C 534 241, 512 250, 492 243
+             C 472 236, 468 215, 485 205
+             C 498 197, 515 203, 518 217
+             C 520 227, 510 235, 498 233" 
+          fill="none" 
+          stroke="url(#windGradient4)" 
+          stroke-width="5" 
+          stroke-linecap="round"/>
+    
+    <!-- 右下漩涡 -->
+    <path d="M 480 367
+             C 498 360, 508 367, 505 380
+             C 502 393, 485 397, 472 390
+             C 460 383, 462 370, 475 365
+             C 485 361, 492 367, 490 377" 
+          fill="none" 
+          stroke="url(#windGradient2)" 
+          stroke-width="4" 
+          stroke-linecap="round"/>
+  </g>
+  
+  <!-- 额外的动感线条 -->
+  <g opacity="0.4">
+    <path d="M 60 160 C 90 155, 120 158, 150 155" 
+          fill="none" stroke="#38BDF8" stroke-width="3" stroke-linecap="round"/>
+    <path d="M 75 235 C 110 228, 150 230, 190 225" 
+          fill="none" stroke="#7DD3FC" stroke-width="2" stroke-linecap="round"/>
+    <path d="M 55 310 C 95 302, 140 305, 185 300" 
+          fill="none" stroke="#0EA5E9" stroke-width="3" stroke-linecap="round"/>
+  </g>
+</svg>
