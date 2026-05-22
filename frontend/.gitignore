@@ -14,6 +14,9 @@ dist-ssr
 coverage
 *.local
 
+/cypress/videos/
+/cypress/screenshots/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -24,16 +27,10 @@ coverage
 *.sln
 *.sw?
 
-*.tsbuildinfo
+# TanStack Router 自动生成
+src/routeTree.gen.ts
 
+# ESLint cache
 .eslintcache
 
-# Cypress
-/cypress/videos/
-/cypress/screenshots/
-
-# Vitest
-__screenshots__/
-
-# Vite
-*.timestamp-*-*.mjs
+*.tsbuildinfo

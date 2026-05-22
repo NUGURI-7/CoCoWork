@@ -12,10 +12,14 @@ import type { TokenPayload, User, UserLoginPayload, UserRegisterPayload } from '
 
 /**
  * 注册新用户。
+ *
+ * 后端约定：注册接口只返回 User，不签发 token。
+ * 注册成功后由调用方手动跳 /login 让用户输入密码登录。
+ *
  * 错误（用户名/邮箱重复等）走 silent，由表单层处理。
  */
 export function register(payload: UserRegisterPayload) {
-  return post<TokenPayload>('/users/register', payload, { silent: true })
+  return post<User>('/users/register', payload, { silent: true })
 }
 
 /**

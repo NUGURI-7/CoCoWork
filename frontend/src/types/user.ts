@@ -2,7 +2,7 @@
  * User 业务类型 — 对齐 backend/app/schemas/user_schema.py
  *
  * 前端 UUID / datetime / EmailStr 都用 string，运行时不做严格校验，依赖后端。
- * 表单校验（如 username 3-20 字符、password 长度等）在 views 层用 zod / 手写规则做。
+ * 表单校验（如 username 3-20 字符、password 长度等）在 pages 层用 zod 做。
  */
 
 /** 用户对外公开信息（GET /me 返回的 user 字段） */

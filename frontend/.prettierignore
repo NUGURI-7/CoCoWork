@@ -1,22 +1,6 @@
-# Build artifacts
+node_modules
 dist
 dist-ssr
 coverage
-
-# Dependencies
-node_modules
-
-# Lockfiles
-package-lock.json
-pnpm-lock.yaml
-yarn.lock
-
-# Generated / vendored code
+src/routeTree.gen.ts
 src/components/ui
-
-# Logs & cache
-*.log
-.eslintcache
-
-# Public static assets
-public

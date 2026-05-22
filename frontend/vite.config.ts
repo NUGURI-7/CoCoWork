@@ -1,27 +1,20 @@
-import { fileURLToPath, URL } from 'node:url'
-
 import { defineConfig } from 'vite'
-import vue from '@vitejs/plugin-vue'
-import vueDevTools from 'vite-plugin-vue-devtools'
+import react from '@vitejs/plugin-react-swc'
 import tailwindcss from '@tailwindcss/vite'
+import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
+import { fileURLToPath, URL } from 'node:url'
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
-    vue({
-      template: {
-        compilerOptions: {
-          // ldrs 的所有 web component 都以 l- 开头（l-miyagi / l-ring / l-dot-pulse 等）
-          isCustomElement: (tag) => tag.startsWith('l-'),
-        },
-      },
-    }),
-    vueDevTools(),
+    // TanStack Router 文件式路由：扫描 src/routes/**/*.tsx 自动生成 routeTree.gen.ts
+    TanStackRouterVite({ target: 'react', autoCodeSplitting: true }),
+    react(),
     tailwindcss(),
   ],
   server: {
     cors: true,
-    host: '0.0.0.0', // 允许内网访问
+    host: '0.0.0.0',
     port: 7777,
     strictPort: true,
     // 将 /api 请求转发到后端，开发时统一走相对路径 /api
