@@ -1,7 +1,7 @@
 # CoCoWork Context
 
 ## 项目概述
-- CoCoWork 是一个个人独立开发的 full-stack 项目，后端使用 FastAPI，前端使用 Vue 3。
+- CoCoWork 是一个个人独立开发的 full-stack 项目，后端使用 FastAPI，前端使用 React 19。
 - 当前定位：AI Agent 管理平台（暂定方向，随开发推进持续演化），核心能力包括多 Agent 编排与调度、RAG 混合检索、Prompt 版本管理、Skill 技能市场、知识库管理。
 - 这个文件是后续 AI 新对话的单一项目上下文来源。
 
@@ -14,7 +14,7 @@
 
 ## 技术栈
 - Backend: FastAPI, Tortoise ORM, PostgreSQL (pgvector 计划，本期未启用), Redis, LangGraph (未实装), ARQ (未实装)
-- Frontend: Vue 3, Vite, TypeScript, Pinia, Vue Router, Tailwind CSS v4, shadcn-vue (Reka UI v2, style=new-york, baseColor=zinc), `lucide-vue-next`（图标）+ `ldrs`（loader）+ `vue-sonner`（toast）+ `vee-validate`+`zod`（表单校验）+ `nprogress`（路由进度条）+ `@fontsource/instrument-serif`（self-host 衬线）。包管理 npm，dev 端口 7777，走 vite proxy `/api` → 后端 7999。
+- Frontend: React 19, Vite (+@vitejs/plugin-react-swc), TypeScript, Zustand, TanStack Router (file-based, autoCodeSplitting), Tailwind CSS v4, shadcn/ui (Radix UI, style=new-york, baseColor=zinc), `lucide-react`（图标）+ `ldrs`（loader）+ `sonner`（toast）+ `react-hook-form`+`@hookform/resolvers`+`zod`（表单校验）+ `nprogress`（路由进度条）+ `@fontsource/instrument-serif`（self-host 衬线）+ `axios`（请求层）。包管理 npm，dev 端口 7777，走 vite proxy `/api` → 后端 7999。
 - Python: 3.13.0（venv 在 `backend/.venv/`，由 uv 管理），Tortoise ORM 1.1.7 内置迁移（`tortoise` CLI 自动读 `pyproject.toml` 的 `[tool.tortoise]`，不引入 aerich）
 - API prefix: `/api/v1`（写在 `settings.API_PREFIX`，main.py 通过 `app.include_router(api_router, prefix=settings.API_PREFIX)` 挂载）
 - 数据库：复用 DaisyWind 同一个远端 PG 容器，仅 `PG_DATABASE` 不同（本项目 = `cocowork`）
@@ -25,16 +25,16 @@
 - **User 业务全栈可用**：`users` 表已建（迁移 0001_init_user），三个接口 `/api/v1/users/{register,login,me}` 实测通过。
 - **内置 admin 启动自动 seed**（admin / 020121 / is_admin=True，邮箱 nuguri990717@gmail.com）。
 - 认证完整：JWT + argon2 哈希，`get_current_user` 每请求查 DB + is_active。
-- **前端 User 全栈打通**：登录/注册页（Claude 风双栏 + Instrument Serif + 两张 gopher 错落）→ auth store → router 守卫 → Home 显示 user，admin 浏览器端到端实测通过（含字段校验 / 业务错误 toast / 刷新保活 / 退出 / 404）。
+- **前端 User 全栈打通**：登录/注册页（Claude 风双栏 + Instrument Serif + 两张 gopher 错落）→ Zustand auth store → TanStack Router beforeLoad 守卫 → Home 显示 user，浏览器端到端实测通过（含 zod 字段校验 / 业务错误 toast / 刷新保活 / 退出 / 404 / 注册成功跳登录）。
 
 ## 下一步
-- **前端：登录后的产品内页方向待定**（sidebar 传统软件式 vs 其他形态，用户还没想好）→ 想清楚再做 layout(C4) / composables(C5) / common 组件(C7)。
-- 后端方向（可选）：D2/D3 更多业务模块；或 RBAC / Email 校验 / 密码重置 / 限流等生产功能。
+- **前端：登录后的产品内页方向待定**（sidebar 传统软件式 vs 其他形态，用户还没想好）→ 想清楚再做 layout / hooks / common 组件。React 生态可选：TanStack Query（数据获取/缓存）、@tanstack/react-table（数据表）、ReactFlow（Agent 编排可视化）、assistant-ui 或 Vercel AI SDK（聊天流式）。
+- 后端方向（可选）：D2/D3 更多业务模块；或 RBAC / Email 校验 / 密码重置 / 限流等生产功能；或将 `/users/register` 也返回 token 让注册自动登录（当前是注册成功跳登录页）。
 - Agent 平台核心（远期）：LangGraph 接入、ARQ 任务队列、pgvector RAG。
 - 具体走哪个方向待定，下次对话开始时再选。
 
 ## 开发注意事项
-- 项目 UI 统一使用 `lucide-vue-next`（shadcn-vue 生态默认）作为图标库，`ldrs` 作为 loader 动画，不要引入手写 SVG 或第二套 icon library。
+- 项目 UI 统一使用 `lucide-react`（shadcn/ui 生态默认）作为图标库，`ldrs` 作为 loader 动画，不要引入手写 SVG 或第二套 icon library。
 - 这个 context 文件应该保持紧凑，服务于 AI 快速读取，而不是承担完整项目历史归档。
 
 ## 维护规则
@@ -45,6 +45,17 @@
 - 如果某次改动不足以影响项目理解，就不要把噪音写进来。
 
 ## 最近迭代
+
+### 2026-05-22 — 前端从 Vue 3 迁移到 React 19
+- 触发：未来 Agent 编排可视化、流式消息、Vercel AI SDK / assistant-ui / ReactFlow 等生态都是 React-first，趁 D1 代码量小（~715 行业务）切换成本最低。
+- 技术栈映射：Vue 3 → React 19、Vue Router → TanStack Router (file-based)、Pinia → Zustand、vee-validate → react-hook-form + @hookform/resolvers、vue-sonner → sonner、lucide-vue-next → lucide-react、shadcn-vue (Reka UI) → shadcn/ui (Radix UI)。Tailwind v4 / app.css design tokens / axios 请求层 / ldrs / nprogress / @fontsource/instrument-serif 全部保留不动。
+- 路由分两层：`routes/` 只放 TanStack 路由声明 + `beforeLoad` 守卫 + zod search schema，`pages/` 放真正的页面组件，互相清晰解耦。
+- Zustand store 形状与 Pinia 对齐：state / getters (() => ...) / actions 三段；组件订阅用 `useAuthStore((s) => s.user)`，beforeLoad 等非 React 上下文用 `useAuthStore.getState()`。
+- 注册流改正：后端 `POST /users/register` 实际只返回 `UserOut`（不签 token），原 Vue 版盲存 `undefined` 当 token 是个 pre-existing bug。React 版改为注册成功 → `toast.success('注册成功，请登录')` → `navigate('/login')`，store 不再有 register action。
+- shadcn/ui 组件直接手写（不跑 CLI 交互）：button/card/form/input/label/sonner 6 个，全部 new-york + zinc 风格，与 design tokens 自动对齐。
+- 老 Vue 版整目录删除，React 项目从 `frontend-react/` 重命名为 `frontend/`，端口回 7777。`.claude/launch.json` 同步更新。
+- 实测：登录错误 toast、登录成功跳 Home、刷新后 beforeLoad 补 fetchMe、guestOnly 守卫、404 splat、4 字段 zod 校验全部通过，零 console 报错。
+- 决策：路由库选 TanStack Router 而非 React Router v7（类型安全更强 + beforeLoad 守卫天然对应 Vue beforeEach）；状态选 Zustand 而非 Redux Toolkit/Jotai（最轻、心智离 Pinia 最近）；shadcn 不跑 CLI 改为内联手写（避免交互 + 组件量小）。
 
 ### 2026-05-21 — 前端从零搭建 + User 全栈打通（A7/A8 + C1-C3/C6 + D1 前端）
 - 脚手架（A7）：Vite + Vue3 + TS + Pinia + Router + ESLint/Prettier/oxlint，结构参照 DaisyWind 但精简（删 D2/D3 的 milkdown/mermaid/highlight 等依赖）；端口 7777，vite proxy `/api`→7999（沿用 DaisyWind 开发套路）。

@@ -10,7 +10,7 @@
 
 # CoCoWork — Claude Code 指南
 
-> **AI Agent 管理平台**（暂定方向，随开发推进持续演化）：基于 LangGraph + FastAPI + PostgreSQL（pgvector）+ Redis 构建后端，Vue 3 + shadcn-vue 构建前端。核心能力包括：多 Agent 编排与调度、RAG 混合检索（向量 + 全文检索 + 重排序）、Prompt 版本管理、Skill 技能市场、知识库管理；支持语音交互（ASR/TTS）与视觉理解多模态输入输出；提供多层 RBAC 权限管控与资源隔离。定位为可管理、可编排、可扩展的一站式 Agent 平台。
+> **AI Agent 管理平台**（暂定方向，随开发推进持续演化）：基于 LangGraph + FastAPI + PostgreSQL（pgvector）+ Redis 构建后端，React 19 + shadcn/ui 构建前端。核心能力包括：多 Agent 编排与调度、RAG 混合检索（向量 + 全文检索 + 重排序）、Prompt 版本管理、Skill 技能市场、知识库管理；支持语音交互（ASR/TTS）与视觉理解多模态输入输出；提供多层 RBAC 权限管控与资源隔离。定位为可管理、可编排、可扩展的一站式 Agent 平台。
 
 ## 项目结构
 
@@ -36,17 +36,21 @@ CoCoWork/
 │   ├── migrations/           # Tortoise ORM 迁移文件
 │   ├── tests/
 │   └── pyproject.toml        # 后端依赖管理（uv）
-├── frontend/                 # Vue 3 + TypeScript + Vite + Tailwind CSS v4 + shadcn-vue (Reka UI v2)
+├── frontend/                 # React 19 + TypeScript + Vite + Tailwind CSS v4 + shadcn/ui (Radix UI)
 │   ├── src/
 │   │   ├── components/       # 通用 UI 组件
-│   │   ├── views/            # 页面级组件
-│   │   ├── stores/           # Pinia 状态管理
-│   │   ├── composables/      # Vue Composables
-│   │   ├── lib/              # 工具函数 / 类型定义
-│   │   ├── router/           # Vue Router
-│   │   ├── assets/           # 静态资源
-│   │   ├── App.vue
-│   │   └── main.ts
+│   │   │   └── ui/           # shadcn/ui 组件（button/card/form/input/label/sonner...）
+│   │   ├── pages/            # 页面级组件（Login.tsx / Home.tsx 等）
+│   │   ├── routes/           # TanStack Router 文件式路由（__root / index / login / register / $）
+│   │   ├── stores/           # Zustand 状态管理
+│   │   ├── api/              # 后端 API 调用，按业务域拆分
+│   │   ├── request/          # Axios 实例 + 拦截器
+│   │   ├── types/            # 类型定义
+│   │   ├── lib/              # 工具函数（cn 等）
+│   │   ├── main.tsx          # 入口：createRouter + RouterProvider
+│   │   └── app.css           # Tailwind v4 入口 + design tokens
+│   ├── public/               # 静态资源
+│   ├── routeTree.gen.ts      # TanStack Router 自动生成（gitignored）
 │   ├── package.json
 │   └── tsconfig.json
 ├── docs/                     # 项目文档（context.md、design-tokens.md、migrations.md 等）
@@ -61,21 +65,17 @@ CoCoWork/
 
 ## 图标规范
 
-**静态图标统一使用 `lucide-vue-next`（shadcn-vue 生态默认）；动态 loader / spinner 类动画使用 `ldrs`。禁止手写 SVG 或引入其他图标库。**
+**静态图标统一使用 `lucide-react`（shadcn/ui 生态默认）；动态 loader / spinner 类动画使用 `ldrs`。禁止手写 SVG 或引入其他图标库。**
 
 > **例外**：第三方组件库内部自带的图标，保持原样，不做替换。只通过 CSS 统一颜色即可。
 
-### Vue 模板中使用
+### React 组件中使用
 
-```vue
-<script setup>
-import { Plus, Pencil, Settings } from 'lucide-vue-next'
-</script>
+```tsx
+import { Plus, Pencil, Settings } from 'lucide-react'
 
-<Pencil :size="16" />
+<Pencil size={16} />
 ```
-
-> **注**：`lucide-vue-next` 已被官方 deprecate，新包名是 `@lucide/vue`。但 shadcn-vue CLI 当前生成的组件仍 import `lucide-vue-next`，业务代码与组件库保持一致即可；等 CLI 默认切换后再跟随。
 
 ### CSS mask-image 方式（适合伪元素场景）
 
