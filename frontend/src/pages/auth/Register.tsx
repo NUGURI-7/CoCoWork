@@ -2,14 +2,16 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
-import { Loader2 } from 'lucide-react'
+import { Contact, Loader2, Lock, Mail, User } from 'lucide-react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
 import * as authApi from '@/api/auth'
 import { ApiBusinessError } from '@/request'
 import AuthShell from './AuthShell'
+import IconField from './IconField'
 
 const formSchema = z.object({
   username: z
@@ -64,94 +66,111 @@ export default function Register() {
           <p className="text-muted-foreground text-sm">Create your CoCoWork account</p>
         </div>
 
-        {/* 表单 */}
-        <Form {...form}>
-          <form
-            className="space-y-4 fill-mode-both delay-150 duration-700 animate-in slide-in-from-bottom-3"
-            onSubmit={form.handleSubmit(onSubmit)}
-          >
-            <FormField
-              control={form.control}
-              name="username"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>用户名</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="text"
-                      placeholder="字母、数字、下划线"
-                      autoComplete="username"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+        {/* 表单卡片 */}
+        <Card className="border-border/60 fill-mode-both shadow-lg delay-150 duration-700 animate-in slide-in-from-bottom-3">
+          <CardContent>
+            <Form {...form}>
+              <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
+                <FormField
+                  control={form.control}
+                  name="username"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>用户名</FormLabel>
+                      <IconField icon={User}>
+                        <FormControl>
+                          <Input
+                            type="text"
+                            placeholder="字母、数字、下划线"
+                            autoComplete="username"
+                            className="h-10 pl-9"
+                            {...field}
+                          />
+                        </FormControl>
+                      </IconField>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-            <FormField
-              control={form.control}
-              name="email"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>邮箱</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="email"
-                      placeholder="you@example.com"
-                      autoComplete="email"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                <FormField
+                  control={form.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>邮箱</FormLabel>
+                      <IconField icon={Mail}>
+                        <FormControl>
+                          <Input
+                            type="email"
+                            placeholder="you@example.com"
+                            autoComplete="email"
+                            className="h-10 pl-9"
+                            {...field}
+                          />
+                        </FormControl>
+                      </IconField>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-            <FormField
-              control={form.control}
-              name="nick_name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>昵称</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="text"
-                      placeholder="显示名称"
-                      autoComplete="nickname"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                <FormField
+                  control={form.control}
+                  name="nick_name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>昵称</FormLabel>
+                      <IconField icon={Contact}>
+                        <FormControl>
+                          <Input
+                            type="text"
+                            placeholder="显示名称"
+                            autoComplete="nickname"
+                            className="h-10 pl-9"
+                            {...field}
+                          />
+                        </FormControl>
+                      </IconField>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-            <FormField
-              control={form.control}
-              name="password"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>密码</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="password"
-                      placeholder="至少 6 个字符"
-                      autoComplete="new-password"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>密码</FormLabel>
+                      <IconField icon={Lock}>
+                        <FormControl>
+                          <Input
+                            type="password"
+                            placeholder="至少 6 个字符"
+                            autoComplete="new-password"
+                            className="h-10 pl-9"
+                            {...field}
+                          />
+                        </FormControl>
+                      </IconField>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-            <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
-              {form.formState.isSubmitting && <Loader2 className="size-4 animate-spin" />}
-              注册
-            </Button>
-          </form>
-        </Form>
+                <Button
+                  type="submit"
+                  className="h-10 w-full"
+                  disabled={form.formState.isSubmitting}
+                >
+                  {form.formState.isSubmitting && <Loader2 className="size-4 animate-spin" />}
+                  注册
+                </Button>
+              </form>
+            </Form>
+          </CardContent>
+        </Card>
       </div>
     </AuthShell>
   )

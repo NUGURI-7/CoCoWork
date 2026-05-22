@@ -2,15 +2,17 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Lock, User } from 'lucide-react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { Route as LoginRoute } from '@/routes/login'
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth'
 import { ApiBusinessError } from '@/request'
 import AuthShell from './AuthShell'
+import IconField from './IconField'
 
 const formSchema = z.object({
   username: z
@@ -65,56 +67,67 @@ export default function Login() {
           <p className="text-muted-foreground text-sm">Brainstorm in chat, build in Cowork</p>
         </div>
 
-        {/* 表单 */}
-        <Form {...form}>
-          <form
-            className="space-y-4 fill-mode-both delay-150 duration-700 animate-in slide-in-from-bottom-3"
-            onSubmit={form.handleSubmit(onSubmit)}
-          >
-            <FormField
-              control={form.control}
-              name="username"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>用户名</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="text"
-                      placeholder="输入用户名"
-                      autoComplete="username"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+        {/* 表单卡片 */}
+        <Card className="border-border/60 fill-mode-both shadow-lg delay-150 duration-700 animate-in slide-in-from-bottom-3">
+          <CardContent>
+            <Form {...form}>
+              <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
+                <FormField
+                  control={form.control}
+                  name="username"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>用户名</FormLabel>
+                      <IconField icon={User}>
+                        <FormControl>
+                          <Input
+                            type="text"
+                            placeholder="输入用户名"
+                            autoComplete="username"
+                            className="h-10 pl-9"
+                            {...field}
+                          />
+                        </FormControl>
+                      </IconField>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-            <FormField
-              control={form.control}
-              name="password"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>密码</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="password"
-                      placeholder="输入密码"
-                      autoComplete="current-password"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>密码</FormLabel>
+                      <IconField icon={Lock}>
+                        <FormControl>
+                          <Input
+                            type="password"
+                            placeholder="输入密码"
+                            autoComplete="current-password"
+                            className="h-10 pl-9"
+                            {...field}
+                          />
+                        </FormControl>
+                      </IconField>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-            <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
-              {form.formState.isSubmitting && <Loader2 className="size-4 animate-spin" />}
-              登录
-            </Button>
-          </form>
-        </Form>
+                <Button
+                  type="submit"
+                  className="h-10 w-full"
+                  disabled={form.formState.isSubmitting}
+                >
+                  {form.formState.isSubmitting && <Loader2 className="size-4 animate-spin" />}
+                  登录
+                </Button>
+              </form>
+            </Form>
+          </CardContent>
+        </Card>
       </div>
     </AuthShell>
   )

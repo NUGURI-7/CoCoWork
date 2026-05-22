@@ -1,4 +1,5 @@
-import { ChevronsUpDown, LogOut } from 'lucide-react'
+import { ArrowLeftRight, ChevronsUpDown, LogOut, ShieldCheck } from 'lucide-react'
+import { Link, useRouterState } from '@tanstack/react-router'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -20,6 +21,8 @@ export function UserMenu() {
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
   const { isMobile } = useSidebar()
+  const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const inAdmin = pathname.startsWith('/admin')
 
   function handleLogout() {
     logout()
@@ -69,6 +72,22 @@ export function UserMenu() {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        {!inAdmin && user?.is_admin && (
+          <DropdownMenuItem asChild>
+            <Link to="/admin">
+              <ShieldCheck />
+              后台管理
+            </Link>
+          </DropdownMenuItem>
+        )}
+        {inAdmin && (
+          <DropdownMenuItem asChild>
+            <Link to="/">
+              <ArrowLeftRight />
+              返回工作台
+            </Link>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem onClick={handleLogout}>
           <LogOut />
           退出登录

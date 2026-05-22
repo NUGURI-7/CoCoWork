@@ -1,5 +1,5 @@
 import { useNavigate, useRouterState } from '@tanstack/react-router'
-import { LayoutDashboard, Settings, Sparkles, type LucideIcon } from 'lucide-react'
+import { ShieldCheck } from 'lucide-react'
 
 import {
   Sidebar,
@@ -12,39 +12,38 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
-import { useWorkspaceTabsStore } from '@/stores/tab-store'
+import { useAdminTabsStore } from '@/stores/tab-store'
 import { UserMenu } from './UserMenu'
-import { mainNav, type NavItem } from './nav.config'
+import { adminNav, type AdminNavItem } from './admin-nav.config'
 
-export function AppSidebar() {
+export function AdminSidebar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const navigate = useNavigate()
-  const openTab = useWorkspaceTabsStore((s) => s.open)
+  const openTab = useAdminTabsStore((s) => s.open)
 
-  function isActive(to: NavItem['to']) {
-    if (to === '/') return pathname === '/'
+  function isActive(to: AdminNavItem['to']) {
+    if (to === '/admin') return pathname === '/admin'
     return pathname === to || pathname.startsWith(`${to}/`)
   }
 
-  function handleNav(to: string, title: string, icon?: LucideIcon) {
-    openTab({ path: to, title, icon })
-    navigate({ to })
+  function handleNav(item: AdminNavItem) {
+    openTab({ path: item.to as string, title: item.title, icon: item.icon })
+    navigate({ to: item.to })
   }
 
   return (
-    <Sidebar variant="floating" collapsible="icon">
-      {/* 顶部 logo */}
+    <Sidebar variant="inset" collapsible="icon">
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
               size="lg"
-              tooltip="CoCoWork"
+              tooltip="管理后台"
               className="gap-3 [&>svg]:size-5"
-              onClick={() => handleNav('/', '主页', LayoutDashboard)}
+              onClick={() => handleNav({ to: '/admin', title: '概览', icon: ShieldCheck })}
             >
-              <Sparkles />
-              <span className="font-serif text-xl leading-none">CoCoWork</span>
+              <ShieldCheck />
+              <span className="font-serif text-xl leading-none">管理后台</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -54,14 +53,14 @@ export function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {mainNav.map((item) => (
+              {adminNav.map((item) => (
                 <SidebarMenuItem key={item.to}>
                   <SidebarMenuButton
                     size="lg"
                     isActive={isActive(item.to)}
                     tooltip={item.title}
                     className="gap-3 text-base [&>svg]:size-5"
-                    onClick={() => handleNav(item.to as string, item.title, item.icon)}
+                    onClick={() => handleNav(item)}
                   >
                     <item.icon />
                     <span>{item.title}</span>
@@ -73,15 +72,8 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      {/* footer：设置（独立一行） + 头像卡片（点击弹下拉菜单） */}
       <SidebarFooter>
         <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton tooltip="设置" onClick={() => handleNav('/settings', '设置', Settings)}>
-              <Settings />
-              <span>设置</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
           <SidebarMenuItem>
             <UserMenu />
           </SidebarMenuItem>
