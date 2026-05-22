@@ -24,6 +24,7 @@
     "ldrs": "^1.1.9",
     "lucide-react": "^0.469.0",
     "nprogress": "^0.2.0",
+    "radix-ui": "^1.4.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-hook-form": "^7.55.0",
