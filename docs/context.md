@@ -40,10 +40,12 @@
 - **Model 模块后端完成**：Provider（供应商凭证）+ AIModel（模型实例，支持覆盖 Provider 的 base_url/api_key）+ ProviderModelCatalog（管理员维护的可用模型目录）三层数据模型；Fernet 加密存储 API Key；Validator 策略模式（按 provider_type + model_type 二维查找）在创建/更新时验证连通性；统一 OpenAI 兼容客户端（ModelClient）；参数定义端点（动态表单元数据）。
 - **前端 User 全栈打通**：登录/注册页（Claude 风双栏 + Instrument Serif + 两张 gopher 错落）→ Zustand auth store → TanStack Router beforeLoad 守卫 → Home 显示 user，端到端实测通过。
 - **前端工作台 App Shell（批次1+2）**：`_authenticated` pathless 布局（登录守卫上提，一处保护全部工作台页）+ shadcn sidebar（`floating` 圆角卡片 + `collapsible="icon"` 收起成图标竖条）+ 导航（主页/Agents/知识库/工具/模型）+ footer（设置独立行 + 头像卡片点击下拉，下拉内含退出登录）+ 各模块占位页。admin 入口/独立壳待批次3。
+- **前端 Model 模块全栈打通**：Provider/AIModel 的创建 + 删除（不做编辑，改配置=重建）+ Catalog 查询展示 + 参数动态表单，全部对接后端 API。`api/model.ts` 统一封装三层接口；删除走 AlertDialog 二次确认；列表 loading 用 ldrs `l-ring`（品牌色 `#2f6b53`、60vh 居中）替代 skeleton。
+- **前端 admin 后台分区**：`/admin` 独立壳（AdminShell/AdminSidebar/admin-nav + isAdmin 守卫 + 独立 tab 系统），头像下拉「后台管理」入口。系统设置用「左侧二级导航 + 右侧内容」（仿 Claude settings），首个设置项 = **模型目录管理**（Catalog 表格增删，admin 写入），admin 不再需要手调接口喂数据。
 
 ## 下一步
 - **前端 App Shell 进行中**：批次1骨架 ✅、批次2（头像菜单+对齐）✅；待办 批次3（admin 独立 `/admin` 壳 + isAdmin 守卫 + 头像下拉加「后台管理」入口）、批次4（Home 卡片式 dashboard）。
-- **Model 后端 ✅ → 前端待搭**：Provider/AIModel/Catalog 三层 CRUD + Validator 策略 + ModelClient 已就绪，前端对着接口搭页面。
+- **Model 模块 ✅ 前后端闭环**：后端三层 + Validator + ModelClient，前端 Provider/AIModel 创建删除 + Catalog 查询全部接通，admin Catalog 管理页（增删）已落地。待补：编辑（暂不做）、AIModel.config 的消费链路（见下）。
 - **Agent 模块**：CRUD + 配置表单（模型/system prompt/参数/工具/知识库）+ 配置页内嵌 Playground（调试）；发布后走独立 chat 路由。单 agent 也走 LangGraph（为多 agent 留位）。流式 SSE，前端 assistant-ui 或 Vercel AI Elements。
 - **再后做 RAG**：文档处理 → 数据加工（切块/embed/索引）→ 混合检索（向量+FTS+RRF+rerank）。需先启用 pgvector。embedding 先阿里+硅基bge（每库可选）、rerank 先阿里、全文检索先 Postgres 原生 FTS（不够再上 ParadeDB pg_search，不上 ES）、切块默认(递归~512token+50overlap)+可配。
 - 后端可选生产功能（RBAC / Email 校验 / 密码重置 / 限流）随需推进。
@@ -62,6 +64,22 @@
 - 如果某次改动不足以影响项目理解，就不要把噪音写进来。
 
 ## 最近迭代
+
+### 2026-05-23 — admin 后台 Catalog 管理页 + 系统设置二级导航
+- 发现 admin 壳此前已搭好（`routes/admin` + AdminShell/AdminSidebar/admin-nav + isAdmin 守卫 + 独立 tab 系统，之前 context 漏记），本轮只补实际页面。
+- 系统设置从占位叶子改成**布局路由**：顶部标题 + 左侧二级导航（仿 Claude settings，TanStack `Link` 高亮当前项）+ 右侧 `<Outlet/>`；`settings/index` redirect 到第一项；二级导航配置 `settings-nav.config`（目前仅「模型目录」）。
+- Catalog 管理页（`/admin/settings/catalog`）：shadcn `table` 列表（供应商类型/模型类型/模型ID/操作）+ l-ring loading + 空态；`AddCatalogDialog`（provider_type + model_type 下拉 + model_id 手填）接 `createCatalog`；行删除 AlertDialog 确认接 `deleteCatalog`。
+- `api/model.ts` 补 `createCatalog`（silent）/`deleteCatalog`；装 shadcn `table`。
+- 决策：model_type 下拉只给 chat/embedding/rerank（当前有 validator+param 的三类）；catalog 增删需 admin（后端 `get_current_admin`），查询开放；至此 admin 不用手调接口喂数据。
+
+### 2026-05-23 — Model 模块前端打通（Provider/AIModel/Catalog CRUD 闭环）
+- `api/model.ts`：Provider + AIModel + Catalog 的 list/create/delete + `getParamDefinitions`，全部对接后端；创建走 `silent` 由表单 toast，删除走默认拦截器 toast。
+- Provider：`ModelsPage` 拉真列表（l-ring loader + 空态）；`CreateProviderDialog` 真实创建（api_key 改必填）；`ProviderCard` dropdown 删除 + AlertDialog 确认（用 div 包 trigger 拦冒泡，避免覆盖 Radix 的 onClick）。
+- AIModel：`ProviderDetailPage` 拉 Provider 详情 + AIModel 列表 + Catalog（平铺 `CatalogItem[]` 用 useMemo 转 `AvailableModelGroup[]` 喂 `AvailableModelsCard`）；`CreateModelDialog` 真实创建 + 参数定义改走 API；`AIModelCard` 右下角 dropdown 删除。
+- 决策：不做编辑（创建+删除即可）；删除统一 AlertDialog 二次确认；loader 统一 ldrs `l-ring`（品牌色 `#2f6b53`、60vh 居中）替代 skeleton（避免固定数量占位闪烁），`env.d.ts` 补 `l-ring` JSX 声明；删除前端全部 mock（`pages/models/mock.ts`）。
+- 同步类型：`AIModel` 去 `provider_id`、加 `has_custom_base_url`/`has_custom_api_key`（后端计算字段）；新增 `CatalogItem`。
+- 修后端 bug：`ModelOut` 两个计算字段（`_to_model_out` 先 `model_validate` 再赋值）原为必填，导致 validate 阶段就抛 500 ValidationError——已加 `default=False`（创建已写库但响应序列化失败 → 500 但数据已落库，是这个 bug 的表现）。
+- 现状提醒：`AIModel.config`（调用参数预设）目前**只存库、无任何消费**——`chat_completion`/`create_embedding` 零调用、config 无读取点，「config→调用参数」桥接待 Agent 阶段补；连通性测试是真打上游（chat 发 `"hi"`+`max_tokens=1`，embedding 发 `input=["test"]`），放在 Model 级（Provider 创建不校验）。
 
 ### 2026-05-23 — Model 模块后端完成
 - 数据层：Provider（供应商凭证）、AIModel（模型实例，base_url/api_key 可覆盖 Provider）、ProviderModelCatalog（管理员维护的可用模型目录，纯配置表）三张表，迁移 0002-0004。
@@ -117,25 +135,9 @@
 - admin seeding：方案 A（独立脚本）+ 方案 B（lifespan 自动）合一，幂等 + IntegrityError 并发安全；密码定死 020121，邮箱 nuguri990717@gmail.com（注意 EmailStr 拒绝 `.local` 等保留 TLD）。
 - 决策：User 主键 UUID7 单主键（不用 BigInt+UUID 双 ID）；密码哈希放 service 不放 model；is_active+is_admin 保留（RBAC 留待专门一轮）。
 
-### 2026-05-20 — Phase 2 后端通用模块全部完成（B2–B7 + 日志系统）
-- B2 Redis 客户端 + lifespan 接入。
-- B3 异常体系：5 个业务异常类 + 4 个 handler，统一 `{code, message, data}` 响应壳（沿用 DaisyWind "全 200" 风格）。
-- B4 中间件：AccessLog + CORS；后续日志任务追加了 RequestIDMiddleware（纯 ASGI 实现规避 contextvar 跨 Task 丢失）。
-- B5 统一响应壳：ResponseModel[T] / PageData[T] + success/page 函数；删掉了 DaisyWind 的 `error()` 反模式。
-- B6 安全：argon2 主推 + bcrypt 兼容，`verify_token` 失败抛 `AppAuthenticationFailed`（不再返回 None），token 加 `iat` claim。
-- B7 认证依赖薄层：`bearer_scheme` + `get_current_token_payload`；User 实体加载 (`get_current_user`) 推迟到 D1 完成 User 模型后再加。
-- 中途插入：生产级日志系统（colorlog + python-json-logger，按 `DEBUG_MODE` 切换文本/JSON，RequestIDFilter 把 request_id 注入每条日志，接管 uvicorn 三个 logger，压低 9 个第三方库到 WARNING）。
-- 中途插入：`app/core/` 重组成子包（`exceptions/`、`http/`、`logging/`），避免 11 文件平铺。
-- 决策：分页字段沿用 DaisyWind 中式命名（records / current_page）；HTTP 状态码策略沿用 DaisyWind "全 200" 风格（与生产级 REST 偏好不同，按用户决策保留）。
-
-### 2026-05-19 — Phase 1 后端骨架完成
-- 决策：本轮范围 A+B+C+D1（骨架 + 后端通用 + 前端通用 + User 全栈）；Agent 框架锁定 LangGraph；复用 DaisyWind 远端 PG 容器新建 database `cocowork`；迁移用 Tortoise 1.x 内置（不引 aerich）；Python 3.13；API 前缀 `/api/v1` 单层路由组。
-- 落盘：`backend/pyproject.toml`、`.env.example`、`app/{__init__,main}.py`、`app/{api,core,db,models}/__init__.py`、`core/config.py`、`db/postgresql.py`、`api/__init__.py`、`migrations/README.md`、`tests/__init__.py`；顶层 `.gitignore` 加 `.DS_Store`。
-- 偏差：`main.py` 暂未接 Redis/异常/中间件（待 B2/B3/B4）；`pyproject.toml` 多加 `boto3` + `tavily-python`（后续会用），但 `.env.example`/`config.py` 暂不放 R2/Tavily 字段避免配置-代码不同步。
-- 跑通验证：服务在 `127.0.0.1:7999` 成功启动，Tortoise 初始化无错。
-
 ## 历史摘要
-（暂无）
+- **2026-05-20 — Phase 2 后端通用模块（B2–B7 + 日志）**：Redis + lifespan、异常体系（5 类 + 4 handler + 全 200 壳）、中间件（AccessLog/CORS/RequestID 纯 ASGI）、`ResponseModel[T]`/`PageData[T]`、安全（argon2+bcrypt、token 加 iat）、认证依赖薄层、生产级日志（colorlog/JSON 按 DEBUG_MODE 切 + RequestIDFilter）；`core/` 重组成 exceptions/http/logging 子包。决策：分页中式命名、HTTP 全 200 风格。
+- **2026-05-19 — Phase 1 后端骨架**：搭出 `backend/` 基础结构（pyproject/uv、config、db/postgresql、api 路由组）；锁定 Agent 框架 = LangGraph、迁移 = Tortoise 1.x 内置（不引 aerich）、Python 3.13、API 前缀 `/api/v1`、复用 DaisyWind 远端 PG 新建 db `cocowork`。服务在 `127.0.0.1:7999` 跑通。
 
 ## 后续使用方式
 - 每次开启新的 AI 对话时，先读取这个文件。
