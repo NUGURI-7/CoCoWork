@@ -40,8 +40,12 @@ class ModelOut(BaseModel):
     display_name: str
     model_type: str
     config: dict[str, Any]
-    has_custom_base_url: bool = Field(description="是否覆盖了 Provider 的 base_url")
-    has_custom_api_key: bool = Field(description="是否覆盖了 Provider 的 api_key")
+    has_custom_base_url: bool = Field(
+        default=False, description="是否覆盖了 Provider 的 base_url"
+    )
+    has_custom_api_key: bool = Field(
+        default=False, description="是否覆盖了 Provider 的 api_key"
+    )
     is_enabled: bool
     created_at: datetime
     updated_at: datetime
