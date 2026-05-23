@@ -5,6 +5,7 @@
  *   import type { User, ResponseModel } from '@/types'
  */
 export type { ResponseModel, PageData, PageResponse } from './api'
+export type { AgentStatus, AgentType, Agent } from './agent'
 export type { User, UserRegisterPayload, UserLoginPayload, TokenPayload } from './user'
 export type {
   ProviderType,
