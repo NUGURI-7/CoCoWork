@@ -1,6 +1,6 @@
-import { createFileRoute } from '@tanstack/react-router'
-import PagePlaceholder from '@/pages/PagePlaceholder'
+/** 模型模块布局路由 — 子页面通过 <Outlet /> 切换 */
+import { createFileRoute, Outlet } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_authenticated/models')({
-  component: () => <PagePlaceholder title="模型" />,
+  component: () => <Outlet />,
 })

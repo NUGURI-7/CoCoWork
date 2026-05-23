@@ -1,5 +1,5 @@
 import { useNavigate, useRouterState } from '@tanstack/react-router'
-import { LayoutDashboard, Settings, Sparkles, type LucideIcon } from 'lucide-react'
+import { ArrowRight, LayoutDashboard, ShieldCheck, Sparkles, type LucideIcon } from 'lucide-react'
 
 import {
   Sidebar,
@@ -12,6 +12,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
+import { useAuthStore } from '@/stores/auth'
 import { useWorkspaceTabsStore } from '@/stores/tab-store'
 import { UserMenu } from './UserMenu'
 import { mainNav, type NavItem } from './nav.config'
@@ -20,6 +21,7 @@ export function AppSidebar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const navigate = useNavigate()
   const openTab = useWorkspaceTabsStore((s) => s.open)
+  const isAdmin = useAuthStore((s) => s.user?.is_admin)
 
   function isActive(to: NavItem['to']) {
     if (to === '/') return pathname === '/'
@@ -38,9 +40,8 @@ export function AppSidebar() {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
-              size="lg"
               tooltip="CoCoWork"
-              className="gap-3 [&>svg]:size-5"
+              className="h-10 gap-3"
               onClick={() => handleNav('/', '主页', LayoutDashboard)}
             >
               <Sparkles />
@@ -57,10 +58,9 @@ export function AppSidebar() {
               {mainNav.map((item) => (
                 <SidebarMenuItem key={item.to}>
                   <SidebarMenuButton
-                    size="lg"
                     isActive={isActive(item.to)}
                     tooltip={item.title}
-                    className="gap-3 text-base [&>svg]:size-5"
+                    className="h-10 gap-3 text-base"
                     onClick={() => handleNav(item.to as string, item.title, item.icon)}
                   >
                     <item.icon />
@@ -73,15 +73,20 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      {/* footer：设置（独立一行） + 头像卡片（点击弹下拉菜单） */}
       <SidebarFooter>
         <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton tooltip="设置" onClick={() => handleNav('/settings', '设置', Settings)}>
-              <Settings />
-              <span>设置</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
+          {isAdmin && (
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                tooltip="后台管理"
+                onClick={() => navigate({ to: '/admin' })}
+              >
+                <ShieldCheck />
+                <span>后台管理</span>
+                <ArrowRight className="ml-auto size-3.5 opacity-40" />
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          )}
           <SidebarMenuItem>
             <UserMenu />
           </SidebarMenuItem>

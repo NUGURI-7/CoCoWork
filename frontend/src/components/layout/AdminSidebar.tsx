@@ -1,5 +1,5 @@
 import { useNavigate, useRouterState } from '@tanstack/react-router'
-import { ShieldCheck } from 'lucide-react'
+import { ArrowLeft, ShieldCheck } from 'lucide-react'
 
 import {
   Sidebar,
@@ -37,9 +37,8 @@ export function AdminSidebar() {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
-              size="lg"
               tooltip="管理后台"
-              className="gap-3 [&>svg]:size-5"
+              className="h-10 gap-3"
               onClick={() => handleNav({ to: '/admin', title: '概览', icon: ShieldCheck })}
             >
               <ShieldCheck />
@@ -56,10 +55,9 @@ export function AdminSidebar() {
               {adminNav.map((item) => (
                 <SidebarMenuItem key={item.to}>
                   <SidebarMenuButton
-                    size="lg"
                     isActive={isActive(item.to)}
                     tooltip={item.title}
-                    className="gap-3 text-base [&>svg]:size-5"
+                    className="h-10 gap-3 text-base"
                     onClick={() => handleNav(item)}
                   >
                     <item.icon />
@@ -74,6 +72,15 @@ export function AdminSidebar() {
 
       <SidebarFooter>
         <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              tooltip="返回工作台"
+              onClick={() => navigate({ to: '/' })}
+            >
+              <ArrowLeft />
+              <span>返回工作台</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <UserMenu />
           </SidebarMenuItem>

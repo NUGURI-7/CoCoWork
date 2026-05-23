@@ -6,3 +6,11 @@
  */
 export type { ResponseModel, PageData, PageResponse } from './api'
 export type { User, UserRegisterPayload, UserLoginPayload, TokenPayload } from './user'
+export type {
+  ProviderType,
+  ModelType,
+  Provider,
+  AIModel,
+  AvailableModel,
+  AvailableModelGroup,
+} from './model'

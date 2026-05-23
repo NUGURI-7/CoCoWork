@@ -1,5 +1,5 @@
-import { ArrowLeftRight, ChevronsUpDown, LogOut, ShieldCheck } from 'lucide-react'
-import { Link, useRouterState } from '@tanstack/react-router'
+import { ChevronsUpDown, LogOut, Settings } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -12,21 +12,23 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { SidebarMenuButton, useSidebar } from '@/components/ui/sidebar'
 import { useAuthStore } from '@/stores/auth'
+import { useWorkspaceTabsStore } from '@/stores/tab-store'
 
-/**
- * 侧边栏 footer 的用户卡片：点击弹出下拉菜单。
- * 当前菜单项：退出登录。后台管理（仅 admin）→ 批次3 接通 /admin 时加入。
- */
 export function UserMenu() {
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
   const { isMobile } = useSidebar()
-  const pathname = useRouterState({ select: (s) => s.location.pathname })
-  const inAdmin = pathname.startsWith('/admin')
+  const navigate = useNavigate()
+  const openTab = useWorkspaceTabsStore((s) => s.open)
 
   function handleLogout() {
     logout()
     window.location.href = '/login'
+  }
+
+  function handleSettings() {
+    openTab({ path: '/settings', title: '设置', icon: Settings })
+    navigate({ to: '/settings' })
   }
 
   const name = user?.nick_name || user?.username || ''
@@ -72,22 +74,10 @@ export function UserMenu() {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {!inAdmin && user?.is_admin && (
-          <DropdownMenuItem asChild>
-            <Link to="/admin">
-              <ShieldCheck />
-              后台管理
-            </Link>
-          </DropdownMenuItem>
-        )}
-        {inAdmin && (
-          <DropdownMenuItem asChild>
-            <Link to="/">
-              <ArrowLeftRight />
-              返回工作台
-            </Link>
-          </DropdownMenuItem>
-        )}
+        <DropdownMenuItem onClick={handleSettings}>
+          <Settings />
+          设置
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={handleLogout}>
           <LogOut />
           退出登录
