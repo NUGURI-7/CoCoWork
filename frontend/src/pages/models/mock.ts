@@ -1,6 +1,6 @@
 /** Mock 数据 — 后端 API 就绪后删除 */
 
-import type { AIModel, AvailableModelGroup, Provider } from '@/types'
+import type { AIModel, AvailableModelGroup, ModelTypeParams, Provider } from '@/types'
 
 export const mockProviders: Provider[] = [
   {
@@ -192,4 +192,36 @@ export const mockAIModels: Record<string, AIModel[]> = {
       updated_at: '2026-05-21T11:00:00Z',
     },
   ],
+}
+
+/** 参数定义 mock — 对齐后端 PARAM_DEFINITIONS，后续通过 API 获取 */
+export const mockParamDefinitions: Record<string, ModelTypeParams> = {
+  chat: {
+    config_fields: [
+      { key: 'context_window', label: '上下文窗口', type: 'number', default: 128000 },
+      { key: 'max_output_tokens', label: '最大输出 Token', type: 'number', default: 8192 },
+    ],
+    invocation_params: [
+      { key: 'temperature', label: 'Temperature', type: 'slider', min: 0, max: 2, step: 0.1, default: 1.0 },
+      { key: 'top_p', label: 'Top P', type: 'slider', min: 0, max: 1, step: 0.01, default: 1.0 },
+      { key: 'max_tokens', label: 'Max Tokens', type: 'number', min: 1, default: null, description: '留空则使用模型默认值' },
+      { key: 'frequency_penalty', label: 'Frequency Penalty', type: 'slider', min: -2, max: 2, step: 0.1, default: 0 },
+      { key: 'presence_penalty', label: 'Presence Penalty', type: 'slider', min: -2, max: 2, step: 0.1, default: 0 },
+    ],
+  },
+  embedding: {
+    config_fields: [
+      { key: 'dimensions', label: '向量维度', type: 'number', default: 1024 },
+      { key: 'max_input_tokens', label: '最大输入 Token', type: 'number', default: 8192 },
+    ],
+    invocation_params: [],
+  },
+  rerank: {
+    config_fields: [
+      { key: 'max_input_tokens', label: '最大输入 Token', type: 'number', default: 4096 },
+    ],
+    invocation_params: [
+      { key: 'top_n', label: 'Top N', type: 'number', min: 1, default: 10 },
+    ],
+  },
 }

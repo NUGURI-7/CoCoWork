@@ -33,7 +33,7 @@ export function AvailableModelsCard({
   const totalCount = groups.reduce((sum, g) => sum + g.models.length, 0)
 
   return (
-    <Card className="flex flex-col">
+    <Card className="flex flex-col py-4">
       <CardHeader className="flex-row items-center justify-between space-y-0">
         <CardTitle className="text-base">
           可用模型
@@ -55,7 +55,7 @@ export function AvailableModelsCard({
           )}
         </Button>
       </CardHeader>
-      <CardContent className="h-52 overflow-y-auto">
+      <CardContent className="h-44 overflow-y-auto">
         {groups.length === 0 ? (
           <p className="text-muted-foreground py-6 text-center text-sm">
             暂无可用模型

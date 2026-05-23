@@ -27,7 +27,7 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
 
 export function ProviderInfoCard({ provider }: { provider: Provider }) {
   return (
-    <Card>
+    <Card className="py-4">
       <CardHeader className="flex-row items-center justify-between space-y-0">
         <CardTitle className="text-base">{provider.name}</CardTitle>
         <Button variant="ghost" size="icon" className="size-8">

@@ -9,6 +9,8 @@ export type { User, UserRegisterPayload, UserLoginPayload, TokenPayload } from '
 export type {
   ProviderType,
   ModelType,
+  ParamField,
+  ModelTypeParams,
   Provider,
   AIModel,
   AvailableModel,

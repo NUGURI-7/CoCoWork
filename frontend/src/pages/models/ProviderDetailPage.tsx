@@ -1,7 +1,10 @@
+import { useState } from 'react'
 import { useParams } from '@tanstack/react-router'
 
+import type { ModelType } from '@/types'
 import { AIModelCard } from './AIModelCard'
 import { AvailableModelsCard } from './AvailableModelsCard'
+import { CreateModelDialog } from './CreateModelDialog'
 import { ProviderInfoCard } from './ProviderInfoCard'
 import { mockAIModels, mockAvailableModels, mockProviders } from './mock'
 
@@ -9,6 +12,13 @@ import { mockAIModels, mockAvailableModels, mockProviders } from './mock'
 export default function ProviderDetailPage() {
   const { providerId } = useParams({ from: '/_authenticated/models/$providerId' })
   const provider = mockProviders.find((p) => p.id === providerId)
+
+  // 创建模型弹窗状态
+  const [createDialog, setCreateDialog] = useState<{
+    open: boolean
+    modelName: string
+    modelType: ModelType
+  }>({ open: false, modelName: '', modelType: 'chat' })
 
   if (!provider) {
     return (
@@ -21,12 +31,16 @@ export default function ProviderDetailPage() {
   const availableGroups = mockAvailableModels[providerId] ?? []
   const aiModels = mockAIModels[providerId] ?? []
 
+  function handleAddModel(modelName: string, modelType: string) {
+    setCreateDialog({ open: true, modelName, modelType: modelType as ModelType })
+  }
+
   return (
     <div className="space-y-6">
       {/* 上栏：左 Provider 信息 / 右 可用模型 */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-2 gap-6">
         <ProviderInfoCard provider={provider} />
-        <AvailableModelsCard groups={availableGroups} />
+        <AvailableModelsCard groups={availableGroups} onAdd={handleAddModel} />
       </div>
 
       {/* 下栏：已创建模型 */}
@@ -46,7 +60,7 @@ export default function ProviderDetailPage() {
         ) : (
           <div
             className="grid gap-4"
-            style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}
+            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}
           >
             {aiModels.map((model) => (
               <AIModelCard key={model.id} model={model} />
@@ -54,6 +68,15 @@ export default function ProviderDetailPage() {
           </div>
         )}
       </div>
+
+      {/* 创建模型弹窗 */}
+      <CreateModelDialog
+        open={createDialog.open}
+        onOpenChange={(v) => setCreateDialog((prev) => ({ ...prev, open: v }))}
+        providerId={providerId}
+        modelName={createDialog.modelName}
+        modelType={createDialog.modelType}
+      />
     </div>
   )
 }

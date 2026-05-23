@@ -12,7 +12,33 @@ export type ProviderType =
   | 'custom'
 
 /** 模型类型枚举 */
-export type ModelType = 'chat' | 'embedding' | 'rerank'
+export type ModelType =
+  | 'chat'
+  | 'embedding'
+  | 'rerank'
+  | 'vision'
+  | 'tts'
+  | 'stt'
+  | 'image'
+  | 'multimodal'
+
+/** 参数字段定义（对齐后端 ParamField） */
+export interface ParamField {
+  key: string
+  label: string
+  type: 'number' | 'slider' | 'switch'
+  min?: number
+  max?: number
+  step?: number
+  default?: number | boolean | null
+  description?: string
+}
+
+/** 某个 model_type 的参数定义集 */
+export interface ModelTypeParams {
+  config_fields: ParamField[]
+  invocation_params: ParamField[]
+}
 
 /** Provider 供应商实例 */
 export interface Provider {
