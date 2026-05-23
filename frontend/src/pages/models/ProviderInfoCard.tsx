@@ -1,6 +1,5 @@
-import { CircleCheck, CircleX, ExternalLink, Pencil } from 'lucide-react'
+import { ExternalLink, Pencil } from 'lucide-react'
 
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { Provider } from '@/types'
@@ -43,24 +42,6 @@ export function ProviderInfoCard({ provider }: { provider: Provider }) {
             {provider.base_url}
             <ExternalLink className="size-3 shrink-0" />
           </span>
-        </InfoRow>
-        <InfoRow label="状态">
-          {provider.is_enabled ? (
-            <span className="inline-flex items-center gap-1 text-success">
-              <CircleCheck className="size-3.5" />
-              已启用
-            </span>
-          ) : (
-            <span className="text-muted-foreground inline-flex items-center gap-1">
-              <CircleX className="size-3.5" />
-              已禁用
-            </span>
-          )}
-        </InfoRow>
-        <InfoRow label="可见范围">
-          <Badge variant={provider.is_global ? 'default' : 'secondary'}>
-            {provider.is_global ? '全局' : '工作区'}
-          </Badge>
         </InfoRow>
         {provider.description && (
           <InfoRow label="描述">

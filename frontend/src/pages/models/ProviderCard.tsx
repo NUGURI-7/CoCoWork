@@ -1,7 +1,27 @@
+import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { Cloud, CircleCheck, CircleX, Layers } from 'lucide-react'
+import { Cloud, MoreHorizontal, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
 
+import { deleteProvider } from '@/api/model'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { useWorkspaceTabsStore } from '@/stores/tab-store'
 import type { Provider } from '@/types'
 
@@ -25,9 +45,16 @@ const providerDotColor: Record<string, string> = {
   custom: 'bg-gray-400',
 }
 
-export function ProviderCard({ provider }: { provider: Provider }) {
+interface ProviderCardProps {
+  provider: Provider
+  onDeleted?: () => void
+}
+
+export function ProviderCard({ provider, onDeleted }: ProviderCardProps) {
   const navigate = useNavigate()
   const openTab = useWorkspaceTabsStore((s) => s.open)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   function handleClick() {
     openTab({
@@ -38,45 +65,92 @@ export function ProviderCard({ provider }: { provider: Provider }) {
     navigate({ to: '/models/$providerId', params: { providerId: provider.id } })
   }
 
+  async function handleDelete() {
+    setDeleting(true)
+    try {
+      await deleteProvider(provider.id)
+      toast.success('供应商已删除')
+      setConfirmOpen(false)
+      onDeleted?.()
+    } catch {
+      // 默认拦截器已 toast
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   return (
-    <Card
-      className="cursor-pointer border-transparent ring ring-border/50 transition-all hover:ring-foreground/15 hover:shadow-md"
-      onClick={handleClick}
-    >
-      <CardContent className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
-            <span
-              className={`inline-block size-2 rounded-full ${providerDotColor[provider.provider_type] ?? 'bg-gray-400'}`}
-            />
-            {providerTypeLabel[provider.provider_type] ?? provider.provider_type}
-          </span>
-          {provider.is_enabled ? (
-            <CircleCheck className="size-4 text-success" />
-          ) : (
-            <CircleX className="size-4 text-muted-foreground" />
-          )}
-        </div>
-        <div>
-          <h3 className="text-sm font-medium leading-none">{provider.name}</h3>
-          <p className="text-muted-foreground mt-1.5 line-clamp-2 text-xs">
-            {provider.description || ' '}
-          </p>
-        </div>
-        <div className="flex h-5 items-center justify-between">
-          <div>
-            {provider.is_global && (
-              <span className="bg-secondary text-secondary-foreground rounded px-1.5 py-0.5 text-[10px] font-medium">
-                全局
-              </span>
-            )}
+    <>
+      <Card
+        className="min-h-[136px] cursor-pointer border-transparent ring ring-border/50 transition-all hover:ring-foreground/15 hover:shadow-md"
+        onClick={handleClick}
+      >
+        <CardContent className="flex flex-1 flex-col justify-between gap-3">
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
+              <span
+                className={`inline-block size-2 rounded-full ${providerDotColor[provider.provider_type] ?? 'bg-gray-400'}`}
+              />
+              {providerTypeLabel[provider.provider_type] ?? provider.provider_type}
+            </span>
+            <div onClick={(e) => e.stopPropagation()}>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-muted-foreground hover:text-foreground -mr-2 size-7"
+                  >
+                    <MoreHorizontal className="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onSelect={(e) => {
+                      e.preventDefault()
+                      setConfirmOpen(true)
+                    }}
+                  >
+                    <Trash2 className="size-4" />
+                    删除
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
-          <span className="text-muted-foreground/60 flex items-center gap-1 text-[10px]">
-            <Layers className="size-3" />
-            {provider.model_count ?? 0} 个模型
-          </span>
-        </div>
-      </CardContent>
-    </Card>
+          <div>
+            <h3 className="text-sm font-medium leading-none">{provider.name}</h3>
+            <p className="text-muted-foreground mt-1.5 line-clamp-2 text-xs">
+              {provider.description || ' '}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除供应商「{provider.name}」？</AlertDialogTitle>
+            <AlertDialogDescription>
+              该操作不可撤销，关联的所有模型也会一并删除。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              onClick={(e) => {
+                e.preventDefault()
+                handleDelete()
+              }}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              {deleting ? '删除中...' : '确认删除'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }

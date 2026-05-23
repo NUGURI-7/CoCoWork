@@ -14,6 +14,7 @@ export type {
   ModelTypeParams,
   Provider,
   AIModel,
+  CatalogItem,
   AvailableModel,
   AvailableModelGroup,
 } from './model'

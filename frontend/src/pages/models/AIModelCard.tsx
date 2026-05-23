@@ -1,8 +1,26 @@
-import { CircleCheck, CircleX, Settings } from 'lucide-react'
+import { useState } from 'react'
+import { CircleCheck, CircleX, MoreHorizontal, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
 
-import { Badge } from '@/components/ui/badge'
+import { deleteModel } from '@/api/model'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import type { AIModel } from '@/types'
 
 /** 模型类型 → 标签 */
@@ -19,34 +37,102 @@ const modelTypeBadgeVariant: Record<string, string> = {
   rerank: 'bg-violet-50 text-violet-700 border-violet-200',
 }
 
-export function AIModelCard({ model }: { model: AIModel }) {
+interface AIModelCardProps {
+  model: AIModel
+  onDeleted?: () => void
+}
+
+export function AIModelCard({ model, onDeleted }: AIModelCardProps) {
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  async function handleDelete() {
+    setDeleting(true)
+    try {
+      await deleteModel(model.id)
+      toast.success('模型已删除')
+      setConfirmOpen(false)
+      onDeleted?.()
+    } catch {
+      // 拦截器已 toast
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   return (
-    <Card>
-      <CardContent className="flex flex-col gap-2.5">
-        <div className="flex items-center justify-between">
-          <span
-            className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${modelTypeBadgeVariant[model.model_type] ?? ''}`}
-          >
-            {modelTypeLabel[model.model_type] ?? model.model_type}
-          </span>
-          <div className="flex items-center gap-1">
+    <>
+      <Card>
+        <CardContent className="flex flex-col gap-2.5">
+          <div className="flex items-center justify-between">
+            <span
+              className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${modelTypeBadgeVariant[model.model_type] ?? ''}`}
+            >
+              {modelTypeLabel[model.model_type] ?? model.model_type}
+            </span>
             {model.is_enabled ? (
               <CircleCheck className="size-3.5 text-success" />
             ) : (
-              <CircleX className="size-3.5 text-muted-foreground" />
+              <CircleX className="text-muted-foreground size-3.5" />
             )}
-            <Button variant="ghost" size="icon" className="size-6">
-              <Settings className="size-3" />
-            </Button>
           </div>
-        </div>
-        <div>
-          <h4 className="text-sm font-medium leading-none">{model.display_name}</h4>
-          <p className="text-muted-foreground mt-1 font-mono text-xs">
-            {model.model_name}
-          </p>
-        </div>
-      </CardContent>
-    </Card>
+          <div className="flex items-end justify-between gap-2">
+            <div className="min-w-0">
+              <h4 className="text-sm font-medium leading-none">{model.display_name}</h4>
+              <p className="text-muted-foreground mt-1 truncate font-mono text-xs">
+                {model.model_name}
+              </p>
+            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-muted-foreground hover:text-foreground -mr-1 -mb-1 size-6 shrink-0"
+                >
+                  <MoreHorizontal className="size-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  variant="destructive"
+                  onSelect={(e) => {
+                    e.preventDefault()
+                    setConfirmOpen(true)
+                  }}
+                >
+                  <Trash2 className="size-4" />
+                  删除
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </CardContent>
+      </Card>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除模型「{model.display_name}」？</AlertDialogTitle>
+            <AlertDialogDescription>
+              该操作不可撤销，删除后需要重新创建。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              onClick={(e) => {
+                e.preventDefault()
+                handleDelete()
+              }}
+              className="bg-destructive hover:bg-destructive/90 text-white"
+            >
+              {deleting ? '删除中...' : '确认删除'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }

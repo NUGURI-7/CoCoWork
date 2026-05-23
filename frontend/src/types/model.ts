@@ -47,10 +47,6 @@ export interface Provider {
   provider_type: ProviderType
   base_url: string
   description: string
-  is_global: boolean
-  is_enabled: boolean
-  /** 已创建的模型数（聚合字段，后端返回） */
-  model_count?: number
   created_at: string
   updated_at: string
 }
@@ -58,17 +54,26 @@ export interface Provider {
 /** AIModel 模型实例（已创建） */
 export interface AIModel {
   id: string
-  provider_id: string
   model_name: string
   display_name: string
   model_type: ModelType
   config: Record<string, unknown>
+  has_custom_base_url: boolean
+  has_custom_api_key: boolean
   is_enabled: boolean
   created_at: string
   updated_at: string
 }
 
-/** 上游可用模型（连通性测试返回） */
+/** Catalog 目录条目（管理员维护的可用模型清单） */
+export interface CatalogItem {
+  id: string
+  provider_type: ProviderType
+  model_id: string
+  model_type: ModelType
+}
+
+/** 上游可用模型（按类型分组后用于 UI 渲染） */
 export interface AvailableModel {
   model_name: string
   model_type?: ModelType

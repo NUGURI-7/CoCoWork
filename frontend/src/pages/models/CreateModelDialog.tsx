@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 
+import { createModel, getParamDefinitions } from '@/api/model'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -14,9 +16,7 @@ import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
-import type { ModelType, ParamField } from '@/types'
-
-import { mockParamDefinitions } from './mock'
+import type { ModelType, ModelTypeParams, ParamField } from '@/types'
 
 /** 模型类型 → 中文标签 */
 const modelTypeLabel: Record<string, string> = {
@@ -117,9 +117,18 @@ export function CreateModelDialog({
   const [displayName, setDisplayName] = useState('')
   const [config, setConfig] = useState<Record<string, number | boolean | null>>({})
   const [submitting, setSubmitting] = useState(false)
+  const [paramDefs, setParamDefs] = useState<Record<string, ModelTypeParams>>({})
 
-  // 后续从 API 获取，当前用 mock
-  const paramDef = mockParamDefinitions[modelType]
+  // 参数定义是全局静态元数据，挂载时拉一次
+  useEffect(() => {
+    getParamDefinitions()
+      .then(setParamDefs)
+      .catch(() => {
+        // 拦截器已 toast；参数区降级为空
+      })
+  }, [])
+
+  const paramDef = paramDefs[modelType]
   const invocationParams = paramDef?.invocation_params ?? []
 
   const canSubmit = displayName.trim()
@@ -148,23 +157,25 @@ export function CreateModelDialog({
   async function handleSubmit() {
     if (!canSubmit) return
     setSubmitting(true)
-
-    // TODO: 替换为真实 API 调用
-    console.log('ModelCreate payload:', {
-      provider_id: providerId,
-      model_name: modelName,
-      display_name: displayName.trim(),
-      model_type: modelType,
-      config: buildConfig(),
-      is_enabled: true,
-    })
-
-    await new Promise((r) => setTimeout(r, 500))
-
-    setSubmitting(false)
-    resetForm()
-    onOpenChange(false)
-    onCreated?.()
+    try {
+      await createModel({
+        provider_id: providerId,
+        model_name: modelName,
+        display_name: displayName.trim(),
+        model_type: modelType,
+        config: buildConfig(),
+        is_enabled: true,
+      })
+      toast.success('模型创建成功')
+      resetForm()
+      onOpenChange(false)
+      onCreated?.()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '创建失败'
+      toast.error(msg)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (

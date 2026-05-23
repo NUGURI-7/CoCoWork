@@ -1,14 +1,36 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Plus } from 'lucide-react'
+import { ring } from 'ldrs'
 
+import { listProviders } from '@/api/model'
 import { Button } from '@/components/ui/button'
+import type { Provider } from '@/types'
 import { CreateProviderDialog } from './CreateProviderDialog'
 import { ProviderCard } from './ProviderCard'
-import { mockProviders } from './mock'
+
+ring.register()
 
 /** /models — Provider 卡片网格页 */
 export default function ModelsPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [providers, setProviders] = useState<Provider[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const refetch = useCallback(async () => {
+    setLoading(true)
+    try {
+      const data = await listProviders()
+      setProviders(data)
+    } catch {
+      // 全局拦截器已 toast；保持空列表
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    refetch()
+  }, [refetch])
 
   return (
     <div className="space-y-6">
@@ -25,18 +47,30 @@ export default function ModelsPage() {
         </Button>
       </div>
 
-      <div
-        className="grid gap-4"
-        style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}
-      >
-        {mockProviders.map((p) => (
-          <ProviderCard key={p.id} provider={p} />
-        ))}
-      </div>
+      {loading ? (
+        <div className="flex min-h-[60vh] items-center justify-center">
+          <l-ring size="36" stroke="3" speed="2" color="#2f6b53" />
+        </div>
+      ) : providers.length === 0 ? (
+        <div className="border-border/60 text-muted-foreground flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-sm">
+          <p>还没有供应商</p>
+          <p className="mt-1 text-xs">点击右上角「添加供应商」开始配置</p>
+        </div>
+      ) : (
+        <div
+          className="grid gap-4"
+          style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}
+        >
+          {providers.map((p) => (
+            <ProviderCard key={p.id} provider={p} onDeleted={refetch} />
+          ))}
+        </div>
+      )}
 
       <CreateProviderDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
+        onCreated={refetch}
       />
     </div>
   )

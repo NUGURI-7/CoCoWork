@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
+import { toast } from 'sonner'
 
+import { createProvider } from '@/api/model'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -59,7 +61,7 @@ export function CreateProviderDialog({
   const [showKey, setShowKey] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
-  const canSubmit = name.trim() && providerType && baseUrl.trim()
+  const canSubmit = name.trim() && providerType && baseUrl.trim() && apiKey.trim()
 
   function handleTypeChange(value: ProviderType) {
     setProviderType(value)
@@ -79,25 +81,26 @@ export function CreateProviderDialog({
   }
 
   async function handleSubmit() {
-    if (!canSubmit) return
+    if (!canSubmit || !providerType) return
     setSubmitting(true)
-
-    // TODO: 替换为真实 API 调用
-    console.log('ProviderCreate payload:', {
-      name: name.trim(),
-      provider_type: providerType,
-      base_url: baseUrl.trim(),
-      api_key: apiKey.trim(),
-      description: description.trim(),
-    })
-
-    // 模拟网络延迟
-    await new Promise((r) => setTimeout(r, 500))
-
-    setSubmitting(false)
-    resetForm()
-    onOpenChange(false)
-    onCreated?.()
+    try {
+      await createProvider({
+        name: name.trim(),
+        provider_type: providerType,
+        base_url: baseUrl.trim(),
+        api_key: apiKey.trim(),
+        description: description.trim(),
+      })
+      toast.success('供应商创建成功')
+      resetForm()
+      onOpenChange(false)
+      onCreated?.()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '创建失败'
+      toast.error(msg)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -169,7 +172,9 @@ export function CreateProviderDialog({
 
           {/* API Key */}
           <div className="grid gap-2">
-            <Label htmlFor="provider-key">API Key</Label>
+            <Label htmlFor="provider-key">
+              API Key <span className="text-destructive">*</span>
+            </Label>
             <div className="relative">
               <Input
                 id="provider-key"
