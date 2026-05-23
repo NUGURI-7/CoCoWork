@@ -10,10 +10,10 @@ from uuid import UUID
 from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.core.exceptions.types import AppAuthenticationFailed
+from app.core.exceptions.types import AppAuthenticationFailed, AppUnauthorizedFailed
 from app.core.security import verify_token
-from app.models.user_model import User
-from app.services.user_service import UserService, get_user_service
+from app.models.user import User
+from app.services.user import UserService, get_user_service
 
 # auto_error=False：缺失 Authorization header 时不让 FastAPI 自己抛 403，
 # 我们要自己抛 AppAuthenticationFailed 走统一异常响应。
@@ -60,4 +60,13 @@ async def get_current_user(
     if not user.is_active:
         raise AppAuthenticationFailed("账户已被禁用")
 
+    return user
+
+
+async def get_current_admin(
+    user: User = Depends(get_current_user),
+) -> User:
+    """管理员守卫：基于 get_current_user 二次校验 is_admin。"""
+    if not user.is_admin:
+        raise AppUnauthorizedFailed("需要管理员权限")
     return user

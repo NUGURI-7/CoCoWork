@@ -4,9 +4,9 @@ from fastapi import APIRouter, Depends
 
 from app.core.depends import get_current_user
 from app.core.http import ResponseModel, success
-from app.models.user_model import User
-from app.schemas.user_schema import TokenOut, UserLogin, UserOut, UserRegister
-from app.services.user_service import UserService, get_user_service
+from app.models.user import User
+from app.schemas.user import TokenOut, UserLogin, UserOut, UserRegister
+from app.services.user import UserService, get_user_service
 
 router = APIRouter(prefix="/users", tags=["users"])
 

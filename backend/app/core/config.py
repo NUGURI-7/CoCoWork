@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1800
 
+    # ==================== 凭证加密 ====================
+    ENCRYPTION_KEY: str = "change-me-in-production"
+
     # ==================== 内置管理员（seed 脚本用）====================
     ADMIN_USERNAME: str = "admin"
     ADMIN_EMAIL: str = "nuguri990717@gmail.com"

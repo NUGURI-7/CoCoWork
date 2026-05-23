@@ -18,6 +18,8 @@ dependencies = [
     "tavily-python>=0.7.23",
     "colorlog>=6.9.0",
     "python-json-logger>=3.2.1",
+    "cryptography>=48.0.0",
+    "openai>=2.38.0",
 ]
 
 [dependency-groups]

@@ -16,7 +16,7 @@ from app.core.config import settings
 from app.core.logging import setup_logging
 from app.core.security import get_password_hash
 from app.db.postgresql import pg_client
-from app.models.user_model import User
+from app.models.user import User
 
 logger = logging.getLogger(__name__)
 

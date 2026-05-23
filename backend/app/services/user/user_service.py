@@ -4,8 +4,8 @@ from tortoise.exceptions import IntegrityError
 
 from app.core.exceptions.types import AppAuthenticationFailed, ValidationException
 from app.core.security import create_access_token, get_password_hash, verify_password
-from app.models.user_model import User
-from app.schemas.user_schema import UserLogin, UserRegister
+from app.models.user import User
+from app.schemas.user import UserLogin, UserRegister
 
 
 class UserService:

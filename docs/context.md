@@ -37,14 +37,14 @@
 - **User 业务全栈可用**：`users` 表已建（迁移 0001_init_user），三个接口 `/api/v1/users/{register,login,me}` 实测通过。
 - **内置 admin 启动自动 seed**（admin / 020121 / is_admin=True，邮箱 nuguri990717@gmail.com）。
 - 认证完整：JWT + argon2 哈希，`get_current_user` 每请求查 DB + is_active。
+- **Model 模块后端完成**：Provider（供应商凭证）+ AIModel（模型实例，支持覆盖 Provider 的 base_url/api_key）+ ProviderModelCatalog（管理员维护的可用模型目录）三层数据模型；Fernet 加密存储 API Key；Validator 策略模式（按 provider_type + model_type 二维查找）在创建/更新时验证连通性；统一 OpenAI 兼容客户端（ModelClient）；参数定义端点（动态表单元数据）。
 - **前端 User 全栈打通**：登录/注册页（Claude 风双栏 + Instrument Serif + 两张 gopher 错落）→ Zustand auth store → TanStack Router beforeLoad 守卫 → Home 显示 user，端到端实测通过。
 - **前端工作台 App Shell（批次1+2）**：`_authenticated` pathless 布局（登录守卫上提，一处保护全部工作台页）+ shadcn sidebar（`floating` 圆角卡片 + `collapsible="icon"` 收起成图标竖条）+ 导航（主页/Agents/知识库/工具/模型）+ footer（设置独立行 + 头像卡片点击下拉，下拉内含退出登录）+ 各模块占位页。admin 入口/独立壳待批次3。
 
 ## 下一步
 - **前端 App Shell 进行中**：批次1骨架 ✅、批次2（头像菜单+对齐）✅；待办 批次3（admin 独立 `/admin` 壳 + isAdmin 守卫 + 头像下拉加「后台管理」入口）、批次4（Home 卡片式 dashboard）。
-- **App Shell 后做 Model + Agent 模块**（本轮敲定的 MVP 第一步；前端先对着类型契约 + mock 搭，再后端填实现）：
-  - Model：Provider(凭证，加密落库) / Model(type: chat/embedding/rerank) 两层；统一 OpenAI 兼容客户端（不引 LiteLLM）。
-  - Agent：CRUD + 配置表单（模型/system prompt/参数/工具/知识库）+ 配置页内嵌 Playground（调试）；发布后走独立 chat 路由。单 agent 也走 LangGraph（为多 agent 留位）。流式 SSE，前端 assistant-ui 或 Vercel AI Elements。
+- **Model 后端 ✅ → 前端待搭**：Provider/AIModel/Catalog 三层 CRUD + Validator 策略 + ModelClient 已就绪，前端对着接口搭页面。
+- **Agent 模块**：CRUD + 配置表单（模型/system prompt/参数/工具/知识库）+ 配置页内嵌 Playground（调试）；发布后走独立 chat 路由。单 agent 也走 LangGraph（为多 agent 留位）。流式 SSE，前端 assistant-ui 或 Vercel AI Elements。
 - **再后做 RAG**：文档处理 → 数据加工（切块/embed/索引）→ 混合检索（向量+FTS+RRF+rerank）。需先启用 pgvector。embedding 先阿里+硅基bge（每库可选）、rerank 先阿里、全文检索先 Postgres 原生 FTS（不够再上 ParadeDB pg_search，不上 ES）、切块默认(递归~512token+50overlap)+可配。
 - 后端可选生产功能（RBAC / Email 校验 / 密码重置 / 限流）随需推进。
 
@@ -62,6 +62,16 @@
 - 如果某次改动不足以影响项目理解，就不要把噪音写进来。
 
 ## 最近迭代
+
+### 2026-05-23 — Model 模块后端完成
+- 数据层：Provider（供应商凭证）、AIModel（模型实例，base_url/api_key 可覆盖 Provider）、ProviderModelCatalog（管理员维护的可用模型目录，纯配置表）三张表，迁移 0002-0004。
+- 加密：Fernet 对称加密存储 API Key（`app/core/encryption.py`），区别于密码哈希（argon2 不可逆），API Key 需要解密回明文调用上游。
+- 分包：models/schemas/services/routes 各层按业务域拆子目录（`model/`、`user/`）。
+- Schema：ProviderType + ModelType 枚举（Literal）；参数定义常量 PARAM_DEFINITIONS（按 model_type 返回 slider/number/switch 控件元数据，前端动态渲染表单）。
+- Validator 策略模式：BaseModelValidator 抽象基类 → OpenAIChatValidator / OpenAIEmbeddingValidator 实现；注册表按 `(provider_type, model_type)` 二维查找，默认按 model_type 兜底，支持按供应商精确覆盖。创建和更新（凭证变更时）自动验证连通性，不通过不入库。
+- ModelClient：统一 OpenAI 兼容客户端，`build_client(base_url, api_key)` 供 Validator 和业务调用共用；凭证解析 Model 级 > Provider 级回退。
+- 路由：Provider CRUD（`/providers`）、AIModel CRUD（`/models`，含 param-definitions）、Catalog 管理（`/catalog`，创建/删除需 admin，查询开放）。
+- 决策：Provider 不设 is_global/is_enabled（MVP 只看自己的，共享后续加）；不用 `models.list()` 做连通性测试（阿里百炼等不完全支持）；ProviderModelCatalog 替代自动拉取可用模型列表；连通性测试放 Model 级别（创建时验证），不单设端点。
 
 ### 2026-05-22 — 前端 App Shell（批次1骨架 + 批次2头像菜单）+ shadcn skill/MCP 接入
 - 工具链：装 shadcn MCP（仓库根 `.mcp.json`，钉 `--cwd frontend`）+ shadcn skill（全局 `~/.claude/skills/shadcn`，改 `user-invocable: true` 便于手动调）。注意 `skill init` 不是 shadcn 命令，用 `npx skills add shadcn/ui`（skills.sh）装 skill、`npx shadcn@latest mcp init --client claude` 装 MCP。

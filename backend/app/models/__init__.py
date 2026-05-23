@@ -1,3 +1,4 @@
-from app.models.user_model import User
+from app.models.model import AIModel, Provider, ProviderModelCatalog
+from app.models.user import User
 
-__all__ = ["User"]
+__all__ = ["AIModel", "Provider", "ProviderModelCatalog", "User"]
