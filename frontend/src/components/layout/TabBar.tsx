@@ -55,7 +55,7 @@ export function TabBar({ useStore }: TabBarProps) {
               'group relative flex h-7 items-center gap-1.5 rounded-md px-2.5 text-sm transition-colors',
               'hover:bg-accent/60 hover:text-accent-foreground',
               active(tab.path)
-                ? 'bg-brand/8 font-medium text-foreground'
+                ? 'bg-brand-subtle font-medium text-brand'
                 : 'text-muted-foreground',
             )}
           >
@@ -82,7 +82,7 @@ export function TabBar({ useStore }: TabBarProps) {
             )}
             {/* 底部指示条 */}
             {active(tab.path) && (
-              <span className="absolute -bottom-px left-2 right-2 h-0.5 rounded-full bg-brand/60" />
+              <span className="absolute -bottom-px left-2 right-2 h-0.5 rounded-full bg-brand" />
             )}
           </button>
         )

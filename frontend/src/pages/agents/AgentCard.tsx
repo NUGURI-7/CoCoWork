@@ -56,7 +56,7 @@ export function AgentCard({ agent }: { agent: Agent }) {
 
   return (
     <Card
-      className="cursor-pointer px-5 py-8 transition-all hover:shadow-md"
+      className="card-interactive px-5 py-8"
       onClick={handleClick}
     >
       <div className="flex items-start justify-between gap-4">

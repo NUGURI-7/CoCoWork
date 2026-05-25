@@ -59,7 +59,7 @@ export default function ModelsPage() {
       ) : (
         <div
           className="grid gap-4"
-          style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}
+          style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))' }}
         >
           {providers.map((p) => (
             <ProviderCard key={p.id} provider={p} onDeleted={refetch} />

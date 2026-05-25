@@ -99,6 +99,8 @@ import { Plus, Pencil, Settings } from 'lucide-react'
 
 英文摘要行 1（对应中文要点，用于非中文读者快速理解）
 英文摘要行 2
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 ```
 
 ### Type 类型
@@ -116,3 +118,4 @@ import { Plus, Pencil, Settings } from 'lucide-react'
 - Body 部分先写**中文要点**（给自己看），再写**英文摘要**（给协作者 / GitHub 看）
 - 一个 commit 聚焦一件事；如果 body 需要超过 8 个要点，考虑拆分 commit
 - 不要在 commit message 里包含文件路径列表（git diff 已经有了）
+- message 末尾必须空一行后附 `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`

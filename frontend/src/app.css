@@ -48,6 +48,13 @@
   --warning: oklch(0.75 0.12 80);
   --warning-foreground: oklch(0.25 0.01 60);
 
+  /* CoCoWork 品牌色阶（base 为精确 hex，派生色用 color-mix 自动算） */
+  --brand: #2f6b53;
+  --brand-foreground: oklch(0.985 0 0);
+  --brand-hover: color-mix(in oklab, var(--brand), black 12%);
+  --brand-subtle: color-mix(in oklab, var(--brand), white 90%);
+  --brand-border: color-mix(in oklab, var(--brand), white 78%);
+
   /* Sidebar 专属 */
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.141 0.005 285.823);
@@ -109,6 +116,13 @@
   --warning: oklch(0.8 0.12 80);
   --warning-foreground: oklch(0.15 0.01 60);
 
+  /* 品牌色阶 — dark（base 调亮以在暗底更跳；预留，未主动启用） */
+  --brand: oklch(0.62 0.075 162);
+  --brand-foreground: oklch(0.18 0.02 162);
+  --brand-hover: color-mix(in oklab, var(--brand), white 12%);
+  --brand-subtle: color-mix(in oklab, var(--brand), black 72%);
+  --brand-border: color-mix(in oklab, var(--brand), black 55%);
+
   --sidebar: oklch(0.21 0.006 285.885);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
@@ -160,8 +174,12 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  /* CoCoWork 品牌色：流式 / logo / 特定场景，正常 primary/success 走 shadcn 标准 */
-  --color-brand: #2f6b53;
+  /* CoCoWork 品牌色阶：注册为工具类（bg-brand / text-brand / bg-brand-subtle / border-brand-border / hover:bg-brand-hover ...） */
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-subtle: var(--brand-subtle);
+  --color-brand-border: var(--brand-border);
 
   /* 圆角 */
   --radius-sm: calc(var(--radius) - 4px);
@@ -192,6 +210,25 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* =============================================
+ * 可点卡片统一 hover（品牌化：边框转墨绿 + 淡墨绿柔光 + 上浮 1px）
+ * 用法：可点击的 Card 加 className="card-interactive"；展示型卡片不要加
+ * ============================================= */
+@utility card-interactive {
+  cursor: pointer;
+  transition-property: color, background-color, border-color, box-shadow, transform;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 200ms;
+
+  &:hover {
+    border-color: transparent;
+    box-shadow:
+      0 0 0 1.5px color-mix(in oklab, var(--brand), transparent 50%),
+      0 10px 28px -8px color-mix(in oklab, var(--brand), transparent 52%);
+    transform: translateY(-2px);
+  }
 }
 
 /* =============================================

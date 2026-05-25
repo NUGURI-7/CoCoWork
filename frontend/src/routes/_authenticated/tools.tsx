@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
-import PagePlaceholder from '@/pages/PagePlaceholder'
+import ToolsPage from '@/pages/tools/ToolsPage'
 
 export const Route = createFileRoute('/_authenticated/tools')({
-  component: () => <PagePlaceholder title="工具" />,
+  component: ToolsPage,
 })

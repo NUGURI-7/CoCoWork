@@ -47,7 +47,7 @@ export default function ProviderDetailPage() {
 
   const refetchModels = useCallback(async () => {
     try {
-      const data = await listModels(providerId)
+      const data = await listModels({ providerId })
       setModels(data)
     } catch {
       // 拦截器已 toast
@@ -155,7 +155,7 @@ export default function ProviderDetailPage() {
         ) : (
           <div
             className="grid gap-4"
-            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}
+            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))' }}
           >
             {models.map((model) => (
               <AIModelCard key={model.id} model={model} onDeleted={refetchModels} />

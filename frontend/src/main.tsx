@@ -2,10 +2,16 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
 import NProgress from 'nprogress'
+import dayjs from 'dayjs'
+import relativeTime from 'dayjs/plugin/relativeTime'
+import 'dayjs/locale/zh-cn'
 import 'nprogress/nprogress.css'
 import '@fontsource/instrument-serif' // self-host Instrument Serif（400 normal）
 import './app.css'
 import { routeTree } from './routeTree.gen'
+
+dayjs.extend(relativeTime)
+dayjs.locale('zh-cn')
 
 NProgress.configure({ showSpinner: false, easing: 'ease', speed: 400 })
 
