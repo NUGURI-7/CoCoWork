@@ -19,6 +19,7 @@ class AIModel(UUIDBaseModel, TimestampMixin):
     display_name = fields.CharField(max_length=100, description="前端展示名")
     model_type = fields.CharField(max_length=20, description="chat / embedding / rerank")
     config = fields.JSONField(default=dict, description="参数预设（temperature / top_p 等）")
+    meta = fields.JSONField(default=dict, null=True, description="模型固有事实：dim / context_window / max_input 等（非用户可调）")
     base_url = fields.CharField(max_length=512, default="", description="覆盖 Provider 的 base URL（留空继承）")
     api_key_encrypted = fields.TextField(default="", description="覆盖 Provider 的 API Key（留空继承）")
     is_enabled = fields.BooleanField(default=True, description="是否启用")

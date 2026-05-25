@@ -40,6 +40,9 @@ class ModelOut(BaseModel):
     display_name: str
     model_type: str
     config: dict[str, Any]
+    meta: dict[str, Any] | None = Field(
+        default=None, description="模型固有事实：embedding 维度等（非用户可调）"
+    )
     has_custom_base_url: bool = Field(
         default=False, description="是否覆盖了 Provider 的 base_url"
     )

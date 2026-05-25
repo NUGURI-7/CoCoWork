@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 from openai import AsyncOpenAI
 
@@ -11,7 +12,7 @@ logger = logging.getLogger(__name__)
 class OpenAIChatValidator(BaseModelValidator):
     """OpenAI 兼容供应商的 Chat 模型验证。"""
 
-    async def validate(self, client: AsyncOpenAI, model_name: str) -> None:
+    async def validate(self, client: AsyncOpenAI, model_name: str) -> dict[str, Any]:
         try:
             await client.chat.completions.create(
                 model=model_name,
@@ -23,14 +24,15 @@ class OpenAIChatValidator(BaseModelValidator):
             raise ValidationException(
                 f"模型 '{model_name}' 连通性验证失败: {e}",
             ) from e
+        return {}
 
 
 class OpenAIEmbeddingValidator(BaseModelValidator):
     """OpenAI 兼容供应商的 Embedding 模型验证。"""
 
-    async def validate(self, client: AsyncOpenAI, model_name: str) -> None:
+    async def validate(self, client: AsyncOpenAI, model_name: str) -> dict[str, Any]:
         try:
-            await client.embeddings.create(
+            resp = await client.embeddings.create(
                 model=model_name,
                 input=["test"],
             )
@@ -39,3 +41,4 @@ class OpenAIEmbeddingValidator(BaseModelValidator):
             raise ValidationException(
                 f"模型 '{model_name}' 连通性验证失败: {e}",
             ) from e
+        return {"embedding_dim": len(resp.data[0].embedding)}
