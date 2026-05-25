@@ -1,6 +1,5 @@
-import { createFileRoute } from '@tanstack/react-router'
-import PagePlaceholder from '@/pages/PagePlaceholder'
+import { createFileRoute, Outlet } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_authenticated/knowledge')({
-  component: () => <PagePlaceholder title="知识库" />,
+  component: () => <Outlet />,
 })

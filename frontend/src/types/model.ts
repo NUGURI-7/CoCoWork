@@ -58,6 +58,8 @@ export interface AIModel {
   display_name: string
   model_type: ModelType
   config: Record<string, unknown>
+  /** 类型相关元数据：embedding 模型带 embedding_dim */
+  meta?: { embedding_dim?: number } | null
   has_custom_base_url: boolean
   has_custom_api_key: boolean
   is_enabled: boolean

@@ -18,3 +18,10 @@ export type {
   AvailableModel,
   AvailableModelGroup,
 } from './model'
+export type {
+  KnowledgeBaseStatus,
+  ChunkConfig,
+  KnowledgeBase,
+  KnowledgeBaseCreatePayload,
+  KnowledgeBaseUpdatePayload,
+} from './knowledge'

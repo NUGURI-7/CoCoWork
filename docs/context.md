@@ -24,7 +24,7 @@
 - MVP 聚焦：先简单 agent 跑动 + RAG 混合检索；功能铺完再做 agent 能力/检索准确度/调度执行优化。
 
 ## 技术栈
-- Backend: FastAPI, Tortoise ORM, PostgreSQL (pgvector 计划，本期未启用), Redis, LangGraph (未实装), ARQ (未实装)
+- Backend: FastAPI, Tortoise ORM, PostgreSQL (pgvector 0.8.1 已启用), Redis, LangGraph (未实装), ARQ (未实装)
 - Frontend: React 19, Vite (+@vitejs/plugin-react-swc), TypeScript, Zustand, TanStack Router (file-based, autoCodeSplitting), Tailwind CSS v4, shadcn/ui (Radix UI, style=new-york, baseColor=zinc), `lucide-react`（图标）+ `ldrs`（loader）+ `sonner`（toast）+ `react-hook-form`+`@hookform/resolvers`+`zod`（表单校验）+ `nprogress`（路由进度条）+ `@fontsource/instrument-serif`（self-host 衬线）+ `axios`（请求层）。包管理 npm，dev 端口 7777，走 vite proxy `/api` → 后端 7999。
 - shadcn 工作流：组件经 CLI（`npx shadcn@latest add`，**须在 `frontend/` 跑**）/ MCP 添加；新组件用统一包 `radix-ui`，旧手写组件仍用独立 `@radix-ui/react-*`，共存渲染一致。shadcn skill 全局安装（`~/.claude/skills/shadcn`）+ shadcn MCP（仓库根 `.mcp.json`，钉 `--cwd frontend`）已接入。
 - Python: 3.13.0（venv 在 `backend/.venv/`，由 uv 管理），Tortoise ORM 1.1.7 内置迁移（`tortoise` CLI 自动读 `pyproject.toml` 的 `[tool.tortoise]`，不引入 aerich）
@@ -42,16 +42,20 @@
 - **前端工作台 App Shell（批次1+2）**：`_authenticated` pathless 布局（登录守卫上提，一处保护全部工作台页）+ shadcn sidebar（`floating` 圆角卡片 + `collapsible="icon"` 收起成图标竖条）+ 导航（主页/Agents/知识库/工具/模型）+ footer（设置独立行 + 头像卡片点击下拉，下拉内含退出登录）+ 各模块占位页。admin 入口/独立壳待批次3。
 - **前端 Model 模块全栈打通**：Provider/AIModel 的创建 + 删除（不做编辑，改配置=重建）+ Catalog 查询展示 + 参数动态表单，全部对接后端 API。`api/model.ts` 统一封装三层接口；删除走 AlertDialog 二次确认；列表 loading 用 ldrs `l-ring`（品牌色 `#2f6b53`、60vh 居中）替代 skeleton。
 - **前端 admin 后台分区**：`/admin` 独立壳（AdminShell/AdminSidebar/admin-nav + isAdmin 守卫 + 独立 tab 系统），头像下拉「后台管理」入口。系统设置用「左侧二级导航 + 右侧内容」（仿 Claude settings），首个设置项 = **模型目录管理**（Catalog 表格增删，admin 写入），admin 不再需要手调接口喂数据。
+- **前端知识库模块 CRUD 接通**：库级 list/get/create/update/delete 全对接后端 `/knowledge-bases`；列表页卡片网格 + 详情页（库信息 header + 文档/检索测试/设置 三 tab）；删除入口双处（卡片三点 + 设置页），成功后自动关闭对应 workspace tab。文档列表/上传弹窗/检索测试 tab 仍 mock，等后端片4/片6。
 
 ## 下一步
-- **前端 App Shell 进行中**：批次1骨架 ✅、批次2（头像菜单+对齐）✅；待办 批次3（admin 独立 `/admin` 壳 + isAdmin 守卫 + 头像下拉加「后台管理」入口）、批次4（Home 卡片式 dashboard）。
-- **Model 模块 ✅ 前后端闭环**：后端三层 + Validator + ModelClient，前端 Provider/AIModel 创建删除 + Catalog 查询全部接通，admin Catalog 管理页（增删）已落地。待补：编辑（暂不做）、AIModel.config 的消费链路（见下）。
-- **Agent 模块**：CRUD + 配置表单（模型/system prompt/参数/工具/知识库）+ 配置页内嵌 Playground（调试）；发布后走独立 chat 路由。单 agent 也走 LangGraph（为多 agent 留位）。流式 SSE，前端 assistant-ui 或 Vercel AI Elements。
-- **再后做 RAG**：文档处理 → 数据加工（切块/embed/索引）→ 混合检索（向量+FTS+RRF+rerank）。需先启用 pgvector。embedding 先阿里+硅基bge（每库可选）、rerank 先阿里、全文检索先 Postgres 原生 FTS（不够再上 ParadeDB pg_search，不上 ES）、切块默认(递归~512token+50overlap)+可配。
+- **当前优先 = 知识库 / RAG 模块**（独立于 Agent / 对话，是更硬的基础设施，优先级上调）。前端**库级 CRUD 全接通**（列表/详情/新建/保存/删除，见最近迭代）；前端待办：文档列表/上传弹窗（mock 中，待片4）、检索测试页（待片6）。
+  - **后端方案已定稿**：见 `docs/design/knowledge-rag-v1.md`（spec + §13 实施切片清单）+ `knowledge-rag-decisions.md`（决策/权衡）。按 §13 切 6 片小步推进：**片1+2+3 已完成**（VectorField + pgvector + 4 表迁移 0005 + AIModel.meta 迁移 0006 + 知识库 CRUD `/api/v1/knowledge-bases` 5 端点）；待办 片4 上传(存储抽象) → 片5 处理管线 → 片6 检索+命中测试。详见最近迭代。
+  - 既有决策：embedding 每库锁一个模型、rerank 先阿里、全文检索先 Postgres 原生 FTS（不够再上 ParadeDB pg_search，不上 ES）、切块默认（递归~512token+50overlap）+ 可配；混合检索/FTS/RRF/rerank/多向量 = v2；文档编辑用自封装 tiptap（后做）。
+- **Agent 模块（搁置，优先级下调）**：详情页布局已定 = **左配置 + 右 Playground 双栏**；配置栏 MVP 字段顺序 ①基础(名称/描述) ②模型(下拉选已建 chat 模型) ③System Prompt(大文本框) ④调用参数(滑块,折叠) ⑤知识库[+关联] ⑥工具[+关联]，其中 ⑤⑥先占位禁用、功能后置；Playground 用草稿配置实时调试。单 agent 也走 LangGraph（为多 agent 留位）；流式 SSE，前端 assistant-ui / Vercel AI Elements。后端 Agent 模型 + LangGraph 均未建。
+- **前端 App Shell**：批次1骨架 ✅、批次2 头像菜单 ✅、批次3 admin 独立壳 ✅、批次4 Home 卡片式 dashboard ✅（静态占位版，数字待各模块接口就绪后灌真数）。
 - 后端可选生产功能（RBAC / Email 校验 / 密码重置 / 限流）随需推进。
 
 ## 开发注意事项
 - 项目 UI 统一使用 `lucide-react`（shadcn/ui 生态默认）作为图标库，`ldrs` 作为 loader 动画，不要引入手写 SVG 或第二套 icon library。
+- **品牌色（`#2f6b53`）走「路线 C 适度品牌化」**：主色 `--primary` 保持中性（zinc 黑），品牌色只铺导航/选中/强调等非语义场景。已在 `app.css` 建一套色阶 token（`--brand` base 精确 hex + `color-mix` 派生 `-foreground`/`-hover`/`-subtle`/`-border`，light+dark 各一套），注册成工具类 `bg-brand`/`text-brand`/`bg-brand-subtle`/`border-brand-border`/`hover:bg-brand-hover`。**用色约定：激活/选中态 = `bg-brand-subtle`+`text-brand`，hover 保持中性灰；成功/警告/危险仍走 `success`/`warning`/`destructive`，勿与品牌绿混用；别再手写 `bg-brand/8` 这类透明度，用色阶 token。** 改 base 只需动 `:root` 的 `--brand` 一处，整套跟着变。
+- **可点卡片统一加 `card-interactive`**（`app.css` 的 `@utility`）：封装品牌化 hover = 边框转墨绿实色 + 淡墨绿柔光阴影 + 上浮 1px。所有可点击的 Card 用它，别再各写 `hover:shadow-md` / `ring` 等零散 hover；展示型卡片（登录表单、详情信息卡）不加。
 - shadcn 组件用 `npx shadcn@latest add`，**必须在 `frontend/` 目录跑**（components.json 所在）；根 `frontend/tsconfig.json` 已补 `compilerOptions.paths`，否则 CLI 解析不到 `@` 会把组件写进字面量 `frontend/@/`。新组件用统一 `radix-ui` 包。
 - `routeTree.gen.ts` 由 TanStack Router 插件自动生成、已 gitignore，不纳入提交。
 - 这个 context 文件应该保持紧凑，服务于 AI 快速读取，而不是承担完整项目历史归档。
@@ -64,6 +68,40 @@
 - 如果某次改动不足以影响项目理解，就不要把噪音写进来。
 
 ## 最近迭代
+
+### 2026-05-25 — 知识库前端：设置页保存/删除接通 + 卡片删除入口
+- **设置 tab 接真接口**：`KnowledgeSettings` 保存改 `updateKnowledgeBase`（silent，失败自行 toast），删除改 `deleteKnowledgeBase` + `close('/knowledge/'+id)` 关详情标签 + 跳回列表。新增 `onUpdated` 回调，详情页 `setKb` 同步 header。
+- **卡片加删除入口**：`KnowledgeCard` 仿 ProviderCard 加三点 dropdown + AlertDialog；列表页传 `onDeleted={refetch}`；删除同样关详情标签。删除入口两处（卡片三点 + 设置页），跟供应商对齐。
+- **`deleteKnowledgeBase` 去 silent**：跟 model 模块删除约定（失败走拦截器 toast）统一；之前是写 api 时跟着 create/update 一起被顺手加的。
+- **ProviderCard 补关标签**：之前漏的，`handleDelete` 成功后 `close('/models/'+id)`。
+- 决策：设置页只允许改 name/description，向量化配置（embedding 模型/chunk_config）锁死只读；删除关 tab + 跳回列表，避免标签残留死链。
+
+### 2026-05-25 — 知识库/RAG 后端：片3 CRUD + Model 模块顺手补 dim 探测
+
+- **片3 完成**：`/api/v1/knowledge-bases` 5 端点（POST/GET 列表/GET 详情/PUT/DELETE），鉴权 + 用户级可见。文件 `schemas/services/api/routes/knowledge/`（镜像 model 模块三层结构）。
+- 分层选择：**service 直接返回组装好的 `KnowledgeBaseOut`** 而非 ORM——因为 Out 含跨实体计算字段（embedding 模型名 + 文档/子块计数），model_validate 装不下；route 极薄、纯透传。
+- **Model 模块顺手改（A1–A4）**：`validator.validate` 签名从 `-> None` 改成 `-> dict[str, Any]`；embedding 子类把现有校验请求的响应向量长度 `len(resp.data[0].embedding)` 当作 `{"embedding_dim": N}` 返回；`AIModelService.create` 写入 `AIModel.meta`。**零额外上游调用**——dim 在建模型那一刻就落库。`ModelOut` 加 `meta` 字段对外暴露。
+- 建库 dim 解析：先读 `model.meta["embedding_dim"]`，缺失才走 `_probe_embedding_dim` 兜底（针对老模型，调用 `ModelClient.create_embedding(model, ["x"])` 取 len 并回写 meta）。
+- 计数实现：`annotate(Count("documents", distinct=True), Sum("documents__chunk_count"))`。**踩坑**：select_related + annotate 同用 → 被 join 的 FK 列（`embedding_model.display_name`）不进 GROUP BY → Postgres 报「must appear in the GROUP BY clause」。**解法**：annotate-only 查计数 + 模型名单独 `AIModel.filter(id__in=...).values_list("id","display_name")` 批量查（无 N+1）。
+- 决策：不许换 embedding 模型（换模型 = 全库重建，归 reindexing）；update 只允许 name/description/chunk_config；删库靠 FK CASCADE 自动清文档/段/向量。
+- 验收：smoke 跑通（5 路由注册、annotate 查询执行）。旧 embedding 模型 `meta` 为空也能用——建库探测兜底会补；想干净可删后重建。
+- 前端 KB 静态页此前已有，待另起会话接 API。
+
+### 2026-05-24 — 知识库/RAG 后端：设计定稿 + 数据层（片1+2）+ AIModel.meta
+- 设计文档定稿：`docs/design/knowledge-rag-v1.md`（spec + §13 切片清单）+ `knowledge-rag-decisions.md`（决策/权衡）；通用学习笔记 `notes/backend/`（4 模块，已 gitignore 不入库）。
+- 模型决策：4 表 `knowledge_bases`/`documents`/`paragraphs`/`embeddings`（全在 `app/models/knowledge.py` **单文件**）。父子块：embed 小子块、命中返回**整段**；**子块不落表**，文本存 `embedding.text`；Embedding 独立成表（一对多指回段 + `source_type` content/question/title，多向量留口子，v1 只 content）；Embedding 不可变、只 `created_at` 无 `updated_at`。
+- pgvector：容器原无、已装 **0.8.1**（PG 18）。Tortoise 无原生支持 → 自定义 `app/db/fields.py:VectorField`（`SQL_TYPE="vector"` **不锁维度**、list↔文本转换；相似度查询走原生 SQL `embedding::vector(dims) <=>`，按段去重 `DISTINCT ON`）。ANN 索引按知识库建**部分索引** + `embedding::vector(dims)` 表达式 cast（参考 MaxKB；查询 cast/过滤须与索引一致才命中），v1 量小先 seq scan；>2000 维 HNSW 不支持（halfvec/降维）。
+- 存储：抽象 + 双后端（本地默认 / S3 兼容 R2，启动按 `STORAGE_BACKEND` 选）——**延后到片4 上传时再写**（不硬绑 R2，自托管可用本地盘、零基建不走网络）。v1 **手动向量化**（上传只建 pending、手动触发，逻辑收在 `process_document()`，FastAPI BackgroundTasks 跑；将来换 ARQ 不返工）。
+- 进度：片1 ✅ VectorField；片2 ✅ 迁移 0005 已 apply，4 表建好、`embeddings.embedding` 列 = vector（迁移头部 RunSQL `CREATE EXTENSION IF NOT EXISTS vector`）。
+- AIModel 加 `meta` JSONField（**`null=True`**，存 dim/context_window 等「模型固有事实」，区别于用户可调的 `config`；前端 Model 卡片将展示）。建库取 `embedding_dim` 用**懒填充**：首次用到该 embedding 模型时实测 embed 拿 dim 回写 `AIModel.meta`。**迁移 0006 待跑**：旧 0006（meta NOT NULL）因已有行报 NotNullViolation → 已删旧文件、模型改 `null=True`；下一步 `uv run tortoise makemigrations -n add_aimodel_meta` 重生成 → 审 → `migrate`。
+- 协作约定：**小步！一次只写一小块、等用户确认再继续**；迁移先 `makemigrations` 给用户审、**由用户跑 `migrate`**；代码读 meta 兜底 `(m.meta or {})`。
+
+### 2026-05-24 — 知识库列表页 + 详情页前端（静态 mock）+ 模块 IA 决策
+- `/knowledge` 落地静态版：**三带布局**（Header / 概览统计带 / 卡片网格 + 虚线新建卡）；左侧目录树 `KnowledgeFolderTree` 现 `return null`，但外层已是两栏 flex —— **将来加文件夹树只需填左栏、不推翻**。
+- 文件：`pages/knowledge/{KnowledgePage,KnowledgeCard,KnowledgeFolderTree,mock.ts}`，路由由占位换成 `KnowledgePage`。
+- IA/展示决策：库列表用**卡片网格**、文档详情用**列表行**（两层不同形态，避免同质化）；文件夹归类**知识库**（左树，后做），库内文档**平铺**；单卡 = 墨绿图标块 + 状态点(success/warning/destructive) + 分隔线 + 大数字(文档/chunks) + embedding badge，复用 `card-interactive`。
+- 数据形状预埋 `KnowledgeBase{id,name,description,doc_count,chunk_count,embedding_model,status,updated_at}`；未接 API，新建按钮占位。
+- 详情页 `/knowledge/$kbId`：面包屑 + 库信息 header + shadcn `tabs`（文档/检索测试/设置）；「文档」tab = **列表行**（`DocumentList`，含状态徽标），检索测试/设置先占位空态。路由照 models 重构（`knowledge.tsx`→Outlet 布局 + `knowledge/{index,$kbId}.tsx`），装 shadcn `tabs`，列表卡片点击→详情。决策：详情页**不做独立专属 sidebar**（产品体量小）改用 tab；分段管理下钻到文档、问题管理后置。`KnowledgeDoc{id,kb_id,name,type,size,chunk_count,status,uploaded_at}`，`statusMeta` 状态徽标 KnowledgeCard/DocumentList 共用。
 
 ### 2026-05-23 — admin 后台 Catalog 管理页 + 系统设置二级导航
 - 发现 admin 壳此前已搭好（`routes/admin` + AdminShell/AdminSidebar/admin-nav + isAdmin 守卫 + 独立 tab 系统，之前 context 漏记），本轮只补实际页面。
@@ -113,29 +151,9 @@
 - 实测：登录错误 toast、登录成功跳 Home、刷新后 beforeLoad 补 fetchMe、guestOnly 守卫、404 splat、4 字段 zod 校验全部通过，零 console 报错。
 - 决策：路由库选 TanStack Router 而非 React Router v7（类型安全更强 + beforeLoad 守卫天然对应 Vue beforeEach）；状态选 Zustand 而非 Redux Toolkit/Jotai（最轻、心智离 Pinia 最近）；shadcn 不跑 CLI 改为内联手写（避免交互 + 组件量小）。
 
-### 2026-05-21 — 前端从零搭建 + User 全栈打通（A7/A8 + C1-C3/C6 + D1 前端）
-- 脚手架（A7）：Vite + Vue3 + TS + Pinia + Router + ESLint/Prettier/oxlint，结构参照 DaisyWind 但精简（删 D2/D3 的 milkdown/mermaid/highlight 等依赖）；端口 7777，vite proxy `/api`→7999（沿用 DaisyWind 开发套路）。
-- 样式系统（A8）：Tailwind v4 CSS-config + shadcn-vue（new-york/zinc，单主题不切换，但保留 .dark tokens 预留）；加 `--color-brand:#2f6b53`（流式/品牌专用）+ success/warning 语义色；nprogress 进度条走 brand 色。
-- types（C8）：`types/api.ts`(ResponseModel/PageData) + `types/user.ts` + barrel，对齐后端 schema（决定抽 types 而非 DaisyWind 的 inline 风）。
-- request（C1）：axios 拦截器**解包到 data**（调用方直接拿 T）+ `ApiBusinessError` Error 实例 + `silent` 双轨 toast（声明式，替代 DaisyWind 硬编码路径）+ 401 防循环登出；删掉 DaisyWind 的 loading-Ref 参数（UI 状态归组件）。
-- auth（C3）：Pinia composition store（token 持久化 localStorage，user 不持久化）+ `api/auth.ts`。
-- router（C2）：`meta.requiresAuth/guestOnly` 守卫 + 刷新后 `fetchMe` 保活 + `?redirect=` 跳回。
-- 组件（C6）：shadcn-vue add button/input/label/form/sonner/card + vee-validate+zod 校验。
-- 登录注册（D1 前端 + C9）：`AuthShell` 双栏（Claude 版式 + shadcn zinc 配色）+ Instrument Serif 大标题 + 两张 gopher（dao + fcb-glass）错落叠放 + zod 字段校验 + 业务错误 toast。admin 端到端实测通过。
-- 决策：图标库 phosphor→**lucide-vue-next**（shadcn 生态默认）；字体 **self-host @fontsource**（避 Google CDN 被墙 + 消 FOUT）；**主题切换不做**；登录页只学 Claude 版式、配色用 shadcn 默认；layout/sidebar(C4)/composables(C5)/common(C7) **暂缓**（等登录后页面方向想清楚）。
-
-### 2026-05-20 — D1 User 业务全栈完成 + 首次迁移 + admin seeding
-- User 模型：UUID7 单主键（`UUIDBaseModel`）+ `TimestampMixin`；username/email 唯一、password_hash、nick_name、avatar_url、is_active/is_admin。表名 `users`（复数，避开 PG 保留字 user）。
-- Schema：UserRegister/UserLogin/UserOut/TokenOut；EmailStr 校验、username 限字母数字下划线、password ≥6（从 8 降到 6 以兼容 admin 弱密码 020121）、nick_name ≥2 必填。
-- Service（类风格，自带 `get_user_service` provider）：register 双唯一校验 + IntegrityError 兜底；authenticate 用户名枚举防御（统一错误消息）；login 签 token。密码哈希在 service 调 security，不耦合 model。
-- 路由 `/register /login /me`：采纳 fastapi skill 推荐 —— Annotated 依赖别名、`-> ResponseModel[T]` 返回类型（走 Pydantic Rust 序列化）、prefix 写在 router 自身。
-- depends.py 追加 `get_current_user`：基于 `get_current_token_payload` 二次组合，每请求查 DB + is_active（封禁即时生效）。
-- success/page 改返 ResponseModel 实例（配合返回类型）。
-- 迁移：`tortoise init` + `makemigrations -n init_user` + `migrate`，0001_init_user 建 users 表。注意：模型要在 `app/models/__init__.py` re-export，否则 Tortoise 检测不到（"No changes detected" 坑）。
-- admin seeding：方案 A（独立脚本）+ 方案 B（lifespan 自动）合一，幂等 + IntegrityError 并发安全；密码定死 020121，邮箱 nuguri990717@gmail.com（注意 EmailStr 拒绝 `.local` 等保留 TLD）。
-- 决策：User 主键 UUID7 单主键（不用 BigInt+UUID 双 ID）；密码哈希放 service 不放 model；is_active+is_admin 保留（RBAC 留待专门一轮）。
-
 ## 历史摘要
+- **2026-05-21 — 前端从零搭建（Vue3 版）+ User 全栈对接**：Vite+Vue3+Pinia+shadcn-vue 脚手架、axios 拦截器（`ApiBusinessError` + `silent` 双轨 toast）、router 守卫（`requiresAuth`/`guestOnly` + `fetchMe` 保活）、登录/注册页（AuthShell 双栏 + Instrument Serif + zod 校验）。**后被 05-22 React 迁移完全替换**，技术栈细节见当时迭代。
+- **2026-05-20 — D1 User 全栈 + 首次迁移 + admin seeding**：User 模型(UUID7+TimestampMixin、`users` 表)、register/login/me（Annotated 依赖 + `-> ResponseModel[T]`）、`get_current_user` 每请求查 DB+is_active、迁移 0001、admin lifespan 幂等 seed（020121）。坑：模型要在 `app/models/__init__.py` re-export 否则 Tortoise 检测不到。
 - **2026-05-20 — Phase 2 后端通用模块（B2–B7 + 日志）**：Redis + lifespan、异常体系（5 类 + 4 handler + 全 200 壳）、中间件（AccessLog/CORS/RequestID 纯 ASGI）、`ResponseModel[T]`/`PageData[T]`、安全（argon2+bcrypt、token 加 iat）、认证依赖薄层、生产级日志（colorlog/JSON 按 DEBUG_MODE 切 + RequestIDFilter）；`core/` 重组成 exceptions/http/logging 子包。决策：分页中式命名、HTTP 全 200 风格。
 - **2026-05-19 — Phase 1 后端骨架**：搭出 `backend/` 基础结构（pyproject/uv、config、db/postgresql、api 路由组）；锁定 Agent 框架 = LangGraph、迁移 = Tortoise 1.x 内置（不引 aerich）、Python 3.13、API 前缀 `/api/v1`、复用 DaisyWind 远端 PG 新建 db `cocowork`。服务在 `127.0.0.1:7999` 跑通。
 

@@ -70,6 +70,8 @@ export function ProviderCard({ provider, onDeleted }: ProviderCardProps) {
     try {
       await deleteProvider(provider.id)
       toast.success('供应商已删除')
+      // 关掉本供应商详情标签（若开着），避免残留死链
+      useWorkspaceTabsStore.getState().close(`/models/${provider.id}`)
       setConfirmOpen(false)
       onDeleted?.()
     } catch {
@@ -82,26 +84,34 @@ export function ProviderCard({ provider, onDeleted }: ProviderCardProps) {
   return (
     <>
       <Card
-        className="min-h-[136px] cursor-pointer border-transparent ring ring-border/50 transition-all hover:ring-foreground/15 hover:shadow-md"
+        className="card-interactive min-h-[150px]"
         onClick={handleClick}
       >
         <CardContent className="flex flex-1 flex-col justify-between gap-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center">
             <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
               <span
                 className={`inline-block size-2 rounded-full ${providerDotColor[provider.provider_type] ?? 'bg-gray-400'}`}
               />
               {providerTypeLabel[provider.provider_type] ?? provider.provider_type}
             </span>
+          </div>
+          <div className="flex items-end justify-between gap-2">
+            <div className="min-w-0">
+              <h3 className="text-base font-medium leading-none">{provider.name}</h3>
+              <p className="text-muted-foreground mt-1.5 line-clamp-2 text-sm">
+                {provider.description || ' '}
+              </p>
+            </div>
             <div onClick={(e) => e.stopPropagation()}>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="text-muted-foreground hover:text-foreground -mr-2 size-7"
+                    className="text-muted-foreground hover:text-foreground -mr-1 size-6 shrink-0 translate-y-3"
                   >
-                    <MoreHorizontal className="size-4" />
+                    <MoreHorizontal className="size-3.5" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
@@ -118,12 +128,6 @@ export function ProviderCard({ provider, onDeleted }: ProviderCardProps) {
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
-          </div>
-          <div>
-            <h3 className="text-sm font-medium leading-none">{provider.name}</h3>
-            <p className="text-muted-foreground mt-1.5 line-clamp-2 text-xs">
-              {provider.description || ' '}
-            </p>
           </div>
         </CardContent>
       </Card>

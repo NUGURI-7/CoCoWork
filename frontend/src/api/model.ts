@@ -61,9 +61,17 @@ export interface ModelCreatePayload {
   is_enabled?: boolean
 }
 
-/** 列出当前用户的 AIModel，可按 provider 过滤。 */
-export function listModels(providerId?: string) {
-  return get<AIModel[]>('/models', providerId ? { provider_id: providerId } : undefined)
+/** 列出当前用户的 AIModel，可按 provider / 类型过滤、只取启用项。 */
+export function listModels(params?: {
+  providerId?: string
+  modelType?: ModelType
+  enabledOnly?: boolean
+}) {
+  const query: Record<string, string | boolean> = {}
+  if (params?.providerId) query.provider_id = params.providerId
+  if (params?.modelType) query.model_type = params.modelType
+  if (params?.enabledOnly) query.enabled_only = true
+  return get<AIModel[]>('/models', Object.keys(query).length ? query : undefined)
 }
 
 /**
