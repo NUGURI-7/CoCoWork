@@ -61,6 +61,17 @@ class Settings(BaseSettings):
     def pg_url(self) -> str:
         return f"postgres://{self.PG_USER}:{self.PG_PASSWORD}@{self.PG_HOST}:{self.PG_PORT}/{self.PG_DATABASE}"
 
+    # ==================== 存储后端 ====================
+    STORAGE_BACKEND: str = "r2"  # r2 | local
+    STORAGE_LOCAL_ROOT: str = "data/uploads"  # local 后端根目录（相对 backend/）
+    STORAGE_MAX_UPLOAD_SIZE: int = 50 * 1024 * 1024  # 单文件上传上限，默认 50MB
+
+    # ==================== 对象存储 (R2) ====================
+    R2_ENDPOINT: str = ""  # 例: https://<AccountID>.r2.cloudflarestorage.com
+    R2_ACCESS_KEY_ID: str = ""
+    R2_SECRET_ACCESS_KEY: str = ""
+    R2_BUCKET_NAME: str = ""  # 例: cocowork
+
     model_config = SettingsConfigDict(
         env_file=_ENV_FILE,
         env_file_encoding="utf-8",

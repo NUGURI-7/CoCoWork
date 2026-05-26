@@ -42,11 +42,13 @@
 - **前端工作台 App Shell（批次1+2）**：`_authenticated` pathless 布局（登录守卫上提，一处保护全部工作台页）+ shadcn sidebar（`floating` 圆角卡片 + `collapsible="icon"` 收起成图标竖条）+ 导航（主页/Agents/知识库/工具/模型）+ footer（设置独立行 + 头像卡片点击下拉，下拉内含退出登录）+ 各模块占位页。admin 入口/独立壳待批次3。
 - **前端 Model 模块全栈打通**：Provider/AIModel 的创建 + 删除（不做编辑，改配置=重建）+ Catalog 查询展示 + 参数动态表单，全部对接后端 API。`api/model.ts` 统一封装三层接口；删除走 AlertDialog 二次确认；列表 loading 用 ldrs `l-ring`（品牌色 `#2f6b53`、60vh 居中）替代 skeleton。
 - **前端 admin 后台分区**：`/admin` 独立壳（AdminShell/AdminSidebar/admin-nav + isAdmin 守卫 + 独立 tab 系统），头像下拉「后台管理」入口。系统设置用「左侧二级导航 + 右侧内容」（仿 Claude settings），首个设置项 = **模型目录管理**（Catalog 表格增删，admin 写入），admin 不再需要手调接口喂数据。
+- **前端工具模块占位页（静态 mock）**：`/tools` 三带式（Header / 统计带 / Tab）+ 按来源 tab（全部/内置/MCP）+ 卡片网格 + 单卡启用开关。后端 tool/skill 暂缓，纯前端骨架。
 - **前端知识库模块 CRUD 接通**：库级 list/get/create/update/delete 全对接后端 `/knowledge-bases`；列表页卡片网格 + 详情页（库信息 header + 文档/检索测试/设置 三 tab）；删除入口双处（卡片三点 + 设置页），成功后自动关闭对应 workspace tab。文档列表/上传弹窗/检索测试 tab 仍 mock，等后端片4/片6。
+- **后端存储抽象层就位**：`app/core/storage/`（`Storage` ABC + R2/Local 双实现 + 按 `STORAGE_BACKEND` 装配的模块级单例 `storage`）；R2 支持预签名直传/下载、Local 走后端中转 + 路径穿越防护；同步 IO 全包 `asyncio.to_thread`、boto3 client 懒加载。等 4b 接 Document CRUD。
 
 ## 下一步
 - **当前优先 = 知识库 / RAG 模块**（独立于 Agent / 对话，是更硬的基础设施，优先级上调）。前端**库级 CRUD 全接通**（列表/详情/新建/保存/删除，见最近迭代）；前端待办：文档列表/上传弹窗（mock 中，待片4）、检索测试页（待片6）。
-  - **后端方案已定稿**：见 `docs/design/knowledge-rag-v1.md`（spec + §13 实施切片清单）+ `knowledge-rag-decisions.md`（决策/权衡）。按 §13 切 6 片小步推进：**片1+2+3 已完成**（VectorField + pgvector + 4 表迁移 0005 + AIModel.meta 迁移 0006 + 知识库 CRUD `/api/v1/knowledge-bases` 5 端点）；待办 片4 上传(存储抽象) → 片5 处理管线 → 片6 检索+命中测试。详见最近迭代。
+  - **后端方案已定稿**：见 `docs/design/knowledge-rag-v1.md`（spec + §13 实施切片清单）+ `knowledge-rag-decisions.md`（决策/权衡）。按 §13 切 6 片小步推进：**片1+2+3 + 4a 已完成**（VectorField + pgvector + 4 表迁移 0005 + AIModel.meta 迁移 0006 + 知识库 CRUD `/api/v1/knowledge-bases` 5 端点 + 存储抽象层 R2/Local 双后端）；**片4b 待办**（拆 4b-1 Document 数据/service / 4b-2 上传端点 [R2 三段式 presign→PUT→confirm + Local passthrough multipart 分流] / 4b-3 列表+删除+下载链接）→ 片5 处理管线 → 片6 检索+命中测试。详见最近迭代。
   - 既有决策：embedding 每库锁一个模型、rerank 先阿里、全文检索先 Postgres 原生 FTS（不够再上 ParadeDB pg_search，不上 ES）、切块默认（递归~512token+50overlap）+ 可配；混合检索/FTS/RRF/rerank/多向量 = v2；文档编辑用自封装 tiptap（后做）。
 - **Agent 模块（搁置，优先级下调）**：详情页布局已定 = **左配置 + 右 Playground 双栏**；配置栏 MVP 字段顺序 ①基础(名称/描述) ②模型(下拉选已建 chat 模型) ③System Prompt(大文本框) ④调用参数(滑块,折叠) ⑤知识库[+关联] ⑥工具[+关联]，其中 ⑤⑥先占位禁用、功能后置；Playground 用草稿配置实时调试。单 agent 也走 LangGraph（为多 agent 留位）；流式 SSE，前端 assistant-ui / Vercel AI Elements。后端 Agent 模型 + LangGraph 均未建。
 - **前端 App Shell**：批次1骨架 ✅、批次2 头像菜单 ✅、批次3 admin 独立壳 ✅、批次4 Home 卡片式 dashboard ✅（静态占位版，数字待各模块接口就绪后灌真数）。
@@ -68,6 +70,17 @@
 - 如果某次改动不足以影响项目理解，就不要把噪音写进来。
 
 ## 最近迭代
+
+### 2026-05-25 — 知识库/RAG 后端：4a 存储抽象层（R2 预签名 + Local 中转）
+
+- **4a 完成**：`app/core/storage/` 抽象基类 + R2/Local 双后端 + `STORAGE_BACKEND` env 装配。业务用法 `from app.core.storage import storage; await storage.save(...)`，后端类型透明。
+- 文件：`base.py`（4 字节操作 `save/read/delete/exists` + 2 预签名方法 + `supports_presigned` 标志）/ `local.py`（`shutil.copyfileobj` 流式拷贝 + 路径穿越防护）/ `r2.py`（boto3 + `to_thread` + 客户端 `@cached_property` 懒加载）/ `__init__.py`（按 env 装配单例）。配套：`config.py` 加 `STORAGE_BACKEND` + R2 4 字段（去掉 `R2_PUBLIC_URL`，YAGNI）；`.env.example` 同步；`.gitignore` 加 `backend/data/`。
+- **上传/下载选型（实施时定，不对称）**：**R2 走预签名直传**（客户端→R2 直连，**服务器零出站**）+ 下载走预签名 GET URL；**Local 走后端中转**（本地盘没"直传 URL"概念）。接口用 `supports_presigned: bool` 标志 + 基类抛 `NotImplementedError` 默认实现表达；业务层按标志分流上传路径。
+- **关键洞察（戳破认知坑）**：「RAG 反正要处理拉回来 → presigned 省上传带宽有限」**错**——服务器**出站(egress)收费 / 入站(ingress)免费**；passthrough 上传的「后端→R2」是出站，presigned 直接绕开，**入站和出站不对称、presigned 省的是真金白银**。详 `knowledge-rag-decisions.md` §8c + `notes/backend/storage-upload/notes.md`。
+- 工程点：boto3 client **`@cached_property` 懒加载**——import/启动不依赖 R2 凭证（修了"空 endpoint 启动崩"的真问题）；同步 IO 全包 `asyncio.to_thread`（预签名生成不包，纯本地 HMAC）；大文件靠 `UploadFile` 1MB spool + `shutil.copyfileobj` 64KB 分块拷贝，几十兆不爆内存。
+- 验收：local smoke 全过（save→exists→read→delete + 路径穿越拦截 + 预签名拒抛 `NotImplementedError`）；R2 smoke 等 `backend/.env` 填真凭证后跑或前端集成时验。
+- 配套：§13 把片4 拆 **4a✓ + 4b 待办**；新增 `notes/backend/storage-upload/{notes.md, qa.md}`（4 节原理 + 2 问答）；决策 §8c 入 `knowledge-rag-decisions.md`。
+- 协作偏好新增：notes/ 学习笔记**在模块/切片做完后统一批量写**，不在实现途中写（已记进 MEMORY）。
 
 ### 2026-05-25 — 知识库前端：设置页保存/删除接通 + 卡片删除入口
 - **设置 tab 接真接口**：`KnowledgeSettings` 保存改 `updateKnowledgeBase`（silent，失败自行 toast），删除改 `deleteKnowledgeBase` + `close('/knowledge/'+id)` 关详情标签 + 跳回列表。新增 `onUpdated` 回调，详情页 `setKb` 同步 header。
@@ -129,29 +142,8 @@
 - 路由：Provider CRUD（`/providers`）、AIModel CRUD（`/models`，含 param-definitions）、Catalog 管理（`/catalog`，创建/删除需 admin，查询开放）。
 - 决策：Provider 不设 is_global/is_enabled（MVP 只看自己的，共享后续加）；不用 `models.list()` 做连通性测试（阿里百炼等不完全支持）；ProviderModelCatalog 替代自动拉取可用模型列表；连通性测试放 Model 级别（创建时验证），不单设端点。
 
-### 2026-05-22 — 前端 App Shell（批次1骨架 + 批次2头像菜单）+ shadcn skill/MCP 接入
-- 工具链：装 shadcn MCP（仓库根 `.mcp.json`，钉 `--cwd frontend`）+ shadcn skill（全局 `~/.claude/skills/shadcn`，改 `user-invocable: true` 便于手动调）。注意 `skill init` 不是 shadcn 命令，用 `npx skills add shadcn/ui`（skills.sh）装 skill、`npx shadcn@latest mcp init --client claude` 装 MCP。
-- 踩坑修复：根 `frontend/tsconfig.json` 缺 `compilerOptions.paths`（paths 只在 tsconfig.app.json），shadcn CLI 解析不到 `@` → 把组件写进字面量 `frontend/@/`；且早先在仓库根跑 mcp init 留下根 `package.json/node_modules` 垃圾。已补根 tsconfig paths（标准修法）、清理全部垃圾。
-- 组件约定：保留手写旧组件（独立 `@radix-ui/react-*`）不动；CLI 新组件用统一 `radix-ui` 包（已装），新旧共存、渲染一致。新增 ui 组件：sidebar/sheet/tooltip/separator/skeleton/avatar/dropdown-menu + `hooks/use-mobile`。
-- 路由：引入 `routes/_authenticated.tsx` pathless 布局，登录守卫从 `routes/index.tsx` 上提；`/` 等迁入 `_authenticated/`；删 `routes/index.tsx`。占位路由 agents/knowledge/models/tools/settings + `pages/PagePlaceholder`。
-- 布局：`components/layout/{AppShell, AppSidebar, UserMenu, nav.config}`。Sidebar `variant="floating"`(圆角卡片) + `collapsible="icon"`(收起成图标竖条)；导航项 `size="lg"` + 放大文字/图标；header logo 用与导航相同 size-5 图标槽以对齐(展开/收起均对齐)。
-- footer：设置独立一行 + 头像卡片(UserMenu) 点击弹下拉(顶部用户信息 + 退出登录)；后台管理入口待批次3(/admin 建好后接通)。
-- `env.d.ts` 加 `declare module '@fontsource/*'` 修 `noUncheckedSideEffectImports` 的 tsc 报错。
-- 自检：tsc -b 退出 0；vite 模块编译通过。
-- 决策：sidebar 形态用 shadcn floating + icon-collapsible；点头像=下拉菜单(非直接退出)；设置放下拉外、头像卡片上方；不截图验收(用户自验)；小批次推进、每批用户自行验收。
-
-### 2026-05-22 — 前端从 Vue 3 迁移到 React 19
-- 触发：未来 Agent 编排可视化、流式消息、Vercel AI SDK / assistant-ui / ReactFlow 等生态都是 React-first，趁 D1 代码量小（~715 行业务）切换成本最低。
-- 技术栈映射：Vue 3 → React 19、Vue Router → TanStack Router (file-based)、Pinia → Zustand、vee-validate → react-hook-form + @hookform/resolvers、vue-sonner → sonner、lucide-vue-next → lucide-react、shadcn-vue (Reka UI) → shadcn/ui (Radix UI)。Tailwind v4 / app.css design tokens / axios 请求层 / ldrs / nprogress / @fontsource/instrument-serif 全部保留不动。
-- 路由分两层：`routes/` 只放 TanStack 路由声明 + `beforeLoad` 守卫 + zod search schema，`pages/` 放真正的页面组件，互相清晰解耦。
-- Zustand store 形状与 Pinia 对齐：state / getters (() => ...) / actions 三段；组件订阅用 `useAuthStore((s) => s.user)`，beforeLoad 等非 React 上下文用 `useAuthStore.getState()`。
-- 注册流改正：后端 `POST /users/register` 实际只返回 `UserOut`（不签 token），原 Vue 版盲存 `undefined` 当 token 是个 pre-existing bug。React 版改为注册成功 → `toast.success('注册成功，请登录')` → `navigate('/login')`，store 不再有 register action。
-- shadcn/ui 组件直接手写（不跑 CLI 交互）：button/card/form/input/label/sonner 6 个，全部 new-york + zinc 风格，与 design tokens 自动对齐。
-- 老 Vue 版整目录删除，React 项目从 `frontend-react/` 重命名为 `frontend/`，端口回 7777。`.claude/launch.json` 同步更新。
-- 实测：登录错误 toast、登录成功跳 Home、刷新后 beforeLoad 补 fetchMe、guestOnly 守卫、404 splat、4 字段 zod 校验全部通过，零 console 报错。
-- 决策：路由库选 TanStack Router 而非 React Router v7（类型安全更强 + beforeLoad 守卫天然对应 Vue beforeEach）；状态选 Zustand 而非 Redux Toolkit/Jotai（最轻、心智离 Pinia 最近）；shadcn 不跑 CLI 改为内联手写（避免交互 + 组件量小）。
-
 ## 历史摘要
+- **2026-05-22 — 前端 Vue→React 19 迁移 + App Shell 批次1+2 + shadcn skill/MCP 接入**：触发=Agent 流式/编排生态 React-first（趁 D1 代码量小切换）；映射 Vue→React 19 / Vue Router→TanStack Router (file-based) / Pinia→Zustand / shadcn-vue→shadcn/ui (Radix UI)；App Shell 跑出 `_authenticated` 守卫 + floating sidebar (collapsible="icon") + UserMenu 头像下拉 + 各模块占位页骨架；shadcn skill+MCP（仓库根 `.mcp.json` 钉 `--cwd frontend`）接入。详细决策见 git log。
 - **2026-05-21 — 前端从零搭建（Vue3 版）+ User 全栈对接**：Vite+Vue3+Pinia+shadcn-vue 脚手架、axios 拦截器（`ApiBusinessError` + `silent` 双轨 toast）、router 守卫（`requiresAuth`/`guestOnly` + `fetchMe` 保活）、登录/注册页（AuthShell 双栏 + Instrument Serif + zod 校验）。**后被 05-22 React 迁移完全替换**，技术栈细节见当时迭代。
 - **2026-05-20 — D1 User 全栈 + 首次迁移 + admin seeding**：User 模型(UUID7+TimestampMixin、`users` 表)、register/login/me（Annotated 依赖 + `-> ResponseModel[T]`）、`get_current_user` 每请求查 DB+is_active、迁移 0001、admin lifespan 幂等 seed（020121）。坑：模型要在 `app/models/__init__.py` re-export 否则 Tortoise 检测不到。
 - **2026-05-20 — Phase 2 后端通用模块（B2–B7 + 日志）**：Redis + lifespan、异常体系（5 类 + 4 handler + 全 200 壳）、中间件（AccessLog/CORS/RequestID 纯 ASGI）、`ResponseModel[T]`/`PageData[T]`、安全（argon2+bcrypt、token 加 iat）、认证依赖薄层、生产级日志（colorlog/JSON 按 DEBUG_MODE 切 + RequestIDFilter）；`core/` 重组成 exceptions/http/logging 子包。决策：分页中式命名、HTTP 全 200 风格。

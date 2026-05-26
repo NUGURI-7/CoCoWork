@@ -85,6 +85,21 @@
 - 「上传即自动向量化」将来做成库级配置项；先手动，逻辑都在 `process_document()`，切自动只改触发处。
 - 影响：`document.status` 在 v1 就有实义（pending = 已传未向量化）。
 
+## 8c. 上传/下载方式：R2 预签名直传 + Local 后端中转（实施时确定，2026-05-25）
+
+- **默认后端调整**：§8 抽象层做完后，默认从「local 默认」改成 **`STORAGE_BACKEND=r2`**——R2 桶已就位，生产形态优先；Local 仍保留给离线开发。
+- **上传/下载方式（不对称）**：
+  - **R2**：上传走**预签名直传**（客户端 → R2 直连）；下载走**预签名 GET URL**（用户直链）
+  - **Local**：上传走**后端中转**（multipart POST），下载走后端 `read` + StreamingResponse
+- **不对称的根因**：本地文件系统没有「对外暴露临时直传 URL」的概念，必须经后端中转。接口上用 `supports_presigned: bool` 标志 + 基类默认抛 `NotImplementedError` 表达；业务层按标志分流。
+- **核心理由（服务器出站才是收费方向）**：
+  - 服务器**出站(egress)收费**、入站(ingress)免费；R2 出口免费。
+  - passthrough 上传的「后端 → R2」那一程是**服务器出站**（≈ 文件大小 / 每次上传）；presigned 把文件流完全踢出服务器路径，零出站。
+  - 同理下载：预签名 GET 让用户直接从 R2 拿，避开「后端 → 用户」的服务器出站。
+  - **易踩的认知坑**：「RAG 反正后端要处理拉回来 → presigned 省得有限」——**错**。处理时是入站(免费)，passthrough 上传是出站(收费)，**入站和出站不对称**，presigned 省的是真金白银。
+- **复杂度代价（认领）**：R2 需 3 个端点（presign + 客户端 PUT + confirm）+ 孤儿对象清理（R2 桶生命周期规则 + 应用层定期对账）；前端按 `storage.supports_presigned` 分流两套上传路径。
+- 详细推导、流量费用表、能力标志的 pattern → `notes/backend/storage-upload/notes.md`
+
 ---
 
 ## 9. 异步：v1 同步，留门

@@ -149,6 +149,8 @@ activemq-data/
 
 # Environments
 backend/.env
+# 本地存储后端（STORAGE_BACKEND=local）的上传目录，开发产物不入库
+backend/data/
 .envrc
 .venv
 env/

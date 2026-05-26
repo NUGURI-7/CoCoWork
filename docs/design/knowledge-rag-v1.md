@@ -201,7 +201,9 @@
 - [x] **片1 基建**：自定义 `VectorField` + pgvector 扩展（0.8.1 已启用）。存储抽象延后到 **片4 上传**时一并做。
 - [x] **片2 数据模型**：4 张表 `knowledge_bases` / `documents` / `paragraphs` / `embeddings` 已建；`embeddings.embedding` 列 = pgvector `vector` 类型。
 - [x] **片3 知识库 CRUD**：schema + service + route（`/api/v1/knowledge-bases`，5 端点；service 返回组装好的 `KnowledgeBaseOut` 含 embedding 模型名 + 计数）
-- [ ] **片4 文档上传**：**存储抽象**（本地/S3 + 启动按 `STORAGE_BACKEND` 装配，从片1 挪过来）+ 上传 + 创建文档记录（status=pending，不自动向量化）
+- [ ] **片4 文档上传**（拆 2 小片）：
+  - [x] **4a 存储抽象 + 双后端**：`app/core/storage/` 抽象基类 + R2（预签名直传）/ Local（后端中转）+ `STORAGE_BACKEND` 装配；详见 §8c
+  - [ ] **4b 上传端点 + Document CRUD**：R2 走 presign/confirm 三段式、Local 走 passthrough multipart；列表/删除/下载链接
 - [ ] **片5 处理管线**：`process_document()` 解析→切段→切块→embed（手动触发，`BackgroundTasks` 跑）
 - [ ] **片6 检索 + 命中测试**：检索 service（`::vector(dims)` cast + `DISTINCT ON` 按段去重）+ 命中测试端点
 
