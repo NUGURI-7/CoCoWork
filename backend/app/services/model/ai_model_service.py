@@ -1,3 +1,10 @@
+"""AIModel CRUD service。
+
+URL nested 后所有按 provider 的方法签名都带 `provider_id`；跨 provider 查询
+（建知识库选 embedding 模型那种场景）走独立的 `list_own`。
+归属通过 Provider 链路校验（AIModel 没 created_by）。
+"""
+
 import logging
 from uuid import UUID
 
@@ -15,22 +22,33 @@ logger = logging.getLogger(__name__)
 class AIModelService:
     """AIModel CRUD，归属通过 Provider 链路校验。"""
 
-    async def get_by_id(self, user: User, model_id: UUID) -> AIModel:
-        """获取用户自己的 AIModel（通过 provider.created_by 校验归属）。"""
+    async def _ensure_user_provider(
+        self, user: User, provider_id: UUID,
+    ) -> Provider:
+        """校验 provider 归属当前用户，返回实例（create 时挂 FK 用）。"""
+        provider = await Provider.filter(id=provider_id, created_by=user).first()
+        if provider is None:
+            raise NotFound404("Provider 不存在")
+        return provider
+
+    async def get_by_id(
+        self, user: User, provider_id: UUID, model_id: UUID,
+    ) -> AIModel:
+        """取 model，同时校验 model 在 provider 下 + provider 归属当前用户。"""
         model = await AIModel.filter(
-            id=model_id, provider__created_by=user,
+            id=model_id,
+            provider_id=provider_id,
+            provider__created_by=user,
         ).first()
         if model is None:
             raise NotFound404("模型不存在")
         return model
 
-    async def create(self, user: User, data: ModelCreate) -> AIModel:
+    async def create(
+        self, user: User, provider_id: UUID, data: ModelCreate,
+    ) -> AIModel:
         # 1. 校验 Provider 归属
-        provider = await Provider.filter(
-            id=data.provider_id, created_by=user,
-        ).first()
-        if provider is None:
-            raise NotFound404("Provider 不存在")
+        provider = await self._ensure_user_provider(user, provider_id)
 
         # 2. 解析凭证：Model 级覆盖 > Provider 级
         base_url = data.base_url or provider.base_url
@@ -43,7 +61,7 @@ class AIModelService:
 
         # 4. 验证通过，入库
         model = await AIModel.create(
-            provider_id=data.provider_id,
+            provider_id=provider_id,
             model_name=data.model_name,
             display_name=data.display_name,
             model_type=data.model_type,
@@ -55,8 +73,10 @@ class AIModelService:
         )
         return await AIModel.filter(id=model.id).first()
 
-    async def update(self, user: User, model_id: UUID, data: ModelUpdate) -> AIModel:
-        model = await self.get_by_id(user, model_id)
+    async def update(
+        self, user: User, provider_id: UUID, model_id: UUID, data: ModelUpdate,
+    ) -> AIModel:
+        model = await self.get_by_id(user, provider_id, model_id)
 
         update_fields: dict = {}
         if data.model_name is not None:
@@ -97,27 +117,41 @@ class AIModelService:
         await AIModel.filter(id=model_id).update(**update_fields)
         return await AIModel.filter(id=model_id).first()
 
-    async def list_own(
+    async def list_by_provider(
         self,
         user: User,
-        provider_id: UUID | None = None,
+        provider_id: UUID,
         model_type: str | None = None,
         enabled_only: bool = False,
     ) -> list[AIModel]:
-        """返回用户自己的 AIModel（通过 Provider 链路）。"""
-        qs = AIModel.filter(provider__created_by=user)
+        """列出某 provider 下的 model。nested 端点用。"""
+        await self._ensure_user_provider(user, provider_id)
 
-        if provider_id:
-            qs = qs.filter(provider_id=provider_id)
+        qs = AIModel.filter(provider_id=provider_id)
         if model_type:
             qs = qs.filter(model_type=model_type)
         if enabled_only:
             qs = qs.filter(is_enabled=True)
-
         return await qs.order_by("-created_at")
 
-    async def delete(self, user: User, model_id: UUID) -> None:
-        model = await self.get_by_id(user, model_id)
+    async def list_own(
+        self,
+        user: User,
+        model_type: str | None = None,
+        enabled_only: bool = False,
+    ) -> list[AIModel]:
+        """跨 provider 列出用户所有 model（建 KB 选 embedding 那种场景用）。"""
+        qs = AIModel.filter(provider__created_by=user)
+        if model_type:
+            qs = qs.filter(model_type=model_type)
+        if enabled_only:
+            qs = qs.filter(is_enabled=True)
+        return await qs.order_by("-created_at")
+
+    async def delete(
+        self, user: User, provider_id: UUID, model_id: UUID,
+    ) -> None:
+        model = await self.get_by_id(user, provider_id, model_id)
         await model.delete()
 
 

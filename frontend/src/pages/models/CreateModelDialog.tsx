@@ -158,8 +158,7 @@ export function CreateModelDialog({
     if (!canSubmit) return
     setSubmitting(true)
     try {
-      await createModel({
-        provider_id: providerId,
+      await createModel(providerId, {
         model_name: modelName,
         display_name: displayName.trim(),
         model_type: modelType,

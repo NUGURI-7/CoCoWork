@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from '@tanstack/react-router'
 import { ring } from 'ldrs'
 
-import { listCatalog, listModels } from '@/api/model'
+import { listCatalog, listModelsByProvider } from '@/api/model'
 import { get } from '@/request'
 import type {
   AIModel,
@@ -47,7 +47,7 @@ export default function ProviderDetailPage() {
 
   const refetchModels = useCallback(async () => {
     try {
-      const data = await listModels({ providerId })
+      const data = await listModelsByProvider(providerId)
       setModels(data)
     } catch {
       // 拦截器已 toast
@@ -158,7 +158,12 @@ export default function ProviderDetailPage() {
             style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))' }}
           >
             {models.map((model) => (
-              <AIModelCard key={model.id} model={model} onDeleted={refetchModels} />
+              <AIModelCard
+                key={model.id}
+                providerId={providerId}
+                model={model}
+                onDeleted={refetchModels}
+              />
             ))}
           </div>
         )}

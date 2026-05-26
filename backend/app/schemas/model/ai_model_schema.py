@@ -8,9 +8,12 @@ from app.schemas.model.provider_schema import ModelType
 
 
 class ModelCreate(BaseModel):
-    """创建 AIModel 请求体。"""
+    """创建 AIModel 请求体。
 
-    provider_id: UUID = Field(description="所属 Provider")
+    `provider_id` 不在 body —— 由 URL path 提供（POST /providers/{pid}/models），
+    避免 path 和 body 双源歧义。
+    """
+
     model_name: str = Field(min_length=1, max_length=100, description="上游模型 ID")
     display_name: str = Field(min_length=1, max_length=100, description="展示名")
     model_type: ModelType = Field(description="chat / embedding / rerank")

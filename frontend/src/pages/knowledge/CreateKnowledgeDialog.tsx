@@ -3,7 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
 import { createKnowledgeBase } from '@/api/knowledge'
-import { listModels } from '@/api/model'
+import { listAllModels } from '@/api/model'
 import {
   Accordion,
   AccordionContent,
@@ -60,7 +60,7 @@ export function CreateKnowledgeDialog({
   useEffect(() => {
     if (!open) return
     setModelsLoading(true)
-    listModels({ modelType: 'embedding', enabledOnly: true })
+    listAllModels({ modelType: 'embedding', enabledOnly: true })
       .then(setModels)
       .catch(() => {
         // 拦截器已 toast；下拉降级为空态

@@ -38,18 +38,20 @@ const modelTypeBadgeVariant: Record<string, string> = {
 }
 
 interface AIModelCardProps {
+  /** 所属 Provider id，删除时拼 nested URL `/providers/{pid}/models/{mid}` 用 */
+  providerId: string
   model: AIModel
   onDeleted?: () => void
 }
 
-export function AIModelCard({ model, onDeleted }: AIModelCardProps) {
+export function AIModelCard({ providerId, model, onDeleted }: AIModelCardProps) {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
   async function handleDelete() {
     setDeleting(true)
     try {
-      await deleteModel(model.id)
+      await deleteModel(providerId, model.id)
       toast.success('模型已删除')
       setConfirmOpen(false)
       onDeleted?.()
