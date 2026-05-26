@@ -37,18 +37,19 @@
 - **User 业务全栈可用**：`users` 表已建（迁移 0001_init_user），三个接口 `/api/v1/users/{register,login,me}` 实测通过。
 - **内置 admin 启动自动 seed**（admin / 020121 / is_admin=True，邮箱 nuguri990717@gmail.com）。
 - 认证完整：JWT + argon2 哈希，`get_current_user` 每请求查 DB + is_active。
-- **Model 模块后端完成**：Provider（供应商凭证）+ AIModel（模型实例，支持覆盖 Provider 的 base_url/api_key）+ ProviderModelCatalog（管理员维护的可用模型目录）三层数据模型；Fernet 加密存储 API Key；Validator 策略模式（按 provider_type + model_type 二维查找）在创建/更新时验证连通性；统一 OpenAI 兼容客户端（ModelClient）；参数定义端点（动态表单元数据）。
+- **Model 模块后端完成**：Provider（供应商凭证）+ AIModel（模型实例，支持覆盖 Provider 的 base_url/api_key）+ ProviderModelCatalog（管理员维护的可用模型目录）三层数据模型；Fernet 加密存储 API Key；Validator 策略模式（按 provider_type + model_type 二维查找）在创建/更新时验证连通性；统一 OpenAI 兼容客户端（ModelClient）；参数定义端点（动态表单元数据）。**AIModel URL 已 nested 化**：`/providers/{pid}/models/*`（5 个 CRUD）+ 保留 flat `/models`（跨 provider 查询）+ `/models/param-definitions`（静态元数据）。
 - **前端 User 全栈打通**：登录/注册页（Claude 风双栏 + Instrument Serif + 两张 gopher 错落）→ Zustand auth store → TanStack Router beforeLoad 守卫 → Home 显示 user，端到端实测通过。
 - **前端工作台 App Shell（批次1+2）**：`_authenticated` pathless 布局（登录守卫上提，一处保护全部工作台页）+ shadcn sidebar（`floating` 圆角卡片 + `collapsible="icon"` 收起成图标竖条）+ 导航（主页/Agents/知识库/工具/模型）+ footer（设置独立行 + 头像卡片点击下拉，下拉内含退出登录）+ 各模块占位页。admin 入口/独立壳待批次3。
 - **前端 Model 模块全栈打通**：Provider/AIModel 的创建 + 删除（不做编辑，改配置=重建）+ Catalog 查询展示 + 参数动态表单，全部对接后端 API。`api/model.ts` 统一封装三层接口；删除走 AlertDialog 二次确认；列表 loading 用 ldrs `l-ring`（品牌色 `#2f6b53`、60vh 居中）替代 skeleton。
 - **前端 admin 后台分区**：`/admin` 独立壳（AdminShell/AdminSidebar/admin-nav + isAdmin 守卫 + 独立 tab 系统），头像下拉「后台管理」入口。系统设置用「左侧二级导航 + 右侧内容」（仿 Claude settings），首个设置项 = **模型目录管理**（Catalog 表格增删，admin 写入），admin 不再需要手调接口喂数据。
 - **前端工具模块占位页（静态 mock）**：`/tools` 三带式（Header / 统计带 / Tab）+ 按来源 tab（全部/内置/MCP）+ 卡片网格 + 单卡启用开关。后端 tool/skill 暂缓，纯前端骨架。
 - **前端知识库模块 CRUD 接通**：库级 list/get/create/update/delete 全对接后端 `/knowledge-bases`；列表页卡片网格 + 详情页（库信息 header + 文档/检索测试/设置 三 tab）；删除入口双处（卡片三点 + 设置页），成功后自动关闭对应 workspace tab。文档列表/上传弹窗/检索测试 tab 仍 mock，等后端片4/片6。
-- **后端存储抽象层就位**：`app/core/storage/`（`Storage` ABC + R2/Local 双实现 + 按 `STORAGE_BACKEND` 装配的模块级单例 `storage`）；R2 支持预签名直传/下载、Local 走后端中转 + 路径穿越防护；同步 IO 全包 `asyncio.to_thread`、boto3 client 懒加载。等 4b 接 Document CRUD。
+- **后端存储抽象层就位**：`app/core/storage/`（`Storage` ABC + R2/Local 双实现 + 按 `STORAGE_BACKEND` 装配的模块级单例 `storage`）；R2 支持预签名直传/下载、Local 走后端中转 + 路径穿越防护；同步 IO 全包 `asyncio.to_thread`、boto3 client 懒加载。
+- **知识库 Document 数据层就绪（4b-1）**：`DocumentService`（create_pending / list_by_kb / get_by_id / delete）+ 扩展名白名单 md/txt + 大小上限 50MB + storage 对象联动清理（删失败仅 log 不阻塞）；schemas 含 `UploadInitOut` 带 strategy 字段为 4b-2 端点分流预埋。**无路由，4b-2 才接端点**。
 
 ## 下一步
 - **当前优先 = 知识库 / RAG 模块**（独立于 Agent / 对话，是更硬的基础设施，优先级上调）。前端**库级 CRUD 全接通**（列表/详情/新建/保存/删除，见最近迭代）；前端待办：文档列表/上传弹窗（mock 中，待片4）、检索测试页（待片6）。
-  - **后端方案已定稿**：见 `docs/design/knowledge-rag-v1.md`（spec + §13 实施切片清单）+ `knowledge-rag-decisions.md`（决策/权衡）。按 §13 切 6 片小步推进：**片1+2+3 + 4a 已完成**（VectorField + pgvector + 4 表迁移 0005 + AIModel.meta 迁移 0006 + 知识库 CRUD `/api/v1/knowledge-bases` 5 端点 + 存储抽象层 R2/Local 双后端）；**片4b 待办**（拆 4b-1 Document 数据/service / 4b-2 上传端点 [R2 三段式 presign→PUT→confirm + Local passthrough multipart 分流] / 4b-3 列表+删除+下载链接）→ 片5 处理管线 → 片6 检索+命中测试。详见最近迭代。
+  - **后端方案已定稿**：见 `docs/design/knowledge-rag-v1.md`（spec + §13 实施切片清单）+ `knowledge-rag-decisions.md`（决策/权衡）。按 §13 切 6 片小步推进：**片1+2+3 + 4a + 4b-1 已完成**（VectorField + pgvector + 4 表迁移 0005 + AIModel.meta 迁移 0006 + 知识库 CRUD `/api/v1/knowledge-bases` 5 端点 + 存储抽象层 R2/Local 双后端 + Document schemas/service）；**片4b 剩**：4b-2 上传端点（R2 三段式 presign→PUT→confirm + Local passthrough multipart 分流，`upload-init` 自带 strategy 字段）+ 4b-3 列表/删除/下载链接 → 片5 处理管线 → 片6 检索+命中测试。详见最近迭代。
   - 既有决策：embedding 每库锁一个模型、rerank 先阿里、全文检索先 Postgres 原生 FTS（不够再上 ParadeDB pg_search，不上 ES）、切块默认（递归~512token+50overlap）+ 可配；混合检索/FTS/RRF/rerank/多向量 = v2；文档编辑用自封装 tiptap（后做）。
 - **Agent 模块（搁置，优先级下调）**：详情页布局已定 = **左配置 + 右 Playground 双栏**；配置栏 MVP 字段顺序 ①基础(名称/描述) ②模型(下拉选已建 chat 模型) ③System Prompt(大文本框) ④调用参数(滑块,折叠) ⑤知识库[+关联] ⑥工具[+关联]，其中 ⑤⑥先占位禁用、功能后置；Playground 用草稿配置实时调试。单 agent 也走 LangGraph（为多 agent 留位）；流式 SSE，前端 assistant-ui / Vercel AI Elements。后端 Agent 模型 + LangGraph 均未建。
 - **前端 App Shell**：批次1骨架 ✅、批次2 头像菜单 ✅、批次3 admin 独立壳 ✅、批次4 Home 卡片式 dashboard ✅（静态占位版，数字待各模块接口就绪后灌真数）。
@@ -70,6 +71,27 @@
 - 如果某次改动不足以影响项目理解，就不要把噪音写进来。
 
 ## 最近迭代
+
+### 2026-05-26 — 知识库/RAG 后端：4b-1 Document schemas + service
+
+- **4b-1 完成**：Document 数据层平地起步，模型早在迁移 0005，不动表/迁移。
+- 新增 `schemas/knowledge/document_schema.py`：`DocumentOut` + `UploadInitIn` + `UploadInitOut`（带 `strategy: "presign"|"passthrough"` 字段，4b-2 端点按存储后端分流用）+ 常量 `ALLOWED_FILE_TYPES = {"md","txt"}`（放代码、不入 env——产品/业务边界，部署者不该随手放宽）。
+- 新增 `services/knowledge/document_service.py`：`DocumentService`（class 风格对齐 KB service）+ helper `_parse_file_type`/`_build_storage_key`。方法 `create_pending` / `list_by_kb` / `get_by_id` / `delete`，全 nested 签名 `(user, kb_id, ...)`，doc_id 永远在 kb_id 之后（URL 同步 nested 化）。
+- `storage_key` 约定 `kb/{kb_id}/doc/{doc_id}.{ext}`，两后端通用；含 doc_id 故 create 占位 → 拿 id → update 回填（两次写但顺现有风格）。
+- 删文档：先 `storage.delete`（失败仅 log 不阻塞）→ ORM delete（FK CASCADE 自动清 paragraphs/embeddings）。理由：用户始终能清掉 ORM 记录，孤儿对象交给桶生命周期。
+- 归属校验：`_get_user_doc` 一次 SQL JOIN 同时验「doc 在 kb 下 + kb 归属当前用户」（filter 走 FK 路径 `knowledge_base__created_by=user`，不用 select_related——前者是"我要用字段"，后者是"我只过滤"）。
+- config 加 `STORAGE_MAX_UPLOAD_SIZE = 50MB`（env 可调）；扩展名白名单不入 env。
+- 不含路由（4b-2 才接端点）；端点设计：`upload-init` 自带 `strategy` 字段按 backend 分流（R2 presign 三段式 / Local passthrough 一步），前端按 strategy switch、不用提前问能力。
+
+### 2026-05-26 — Model 模块：AIModel URL nested 化（/providers/{pid}/models）
+
+- 后端路由 `ai_model.py` 拆 `nested_router`（`/providers/{pid}/models`，5 个 CRUD）+ `flat_router`（保留 `/models` 跨 provider 列表 + `/models/param-definitions`）；`model/__init__.py` 注册两个 router。
+- 拍板保留 `GET /models?model_type=...`：建 KB 选 embedding 模型场景需要跨 provider 列出，强制 nested 会让前端 N+1（先 listProviders 再每个 provider 调一次），不值。
+- `ModelCreate` 删 `provider_id` 字段：path 单源、避免 path/body 双源歧义（万一 path 是 abc 但 body 是 def，听谁都是坑）。
+- `AIModelService` 加 `_ensure_user_provider` helper；按 provider 的方法签名都带 pid；`list_own` 一分为二：`list_by_provider`（nested 端点用，强校验 pid 归属）+ `list_own`（跨 provider 列出，只过滤 user）。
+- 前端 `api/model.ts`：`listModels` 拆 `listModelsByProvider` + `listAllModels`；`createModel(providerId, payload)` / `deleteModel(providerId, modelId)` 多 pid 参数；`ModelCreatePayload` 去 `provider_id`。
+- 前端 4 个调用点适配：`CreateModelDialog`（payload 去 provider_id 改单独传）/ `AIModelCard`（props 加 providerId）/ `ProviderDetailPage`（调 listModelsByProvider + 给 AIModelCard 传 providerId）/ `CreateKnowledgeDialog`（调 listAllModels）。`tsc --noEmit` 0 报错。
+- 决策对齐：现有 KB/Provider/Catalog 已 flat（顶层无父），nested 只用于真正的父子关系（KB→Document / Provider→AIModel）；纯静态资源（param-definitions）不强求 nested。
 
 ### 2026-05-25 — 知识库/RAG 后端：4a 存储抽象层（R2 预签名 + Local 中转）
 
@@ -116,33 +138,8 @@
 - 数据形状预埋 `KnowledgeBase{id,name,description,doc_count,chunk_count,embedding_model,status,updated_at}`；未接 API，新建按钮占位。
 - 详情页 `/knowledge/$kbId`：面包屑 + 库信息 header + shadcn `tabs`（文档/检索测试/设置）；「文档」tab = **列表行**（`DocumentList`，含状态徽标），检索测试/设置先占位空态。路由照 models 重构（`knowledge.tsx`→Outlet 布局 + `knowledge/{index,$kbId}.tsx`），装 shadcn `tabs`，列表卡片点击→详情。决策：详情页**不做独立专属 sidebar**（产品体量小）改用 tab；分段管理下钻到文档、问题管理后置。`KnowledgeDoc{id,kb_id,name,type,size,chunk_count,status,uploaded_at}`，`statusMeta` 状态徽标 KnowledgeCard/DocumentList 共用。
 
-### 2026-05-23 — admin 后台 Catalog 管理页 + 系统设置二级导航
-- 发现 admin 壳此前已搭好（`routes/admin` + AdminShell/AdminSidebar/admin-nav + isAdmin 守卫 + 独立 tab 系统，之前 context 漏记），本轮只补实际页面。
-- 系统设置从占位叶子改成**布局路由**：顶部标题 + 左侧二级导航（仿 Claude settings，TanStack `Link` 高亮当前项）+ 右侧 `<Outlet/>`；`settings/index` redirect 到第一项；二级导航配置 `settings-nav.config`（目前仅「模型目录」）。
-- Catalog 管理页（`/admin/settings/catalog`）：shadcn `table` 列表（供应商类型/模型类型/模型ID/操作）+ l-ring loading + 空态；`AddCatalogDialog`（provider_type + model_type 下拉 + model_id 手填）接 `createCatalog`；行删除 AlertDialog 确认接 `deleteCatalog`。
-- `api/model.ts` 补 `createCatalog`（silent）/`deleteCatalog`；装 shadcn `table`。
-- 决策：model_type 下拉只给 chat/embedding/rerank（当前有 validator+param 的三类）；catalog 增删需 admin（后端 `get_current_admin`），查询开放；至此 admin 不用手调接口喂数据。
-
-### 2026-05-23 — Model 模块前端打通（Provider/AIModel/Catalog CRUD 闭环）
-- `api/model.ts`：Provider + AIModel + Catalog 的 list/create/delete + `getParamDefinitions`，全部对接后端；创建走 `silent` 由表单 toast，删除走默认拦截器 toast。
-- Provider：`ModelsPage` 拉真列表（l-ring loader + 空态）；`CreateProviderDialog` 真实创建（api_key 改必填）；`ProviderCard` dropdown 删除 + AlertDialog 确认（用 div 包 trigger 拦冒泡，避免覆盖 Radix 的 onClick）。
-- AIModel：`ProviderDetailPage` 拉 Provider 详情 + AIModel 列表 + Catalog（平铺 `CatalogItem[]` 用 useMemo 转 `AvailableModelGroup[]` 喂 `AvailableModelsCard`）；`CreateModelDialog` 真实创建 + 参数定义改走 API；`AIModelCard` 右下角 dropdown 删除。
-- 决策：不做编辑（创建+删除即可）；删除统一 AlertDialog 二次确认；loader 统一 ldrs `l-ring`（品牌色 `#2f6b53`、60vh 居中）替代 skeleton（避免固定数量占位闪烁），`env.d.ts` 补 `l-ring` JSX 声明；删除前端全部 mock（`pages/models/mock.ts`）。
-- 同步类型：`AIModel` 去 `provider_id`、加 `has_custom_base_url`/`has_custom_api_key`（后端计算字段）；新增 `CatalogItem`。
-- 修后端 bug：`ModelOut` 两个计算字段（`_to_model_out` 先 `model_validate` 再赋值）原为必填，导致 validate 阶段就抛 500 ValidationError——已加 `default=False`（创建已写库但响应序列化失败 → 500 但数据已落库，是这个 bug 的表现）。
-- 现状提醒：`AIModel.config`（调用参数预设）目前**只存库、无任何消费**——`chat_completion`/`create_embedding` 零调用、config 无读取点，「config→调用参数」桥接待 Agent 阶段补；连通性测试是真打上游（chat 发 `"hi"`+`max_tokens=1`，embedding 发 `input=["test"]`），放在 Model 级（Provider 创建不校验）。
-
-### 2026-05-23 — Model 模块后端完成
-- 数据层：Provider（供应商凭证）、AIModel（模型实例，base_url/api_key 可覆盖 Provider）、ProviderModelCatalog（管理员维护的可用模型目录，纯配置表）三张表，迁移 0002-0004。
-- 加密：Fernet 对称加密存储 API Key（`app/core/encryption.py`），区别于密码哈希（argon2 不可逆），API Key 需要解密回明文调用上游。
-- 分包：models/schemas/services/routes 各层按业务域拆子目录（`model/`、`user/`）。
-- Schema：ProviderType + ModelType 枚举（Literal）；参数定义常量 PARAM_DEFINITIONS（按 model_type 返回 slider/number/switch 控件元数据，前端动态渲染表单）。
-- Validator 策略模式：BaseModelValidator 抽象基类 → OpenAIChatValidator / OpenAIEmbeddingValidator 实现；注册表按 `(provider_type, model_type)` 二维查找，默认按 model_type 兜底，支持按供应商精确覆盖。创建和更新（凭证变更时）自动验证连通性，不通过不入库。
-- ModelClient：统一 OpenAI 兼容客户端，`build_client(base_url, api_key)` 供 Validator 和业务调用共用；凭证解析 Model 级 > Provider 级回退。
-- 路由：Provider CRUD（`/providers`）、AIModel CRUD（`/models`，含 param-definitions）、Catalog 管理（`/catalog`，创建/删除需 admin，查询开放）。
-- 决策：Provider 不设 is_global/is_enabled（MVP 只看自己的，共享后续加）；不用 `models.list()` 做连通性测试（阿里百炼等不完全支持）；ProviderModelCatalog 替代自动拉取可用模型列表；连通性测试放 Model 级别（创建时验证），不单设端点。
-
 ## 历史摘要
+- **2026-05-23 — Model 模块全栈打通（后端+前端+admin Catalog 管理）**：后端 3 表数据层 Provider/AIModel/ProviderModelCatalog（迁移 0002-0004）+ Fernet 加密 + Validator 策略模式（按 `(provider_type, model_type)` 二维查找）+ 统一 ModelClient（凭证 Model 级 > Provider 级回退）；前端 CRUD 闭环（loader 用 ldrs `l-ring` 品牌色 60vh 居中替代 skeleton，删除统一 AlertDialog，不做编辑）；admin 系统设置二级导航 + Catalog 表格管理（admin 不用手调接口喂数据）。决策细节见 git log（210f620/cf37beb）；后续 5-26 URL nested 化时调整。
 - **2026-05-22 — 前端 Vue→React 19 迁移 + App Shell 批次1+2 + shadcn skill/MCP 接入**：触发=Agent 流式/编排生态 React-first（趁 D1 代码量小切换）；映射 Vue→React 19 / Vue Router→TanStack Router (file-based) / Pinia→Zustand / shadcn-vue→shadcn/ui (Radix UI)；App Shell 跑出 `_authenticated` 守卫 + floating sidebar (collapsible="icon") + UserMenu 头像下拉 + 各模块占位页骨架；shadcn skill+MCP（仓库根 `.mcp.json` 钉 `--cwd frontend`）接入。详细决策见 git log。
 - **2026-05-21 — 前端从零搭建（Vue3 版）+ User 全栈对接**：Vite+Vue3+Pinia+shadcn-vue 脚手架、axios 拦截器（`ApiBusinessError` + `silent` 双轨 toast）、router 守卫（`requiresAuth`/`guestOnly` + `fetchMe` 保活）、登录/注册页（AuthShell 双栏 + Instrument Serif + zod 校验）。**后被 05-22 React 迁移完全替换**，技术栈细节见当时迭代。
 - **2026-05-20 — D1 User 全栈 + 首次迁移 + admin seeding**：User 模型(UUID7+TimestampMixin、`users` 表)、register/login/me（Annotated 依赖 + `-> ResponseModel[T]`）、`get_current_user` 每请求查 DB+is_active、迁移 0001、admin lifespan 幂等 seed（020121）。坑：模型要在 `app/models/__init__.py` re-export 否则 Tortoise 检测不到。
