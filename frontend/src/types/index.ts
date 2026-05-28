@@ -24,5 +24,10 @@ export type {
   KnowledgeBase,
   KnowledgeBaseCreatePayload,
   KnowledgeBaseUpdatePayload,
+  Document,
+  DocumentStatus,
+  DocumentStage,
+  UploadStrategy,
+  UploadInitOut,
 } from './knowledge'
 export type { WorkspaceMember, Conversation, Workspace } from './workspace'

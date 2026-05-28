@@ -1,39 +1,9 @@
 /** 知识库前端 mock。
  *
- * 知识库本身已接入后端 API（types/knowledge.ts + api/knowledge.ts），此处不再 mock。
- * 文档接口尚未就绪，文档列表暂时保留 mock。
+ * 知识库 + 文档接口均已接入后端，仅保留状态徽标元数据 + 检索测试 mock。
  */
 
-import type { KnowledgeBaseStatus } from '@/types'
-
-// ============================================================================
-// 文档（mock，等后端文档接口接入后切换）
-// ============================================================================
-
-export type DocType = 'pdf' | 'md' | 'docx' | 'txt'
-
-/** 文档状态，对齐后端 backend/app/models/knowledge.py Document.status */
-export type DocStatus = 'pending' | 'processing' | 'completed' | 'failed'
-
-export interface KnowledgeDoc {
-  id: string
-  kb_id: string
-  name: string
-  type: DocType
-  size: string // 展示用，如 '2.4 MB'
-  chunk_count: number
-  status: DocStatus
-  uploaded_at: string
-}
-
-export const mockDocuments: KnowledgeDoc[] = [
-  { id: 'd1', kb_id: '1', name: '产品白皮书.pdf', type: 'pdf', size: '2.4 MB', chunk_count: 86, status: 'completed', uploaded_at: '2 天前' },
-  { id: 'd2', kb_id: '1', name: '用户手册 v3.docx', type: 'docx', size: '1.1 MB', chunk_count: 54, status: 'completed', uploaded_at: '2 天前' },
-  { id: 'd3', kb_id: '1', name: '常见问题 FAQ.md', type: 'md', size: '12 KB', chunk_count: 8, status: 'completed', uploaded_at: '3 天前' },
-  { id: 'd4', kb_id: '1', name: 'API 接入指南.md', type: 'md', size: '34 KB', chunk_count: 22, status: 'processing', uploaded_at: '刚刚' },
-  { id: 'd5', kb_id: '1', name: '历史合同模板.pdf', type: 'pdf', size: '—', chunk_count: 0, status: 'failed', uploaded_at: '昨天' },
-  { id: 'd6', kb_id: '1', name: '更新日志.txt', type: 'txt', size: '8 KB', chunk_count: 5, status: 'completed', uploaded_at: '上周' },
-]
+import type { Document, KnowledgeBaseStatus } from '@/types'
 
 // ============================================================================
 // 状态徽标元数据
@@ -45,9 +15,27 @@ interface StatusMeta {
   pulse?: boolean
 }
 
-/** 文档状态徽标（DocumentList 用） */
-export const docStatusMeta: Record<DocStatus, StatusMeta> = {
-  pending: { label: '待处理', dot: 'bg-muted-foreground' },
+/** 文档显示状态：把后端 (status, stage) 二维组合映射成单一展示态。 */
+export type DocDisplayStatus =
+  | 'uploading' // pending + stage=''（占位已建、字节未传完）
+  | 'uploaded' // pending + stage='uploaded'（已传完、等向量化）
+  | 'processing' // 向量化管线进行中
+  | 'completed' // 向量化完成、可用
+  | 'failed' // 任一阶段失败
+
+/** 后端 Document → 单一展示态 */
+export function getDocDisplayStatus(doc: Document): DocDisplayStatus {
+  if (doc.status === 'failed') return 'failed'
+  if (doc.status === 'completed') return 'completed'
+  if (doc.status === 'processing') return 'processing'
+  // status === 'pending'
+  return doc.stage === 'uploaded' ? 'uploaded' : 'uploading'
+}
+
+/** 文档状态徽标（DocumentList 用，按 DocDisplayStatus 索引） */
+export const docStatusMeta: Record<DocDisplayStatus, StatusMeta> = {
+  uploading: { label: '上传中', dot: 'bg-muted-foreground', pulse: true },
+  uploaded: { label: '待向量化', dot: 'bg-muted-foreground' },
   processing: { label: '处理中', dot: 'bg-warning', pulse: true },
   completed: { label: '就绪', dot: 'bg-success' },
   failed: { label: '失败', dot: 'bg-destructive' },

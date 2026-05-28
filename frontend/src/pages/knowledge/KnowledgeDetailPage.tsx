@@ -3,17 +3,17 @@ import { Link, useParams } from '@tanstack/react-router'
 import { BookOpen, ChevronLeft, Upload } from 'lucide-react'
 import { ring } from 'ldrs'
 
-import { getKnowledgeBase } from '@/api/knowledge'
+import { getKnowledgeBase, listDocuments } from '@/api/knowledge'
 import { useTabTitle } from '@/stores/use-tab-sync'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import type { KnowledgeBase } from '@/types'
+import type { Document, KnowledgeBase } from '@/types'
 import { DocumentList } from './DocumentList'
 import { KnowledgeSettings } from './KnowledgeSettings'
 import { RetrievalTest } from './RetrievalTest'
 import { UploadDocumentSheet } from './UploadDocumentSheet'
-import { kbStatusMeta, mockDocuments } from './mock'
+import { kbStatusMeta } from './mock'
 
 ring.register()
 
@@ -22,28 +22,35 @@ export default function KnowledgeDetailPage() {
   const { kbId } = useParams({ from: '/_authenticated/knowledge/$kbId' })
   const [kb, setKb] = useState<KnowledgeBase | null>(null)
   const [loading, setLoading] = useState(true)
-  const [allDocs, setAllDocs] = useState(mockDocuments)
+  const [docs, setDocs] = useState<Document[]>([])
   const [uploadOpen, setUploadOpen] = useState(false)
+
+  const refetchDocs = useCallback(async () => {
+    try {
+      const data = await listDocuments(kbId)
+      setDocs(data)
+    } catch {
+      // 拦截器已 toast
+    }
+  }, [kbId])
 
   const refetch = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await getKnowledgeBase(kbId)
-      setKb(data)
+      const [kbData] = await Promise.all([getKnowledgeBase(kbId), refetchDocs()])
+      setKb(kbData)
     } catch {
       // 拦截器已 toast
     } finally {
       setLoading(false)
     }
-  }, [kbId])
+  }, [kbId, refetchDocs])
 
   useEffect(() => {
     refetch()
   }, [refetch])
 
   useTabTitle(`/knowledge/${kbId}`, kb?.name)
-
-  const docs = allDocs.filter((d) => d.kb_id === kbId)
 
   if (loading || !kb) {
     return (
@@ -96,7 +103,7 @@ export default function KnowledgeDetailPage() {
         open={uploadOpen}
         onOpenChange={setUploadOpen}
         kbId={kbId}
-        onUploaded={(newDocs) => setAllDocs((prev) => [...newDocs, ...prev])}
+        onUploaded={refetchDocs}
       />
 
       {/* Tabs */}
@@ -108,10 +115,7 @@ export default function KnowledgeDetailPage() {
         </TabsList>
 
         <TabsContent value="documents" className="mt-4">
-          <DocumentList
-            docs={docs}
-            onDelete={(id) => setAllDocs((prev) => prev.filter((d) => d.id !== id))}
-          />
+          <DocumentList kbId={kbId} docs={docs} onDeleted={refetchDocs} />
         </TabsContent>
 
         <TabsContent value="retrieval" className="mt-4">

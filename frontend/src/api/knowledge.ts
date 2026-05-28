@@ -6,9 +6,11 @@
 
 import { del, get, post, put } from '@/request'
 import type {
+  Document,
   KnowledgeBase,
   KnowledgeBaseCreatePayload,
   KnowledgeBaseUpdatePayload,
+  UploadInitOut,
 } from '@/types'
 
 /** 列出当前用户的知识库。 */
@@ -38,4 +40,110 @@ export function updateKnowledgeBase(id: string, payload: KnowledgeBaseUpdatePayl
 /** 删除知识库。失败走默认拦截器 toast（与 model 模块删除约定一致）。 */
 export function deleteKnowledgeBase(id: string) {
   return del<null>(`/knowledge-bases/${id}`)
+}
+
+// ============================================================================
+// Document — 文档元数据 CRUD + 下载
+// ============================================================================
+
+/** 列出某知识库下的文档（按 created_at 倒序）。 */
+export function listDocuments(kbId: string) {
+  return get<Document[]>(`/knowledge-bases/${kbId}/documents`)
+}
+
+/** 删除文档（后端联动清 storage 对象 + ORM 级联清段/向量）。 */
+export function deleteDocument(kbId: string, docId: string) {
+  return del<null>(`/knowledge-bases/${kbId}/documents/${docId}`)
+}
+
+/** 获取下载 URL（R2 返预签名 GET URL，Local 返后端 /raw 路径）。 */
+export function getDocumentDownloadUrl(kbId: string, docId: string) {
+  return get<{ url: string }>(
+    `/knowledge-bases/${kbId}/documents/${docId}/download-url`,
+  )
+}
+
+// ============================================================================
+// Document — 上传三段式
+// ============================================================================
+
+/** 上传 init 请求体（前端声明的文件名 + 大小，后端从 name 解析扩展名） */
+export interface UploadInitPayload {
+  name: string
+  size: number
+}
+
+/**
+ * 发起上传：建 pending document、按存储后端返不同 strategy。
+ * 走 silent 由调用方按字段失败 toast，避免一次上传里 init 失败被通用 toast 顶替。
+ */
+export function initDocumentUpload(kbId: string, payload: UploadInitPayload) {
+  return post<UploadInitOut>(
+    `/knowledge-bases/${kbId}/documents/upload-init`,
+    payload,
+    { silent: true },
+  )
+}
+
+/** 通知后端 R2 直传完成（head 验对象在 + mark uploaded）。 */
+export function confirmDocumentUpload(kbId: string, docId: string) {
+  return post<null>(
+    `/knowledge-bases/${kbId}/documents/${docId}/upload-complete`,
+    undefined,
+    { silent: true },
+  )
+}
+
+/**
+ * Local 模式：把文件 multipart POST 给后端 `upload-endpoint`。
+ *
+ * 走 axios（自带 onUploadProgress），passthrough endpoint 是 init 返的相对路径，
+ * axios 自动拼 baseURL `/api/v1`。
+ */
+export function uploadDocumentPassthrough(
+  uploadEndpoint: string,
+  file: File,
+  onProgress?: (ratio: number) => void,
+) {
+  const form = new FormData()
+  form.append('file', file)
+  return post<null>(uploadEndpoint, form, {
+    silent: true,
+    onUploadProgress: (e) => {
+      if (e.total && onProgress) onProgress(e.loaded / e.total)
+    },
+  })
+}
+
+/**
+ * R2 模式：把文件直接 PUT 到 R2 预签名 URL。
+ *
+ * 用裸 XHR 而非 fetch 的原因：fetch 不支持 upload progress（标准缺口）；
+ * 用裸 XHR 而非 axios 的原因：axios 拦截器会尝试解包 ResponseModel，但 R2 返
+ * 的是空体，会触发误报。直接 XHR 最稳。
+ *
+ * `expectedHeaders` 必须跟 init 时签名带的 Content-Type 一致，否则 R2 拒收。
+ */
+export function uploadDocumentToR2(
+  uploadUrl: string,
+  file: File,
+  expectedHeaders: Record<string, string>,
+  onProgress?: (ratio: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('PUT', uploadUrl)
+    for (const [k, v] of Object.entries(expectedHeaders)) {
+      xhr.setRequestHeader(k, v)
+    }
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total)
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve()
+      else reject(new Error(`R2 上传失败（HTTP ${xhr.status}）`))
+    }
+    xhr.onerror = () => reject(new Error('网络错误，R2 上传中断'))
+    xhr.send(file)
+  })
 }
