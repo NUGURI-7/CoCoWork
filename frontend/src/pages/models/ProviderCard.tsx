@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { Cloud, MoreHorizontal, Trash2 } from 'lucide-react'
+import { MoreHorizontal, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { deleteProvider } from '@/api/model'
@@ -52,16 +52,10 @@ interface ProviderCardProps {
 
 export function ProviderCard({ provider, onDeleted }: ProviderCardProps) {
   const navigate = useNavigate()
-  const openTab = useWorkspaceTabsStore((s) => s.open)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
   function handleClick() {
-    openTab({
-      path: `/models/${provider.id}`,
-      title: provider.name,
-      icon: Cloud,
-    })
     navigate({ to: '/models/$providerId', params: { providerId: provider.id } })
   }
 

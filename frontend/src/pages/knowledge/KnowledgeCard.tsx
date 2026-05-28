@@ -36,13 +36,11 @@ interface KnowledgeCardProps {
 
 export function KnowledgeCard({ kb, onDeleted }: KnowledgeCardProps) {
   const navigate = useNavigate()
-  const openTab = useWorkspaceTabsStore((s) => s.open)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const s = kbStatusMeta[kb.status]
 
   function handleClick() {
-    openTab({ path: `/knowledge/${kb.id}`, title: kb.name, icon: BookOpen })
     navigate({ to: '/knowledge/$kbId', params: { kbId: kb.id } })
   }
 

@@ -5,6 +5,7 @@ import type { LucideIcon } from 'lucide-react'
 import { ring } from 'ldrs'
 
 import { getKnowledgeBase } from '@/api/knowledge'
+import { useTabTitle } from '@/stores/use-tab-sync'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -57,6 +58,8 @@ export default function KnowledgeDetailPage() {
   useEffect(() => {
     refetch()
   }, [refetch])
+
+  useTabTitle(kb?.name)
 
   const docs = allDocs.filter((d) => d.kb_id === kbId)
 

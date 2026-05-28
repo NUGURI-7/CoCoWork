@@ -1,6 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router'
-import PagePlaceholder from '@/pages/PagePlaceholder'
+import { Users } from 'lucide-react'
+import UsersPage from '@/pages/admin/UsersPage'
 
 export const Route = createFileRoute('/admin/users')({
-  component: () => <PagePlaceholder title="用户管理" />,
+  staticData: { tabTitle: '用户管理', tabIcon: Users },
+  component: UsersPage,
 })

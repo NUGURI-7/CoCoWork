@@ -1,7 +1,9 @@
-/** /agents/:agentId — Agent 配置详情页（待实现） */
+/** /agents/:agentId — Agent 配置详情页 */
 import { createFileRoute } from '@tanstack/react-router'
-import PagePlaceholder from '@/pages/PagePlaceholder'
+import { Bot } from 'lucide-react'
+import AgentDetailPage from '@/pages/agents/AgentDetailPage'
 
 export const Route = createFileRoute('/_authenticated/agents/$agentId')({
-  component: () => <PagePlaceholder title="Agent 配置" />,
+  staticData: { tabTitle: 'Agent', tabIcon: Bot },
+  component: AgentDetailPage,
 })

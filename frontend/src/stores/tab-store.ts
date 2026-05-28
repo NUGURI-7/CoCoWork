@@ -28,6 +28,8 @@ export interface TabsState {
   close: (path: string) => void
   closeOthers: () => void
   closeAll: () => void
+  /** 覆盖某条已有 tab 的 title（详情页 mount 后用真名替换路由 fallback） */
+  setTitle: (path: string, title: string) => void
 }
 
 export function createTabStore(homeTab: Tab): UseBoundStore<StoreApi<TabsState>> {
@@ -73,6 +75,12 @@ export function createTabStore(homeTab: Tab): UseBoundStore<StoreApi<TabsState>>
 
     closeAll: () => {
       set({ tabs: [pinnedHome], activePath: pinnedHome.path })
+    },
+
+    setTitle: (path, title) => {
+      set((state) => ({
+        tabs: state.tabs.map((t) => (t.path === path ? { ...t, title } : t)),
+      }))
     },
   }))
 }

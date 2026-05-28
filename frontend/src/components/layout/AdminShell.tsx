@@ -3,12 +3,14 @@ import type { ReactNode } from 'react'
 import { Separator } from '@/components/ui/separator'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { useAdminTabsStore } from '@/stores/tab-store'
+import { useTabSync } from '@/stores/use-tab-sync'
 import { AdminSidebar } from './AdminSidebar'
 import { TabBar } from './TabBar'
 
 export function AdminShell({ children }: { children: ReactNode }) {
+  useTabSync(useAdminTabsStore)
   return (
-    <SidebarProvider>
+    <SidebarProvider className="h-svh">
       <AdminSidebar />
       <SidebarInset>
         <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
@@ -16,7 +18,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           <Separator orientation="vertical" className="mr-2 data-[orientation=vertical]:h-4" />
         </header>
         <TabBar useStore={useAdminTabsStore} />
-        <div className="flex flex-1 flex-col gap-4 p-4">{children}</div>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 p-4">{children}</div>
       </SidebarInset>
     </SidebarProvider>
   )

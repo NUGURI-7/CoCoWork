@@ -1,5 +1,5 @@
 import { useNavigate, useRouterState } from '@tanstack/react-router'
-import { ArrowRight, LayoutDashboard, ShieldCheck, Sparkles, type LucideIcon } from 'lucide-react'
+import { ArrowRight, ShieldCheck, Sparkles } from 'lucide-react'
 
 import {
   Sidebar,
@@ -13,14 +13,12 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
 import { useAuthStore } from '@/stores/auth'
-import { useWorkspaceTabsStore } from '@/stores/tab-store'
 import { UserMenu } from './UserMenu'
 import { mainNav, type NavItem } from './nav.config'
 
 export function AppSidebar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const navigate = useNavigate()
-  const openTab = useWorkspaceTabsStore((s) => s.open)
   const isAdmin = useAuthStore((s) => s.user?.is_admin)
 
   function isActive(to: NavItem['to']) {
@@ -28,8 +26,7 @@ export function AppSidebar() {
     return pathname === to || pathname.startsWith(`${to}/`)
   }
 
-  function handleNav(to: string, title: string, icon?: LucideIcon) {
-    openTab({ path: to, title, icon })
+  function handleNav(to: NavItem['to']) {
     navigate({ to })
   }
 
@@ -42,7 +39,7 @@ export function AppSidebar() {
             <SidebarMenuButton
               tooltip="CoCoWork"
               className="h-10 gap-3"
-              onClick={() => handleNav('/', '主页', LayoutDashboard)}
+              onClick={() => handleNav('/')}
             >
               <Sparkles />
               <span className="font-serif text-xl leading-none">CoCoWork</span>
@@ -61,7 +58,7 @@ export function AppSidebar() {
                     isActive={isActive(item.to)}
                     tooltip={item.title}
                     className="h-10 gap-3 text-base"
-                    onClick={() => handleNav(item.to as string, item.title, item.icon)}
+                    onClick={() => handleNav(item.to)}
                   >
                     <item.icon />
                     <span>{item.title}</span>

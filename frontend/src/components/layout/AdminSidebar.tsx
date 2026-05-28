@@ -12,23 +12,20 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
-import { useAdminTabsStore } from '@/stores/tab-store'
 import { UserMenu } from './UserMenu'
 import { adminNav, type AdminNavItem } from './admin-nav.config'
 
 export function AdminSidebar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const navigate = useNavigate()
-  const openTab = useAdminTabsStore((s) => s.open)
 
   function isActive(to: AdminNavItem['to']) {
     if (to === '/admin') return pathname === '/admin'
     return pathname === to || pathname.startsWith(`${to}/`)
   }
 
-  function handleNav(item: AdminNavItem) {
-    openTab({ path: item.to as string, title: item.title, icon: item.icon })
-    navigate({ to: item.to })
+  function handleNav(to: AdminNavItem['to']) {
+    navigate({ to })
   }
 
   return (
@@ -39,7 +36,7 @@ export function AdminSidebar() {
             <SidebarMenuButton
               tooltip="管理后台"
               className="h-10 gap-3"
-              onClick={() => handleNav({ to: '/admin', title: '概览', icon: ShieldCheck })}
+              onClick={() => handleNav('/admin')}
             >
               <ShieldCheck />
               <span className="font-serif text-xl leading-none">管理后台</span>
@@ -58,7 +55,7 @@ export function AdminSidebar() {
                     isActive={isActive(item.to)}
                     tooltip={item.title}
                     className="h-10 gap-3 text-base"
-                    onClick={() => handleNav(item)}
+                    onClick={() => handleNav(item.to)}
                   >
                     <item.icon />
                     <span>{item.title}</span>

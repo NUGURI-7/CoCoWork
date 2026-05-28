@@ -3,6 +3,7 @@ import { useParams } from '@tanstack/react-router'
 import { ring } from 'ldrs'
 
 import { listCatalog, listModelsByProvider } from '@/api/model'
+import { useTabTitle } from '@/stores/use-tab-sync'
 import { get } from '@/request'
 import type {
   AIModel,
@@ -89,6 +90,8 @@ export default function ProviderDetailPage() {
       cancelled = true
     }
   }, [providerId, refetchModels, refetchCatalog])
+
+  useTabTitle(provider?.name)
 
   /** Catalog 平铺数据 → AvailableModelsCard 期望的分组结构 */
   const availableGroups = useMemo<AvailableModelGroup[]>(() => {

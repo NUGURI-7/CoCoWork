@@ -12,14 +12,12 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { SidebarMenuButton, useSidebar } from '@/components/ui/sidebar'
 import { useAuthStore } from '@/stores/auth'
-import { useWorkspaceTabsStore } from '@/stores/tab-store'
 
 export function UserMenu() {
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
   const { isMobile } = useSidebar()
   const navigate = useNavigate()
-  const openTab = useWorkspaceTabsStore((s) => s.open)
 
   function handleLogout() {
     logout()
@@ -27,7 +25,6 @@ export function UserMenu() {
   }
 
   function handleSettings() {
-    openTab({ path: '/settings', title: '设置', icon: Settings })
     navigate({ to: '/settings' })
   }
 
