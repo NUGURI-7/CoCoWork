@@ -50,6 +50,14 @@ class Storage(ABC):
     async def exists(self, key: str) -> bool:
         """对象是否存在。"""
 
+    @abstractmethod
+    async def stat_size(self, key: str) -> int:
+        """返回对象大小（字节）；不存在抛 `FileNotFoundError`。
+
+        给上传完成时复校用：前端 init 阶段声明的 size 可能不准/被篡改，
+        confirm/passthrough 后由后端跟存储确认一次真实大小。
+        """
+
     async def generate_upload_url(
         self,
         key: str,

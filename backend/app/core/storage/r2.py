@@ -79,6 +79,18 @@ class R2Storage(Storage):
             self._client.delete_object, Bucket=self._bucket, Key=key,
         )
 
+    async def stat_size(self, key: str) -> int:
+        try:
+            resp = await asyncio.to_thread(
+                self._client.head_object, Bucket=self._bucket, Key=key,
+            )
+        except ClientError as e:
+            if e.response["Error"]["Code"] in _NOT_FOUND_CODES:
+                raise FileNotFoundError(f"对象不存在: {key}") from e
+            raise
+        return resp["ContentLength"]
+
+
     async def exists(self, key: str) -> bool:
         try:
             await asyncio.to_thread(

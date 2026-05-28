@@ -61,3 +61,9 @@ class LocalStorage(Storage):
     async def exists(self, key: str) -> bool:
         path = self._resolve(key)
         return await asyncio.to_thread(path.is_file)
+
+    async def stat_size(self, key: str) -> int:
+        path = self._resolve(key)
+        if not path.is_file():
+            raise FileNotFoundError(f"对象不存在: {key}")
+        return await asyncio.to_thread(lambda : path.stat().st_size)

@@ -40,7 +40,7 @@ class DocumentService:
         return kb
 
     async def _get_user_doc(
-        self, user: User, kb_id: UUID, doc_id: UUID,
+            self, user: User, kb_id: UUID, doc_id: UUID,
     ) -> Document:
         """取 doc，同时校验 doc 在 kb 下 + kb 归属当前用户。一次 SQL JOIN。"""
         doc = await Document.filter(
@@ -53,7 +53,7 @@ class DocumentService:
         return doc
 
     async def create_pending(
-        self, user: User, kb_id: UUID, name: str, size: int,
+            self, user: User, kb_id: UUID, name: str, size: int,
     ) -> Document:
         """建一条 pending 文档记录（占位，尚未真传字节）。
 
@@ -91,12 +91,39 @@ class DocumentService:
         return await Document.filter(knowledge_base_id=kb_id).order_by("-created_at")
 
     async def get_by_id(
-        self, user: User, kb_id: UUID, doc_id: UUID,
+            self, user: User, kb_id: UUID, doc_id: UUID,
     ) -> Document:
         return await self._get_user_doc(user, kb_id, doc_id)
 
+    async def mark_uploaded(self, user: User, kb_id: UUID, doc_id: UUID, ) -> Document:
+        """文件传完后调：跟 storage 复校真实大小、超限就清理、否则置 stage=uploaded。"""
+        doc = await self._get_user_doc(user, kb_id, doc_id)
+
+        try:
+            actual_size = await storage.stat_size(doc.storage_key)
+        except FileNotFoundError as e:
+            raise ValidationException("文件未在存储中找到，上传可能未完成") from e
+
+        if actual_size > settings.STORAGE_MAX_UPLOAD_SIZE:
+            mb = settings.STORAGE_MAX_UPLOAD_SIZE // (1024 * 1024)
+            # 超限：清干净（storage 对象 + ORM 记录）+ 抛错
+            try:
+                await storage.delete(doc.storage_key)
+            except Exception as e:
+                logger.warning(
+                    "超限清理 storage 失败 doc_id=%s key=%s: %s",
+                    doc.id, doc.storage_key, e,
+                )
+            await doc.delete()
+            raise ValidationException(f"文件超出大小上限 {mb}MB")
+
+        doc.size = actual_size
+        doc.stage = "uploaded"
+        await doc.save(update_fields=["size", "stage"])
+        return doc
+
     async def delete(
-        self, user: User, kb_id: UUID, doc_id: UUID,
+            self, user: User, kb_id: UUID, doc_id: UUID,
     ) -> None:
         """删文档：先清 storage 对象（失败仅 log），再 ORM 级联清段/向量。"""
         doc = await self._get_user_doc(user, kb_id, doc_id)
