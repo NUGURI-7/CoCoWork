@@ -9,6 +9,7 @@ import asyncio
 import logging
 from functools import cached_property
 from typing import TYPE_CHECKING, BinaryIO
+from urllib.parse import quote
 
 import boto3
 from botocore.config import Config
@@ -114,9 +115,20 @@ class R2Storage(Storage):
             ExpiresIn=expires,
         )
 
-    async def generate_download_url(self, key: str, expires: int = 3600) -> str:
+    async def generate_download_url(
+            self, key: str, expires: int = 3600, filename: str | None = None,
+    ) -> str:
+        params: dict = {"Bucket": self._bucket, "Key": key}
+        if filename:
+            # sanitize：去掉引号 + 控制字符，防 header 注入
+            safe = filename.replace('"', "").replace("\r", "").replace("\n", "")
+            # RFC 6266：filename= 兜底 ASCII，filename*= 支持 UTF-8（中文不乱码）
+            encoded = quote(safe, safe="")
+            params["ResponseContentDisposition"] = (
+                f'attachment; filename="{safe}"; filename*=UTF-8\'\'{encoded}'
+            )
         return self._client.generate_presigned_url(
             ClientMethod="get_object",
-            Params={"Bucket": self._bucket, "Key": key},
+            Params=params,
             ExpiresIn=expires,
         )

@@ -10,6 +10,7 @@ URL nested 在 KB 下：`/knowledge-bases/{kb_id}/documents/...`。
 
 from io import BytesIO
 from typing import Annotated
+from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, UploadFile
@@ -177,12 +178,17 @@ async def get_document_raw(
 
     doc = await svc.get_by_id(current_user, kb_id, doc_id)
     content = await storage.read(doc.storage_key)
+    safe = doc.name.replace('"', "").replace("\r", "").replace("\n", "")
+    encoded = quote(safe, safe="")
     return StreamingResponse(
         BytesIO(content),
         media_type=_content_type_for(doc.file_type),
-        headers={"Content-Disposition": f'attachment; filename="{doc.name}"'},
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{safe}"; filename*=UTF-8\'\'{encoded}'
+            ),
+        },
     )
-
 
 @router.get("/{doc_id}/download-url", summary="获取下载链接")
 async def get_document_download_url(
@@ -200,7 +206,9 @@ async def get_document_download_url(
     doc = await svc.get_by_id(current_user, kb_id, doc_id)
 
     if storage.supports_presigned:
-        url = await storage.generate_download_url(doc.storage_key, expires=3600)
+        url = await storage.generate_download_url(
+            doc.storage_key, expires=3600, filename=doc.name,
+        )
     else:
         url = f"/knowledge-bases/{kb_id}/documents/{doc.id}/raw"
     return success(data={"url": url})
