@@ -1,2 +1,2 @@
 # CoCoWork
-Enterprise AI Agent management platform — LangGraph orchestration, RAG hybrid search, real-time voice interaction
+Super AI Agent management platform — LangGraph orchestration, RAG hybrid search, real-time voice interaction
