@@ -91,7 +91,7 @@ export default function ProviderDetailPage() {
     }
   }, [providerId, refetchModels, refetchCatalog])
 
-  useTabTitle(provider?.name)
+  useTabTitle(`/models/${providerId}`, provider?.name)
 
   /** Catalog 平铺数据 → AvailableModelsCard 期望的分组结构 */
   const availableGroups = useMemo<AvailableModelGroup[]>(() => {

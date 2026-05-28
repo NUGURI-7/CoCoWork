@@ -24,7 +24,7 @@ export default function AgentDetailPage() {
   const { agentId } = useParams({ from: '/_authenticated/agents/$agentId' })
   const agent = useAgentMockStore((s) => s.getById(agentId))
 
-  useTabTitle(agent?.name)
+  useTabTitle(`/agents/${agentId}`, agent?.name)
 
   if (!agent) {
     return (

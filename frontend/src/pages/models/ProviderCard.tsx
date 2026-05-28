@@ -82,28 +82,20 @@ export function ProviderCard({ provider, onDeleted }: ProviderCardProps) {
         onClick={handleClick}
       >
         <CardContent className="flex flex-1 flex-col justify-between gap-3">
-          <div className="flex items-center">
+          <div className="flex items-center justify-between">
             <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
               <span
                 className={`inline-block size-2 rounded-full ${providerDotColor[provider.provider_type] ?? 'bg-gray-400'}`}
               />
               {providerTypeLabel[provider.provider_type] ?? provider.provider_type}
             </span>
-          </div>
-          <div className="flex items-end justify-between gap-2">
-            <div className="min-w-0">
-              <h3 className="text-base font-medium leading-none">{provider.name}</h3>
-              <p className="text-muted-foreground mt-1.5 line-clamp-2 text-sm">
-                {provider.description || ' '}
-              </p>
-            </div>
             <div onClick={(e) => e.stopPropagation()}>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="text-muted-foreground hover:text-foreground -mr-1 size-6 shrink-0 translate-y-3"
+                    className="text-muted-foreground hover:text-foreground -mr-1 -mt-1 size-6"
                   >
                     <MoreHorizontal className="size-3.5" />
                   </Button>
@@ -122,6 +114,12 @@ export function ProviderCard({ provider, onDeleted }: ProviderCardProps) {
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-base font-medium leading-none">{provider.name}</h3>
+            <p className="text-muted-foreground mt-1.5 line-clamp-2 text-sm">
+              {provider.description || ' '}
+            </p>
           </div>
         </CardContent>
       </Card>

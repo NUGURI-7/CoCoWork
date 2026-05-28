@@ -4,11 +4,11 @@
  * 调用方只管 navigate，tab 由路由变化自动驱动，避免「跳转和 tab 不一致」。
  * - useTabSync(store)：挂在 Shell 顶层，监听 router location 变化，按当前匹配路由的
  *   staticData.tabTitle / tabIcon 自动 openTab；没有 staticData 的路由跳过（如 login）
- * - useTabTitle(title)：详情页用，按当前 path 前缀自动选 workspace / admin store，
- *   把路由 fallback 名（如 "Agent"）覆盖成真名（如 "代码研究员"）
+ * - useTabTitle(path, title)：详情页用，把路由 fallback 名（如 "Agent"）覆盖成真名
+ *   （如 "代码研究员"）。path 由调用方从 useParams 派生传入。
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import type { LucideIcon } from 'lucide-react'
 import type { StoreApi, UseBoundStore } from 'zustand'
@@ -50,18 +50,22 @@ export function useTabSync(useStore: UseBoundStore<StoreApi<TabsState>>): void {
 }
 
 /**
- * 详情页用：覆盖当前路由 tab 的 title。title 为 undefined 时跳过（数据加载中）
+ * 详情页用：把 path 对应 tab 的 title 覆盖成真名。title 为 undefined 时跳过（加载中）。
  *
- * 注意：pathname 在 mount 时锁定。否则路由切走的瞬间 pathname 已经变成新路径，
- * effect 会把"新路径"的 tab title 改成当前组件的 title（误伤旁路 tab）。
+ * - `path` 由调用方从 useParams 派生（如 `/agents/${agentId}`），跟随 params 变化——
+ *   同路由 params 切换（A→B 复用组件不 remount）时也能改对各自的 tab，不会串台。
+ * - 订阅「该 path 的 tab 是否已存在」：useTabSync 的 open 先建好 tab（fallback 名），
+ *   tab 出现后本 effect 再覆盖真名，避免「effect 早于 open」的时序竞争。
  */
-export function useTabTitle(title: string | undefined): void {
-  const router = useRouter()
-  const [pathname] = useState(() => router.state.location.pathname)
+export function useTabTitle(path: string, title: string | undefined): void {
+  const isAdmin = path.startsWith('/admin')
+  const wsHasTab = useWorkspaceTabsStore((s) => s.tabs.some((t) => t.path === path))
+  const adminHasTab = useAdminTabsStore((s) => s.tabs.some((t) => t.path === path))
+  const hasTab = isAdmin ? adminHasTab : wsHasTab
 
   useEffect(() => {
-    if (!title) return
-    const store = pathname.startsWith('/admin') ? useAdminTabsStore : useWorkspaceTabsStore
-    store.getState().setTitle(pathname, title)
-  }, [pathname, title])
+    if (!title || !hasTab) return
+    const store = isAdmin ? useAdminTabsStore : useWorkspaceTabsStore
+    store.getState().setTitle(path, title)
+  }, [path, title, hasTab, isAdmin])
 }

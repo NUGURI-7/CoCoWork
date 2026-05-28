@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from '@tanstack/react-router'
-import { BookOpen, ChevronLeft, FlaskConical, Upload } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
+import { BookOpen, ChevronLeft, Upload } from 'lucide-react'
 import { ring } from 'ldrs'
 
 import { getKnowledgeBase } from '@/api/knowledge'
@@ -12,28 +11,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { KnowledgeBase } from '@/types'
 import { DocumentList } from './DocumentList'
 import { KnowledgeSettings } from './KnowledgeSettings'
+import { RetrievalTest } from './RetrievalTest'
 import { UploadDocumentSheet } from './UploadDocumentSheet'
 import { kbStatusMeta, mockDocuments } from './mock'
 
 ring.register()
-
-function TabPlaceholder({
-  icon: Icon,
-  title,
-  desc,
-}: {
-  icon: LucideIcon
-  title: string
-  desc: string
-}) {
-  return (
-    <div className="text-muted-foreground flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed py-16 text-center">
-      <Icon className="size-8 opacity-40" />
-      <p className="text-foreground text-sm font-medium">{title}</p>
-      <p className="max-w-xs text-xs">{desc}</p>
-    </div>
-  )
-}
 
 /** /knowledge/$kbId — 知识库详情页（面包屑 + 库信息 header + 3 tab） */
 export default function KnowledgeDetailPage() {
@@ -59,7 +41,7 @@ export default function KnowledgeDetailPage() {
     refetch()
   }, [refetch])
 
-  useTabTitle(kb?.name)
+  useTabTitle(`/knowledge/${kbId}`, kb?.name)
 
   const docs = allDocs.filter((d) => d.kb_id === kbId)
 
@@ -126,15 +108,14 @@ export default function KnowledgeDetailPage() {
         </TabsList>
 
         <TabsContent value="documents" className="mt-4">
-          <DocumentList docs={docs} />
+          <DocumentList
+            docs={docs}
+            onDelete={(id) => setAllDocs((prev) => prev.filter((d) => d.id !== id))}
+          />
         </TabsContent>
 
         <TabsContent value="retrieval" className="mt-4">
-          <TabPlaceholder
-            icon={FlaskConical}
-            title="检索测试"
-            desc="输入查询，预览混合检索命中的片段与分数。待后端检索接口接入后开放。"
-          />
+          <RetrievalTest kbId={kbId} />
         </TabsContent>
 
         <TabsContent value="settings" className="mt-4">

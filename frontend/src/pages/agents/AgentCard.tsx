@@ -90,6 +90,43 @@ export function AgentCard({ agent, onDelete }: AgentCardProps) {
                 </p>
               </div>
             </div>
+            <div onClick={(e) => e.stopPropagation()}>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-muted-foreground hover:text-foreground -mr-1 -mt-1 size-6"
+                  >
+                    <MoreHorizontal className="size-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div>
+                        <DropdownMenuItem disabled>
+                          <Copy className="size-4" />
+                          复制为新 Agent
+                        </DropdownMenuItem>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="left">v1.5+</TooltipContent>
+                  </Tooltip>
+                  <DropdownMenuItem
+                    variant="destructive"
+                    disabled={!onDelete}
+                    onSelect={(e) => {
+                      e.preventDefault()
+                      setConfirmOpen(true)
+                    }}
+                  >
+                    <Trash2 className="size-4" />
+                    删除
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
 
           <Separator />
@@ -112,48 +149,9 @@ export function AgentCard({ agent, onDelete }: AgentCardProps) {
                 {toolCount} 工具
               </span>
             </div>
-            <div className="flex shrink-0 items-center gap-1">
-              <span className="text-muted-foreground text-xs">
-                {timeAgo(agent.updated_at)}
-              </span>
-              <div onClick={(e) => e.stopPropagation()}>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="text-muted-foreground hover:text-foreground -mr-1 size-6"
-                    >
-                      <MoreHorizontal className="size-3.5" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div>
-                          <DropdownMenuItem disabled>
-                            <Copy className="size-4" />
-                            复制为新 Agent
-                          </DropdownMenuItem>
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent side="left">v1.5+</TooltipContent>
-                    </Tooltip>
-                    <DropdownMenuItem
-                      variant="destructive"
-                      disabled={!onDelete}
-                      onSelect={(e) => {
-                        e.preventDefault()
-                        setConfirmOpen(true)
-                      }}
-                    >
-                      <Trash2 className="size-4" />
-                      删除
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </div>
+            <span className="text-muted-foreground shrink-0 text-xs">
+              {timeAgo(agent.updated_at)}
+            </span>
           </div>
         </CardContent>
       </Card>

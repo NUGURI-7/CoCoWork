@@ -77,57 +77,57 @@ export function KnowledgeCard({ kb, onDeleted }: KnowledgeCardProps) {
                 </p>
               </div>
             </div>
-            <span className="text-muted-foreground flex shrink-0 items-center gap-1.5 text-xs">
-              <span className={cn('size-2 rounded-full', s.dot, s.pulse && 'animate-pulse')} />
-              {s.label}
-            </span>
+            <div onClick={(e) => e.stopPropagation()}>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-muted-foreground hover:text-foreground -mr-1 -mt-1 size-6"
+                  >
+                    <MoreHorizontal className="size-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onSelect={(e) => {
+                      e.preventDefault()
+                      setConfirmOpen(true)
+                    }}
+                  >
+                    <Trash2 className="size-4" />
+                    删除
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
 
           <Separator />
 
           {/* 数据区：左 embedding badge | 右 数字 + 右下角三个点 */}
           <div className="flex items-start justify-between gap-3">
-            <Badge variant="secondary" className="gap-1">
-              <Layers />
-              {kb.embedding_model_name}
-            </Badge>
-            <div className="flex flex-col items-end gap-1.5">
-              <div className="flex gap-5">
-                <div className="text-right">
-                  <div className="font-serif text-xl leading-none">{kb.doc_count}</div>
-                  <div className="text-muted-foreground mt-0.5 text-xs">文档</div>
-                </div>
-                <div className="text-right">
-                  <div className="font-serif text-xl leading-none">
-                    {kb.chunk_count.toLocaleString()}
-                  </div>
-                  <div className="text-muted-foreground mt-0.5 text-xs">chunks</div>
-                </div>
+            <div className="flex min-w-0 items-center gap-2.5">
+              <span className="text-muted-foreground flex shrink-0 items-center gap-1.5 text-xs">
+                <span className={cn('size-2 rounded-full', s.dot, s.pulse && 'animate-pulse')} />
+                {s.label}
+              </span>
+              <Badge variant="secondary" className="gap-1">
+                <Layers />
+                {kb.embedding_model_name}
+              </Badge>
+            </div>
+            <div className="flex gap-5">
+              <div className="text-right">
+                <div className="font-serif text-xl leading-none">{kb.doc_count}</div>
+                <div className="text-muted-foreground mt-0.5 text-xs">文档</div>
               </div>
-              <div onClick={(e) => e.stopPropagation()}>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="text-muted-foreground hover:text-foreground -mr-1 size-6 shrink-0 translate-y-3"
-                    >
-                      <MoreHorizontal className="size-3.5" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      variant="destructive"
-                      onSelect={(e) => {
-                        e.preventDefault()
-                        setConfirmOpen(true)
-                      }}
-                    >
-                      <Trash2 className="size-4" />
-                      删除
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+              <div className="text-right">
+                <div className="font-serif text-xl leading-none">
+                  {kb.chunk_count.toLocaleString()}
+                </div>
+                <div className="text-muted-foreground mt-0.5 text-xs">chunks</div>
               </div>
             </div>
           </div>

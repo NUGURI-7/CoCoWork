@@ -25,3 +25,4 @@ export type {
   KnowledgeBaseCreatePayload,
   KnowledgeBaseUpdatePayload,
 } from './knowledge'
+export type { WorkspaceMember, Conversation, Workspace } from './workspace'

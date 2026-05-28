@@ -43,19 +43,21 @@
 - **前端 Model 模块全栈打通**：Provider/AIModel 的创建 + 删除（不做编辑，改配置=重建）+ Catalog 查询展示 + 参数动态表单，全部对接后端 API。`api/model.ts` 统一封装三层接口；删除走 AlertDialog 二次确认；列表 loading 用 ldrs `l-ring`（品牌色 `#2f6b53`、60vh 居中）替代 skeleton。
 - **前端 admin 后台分区**：`/admin` 独立壳（AdminShell/AdminSidebar/admin-nav + isAdmin 守卫 + 独立 tab 系统），头像下拉「后台管理」入口。系统设置用「左侧二级导航 + 右侧内容」（仿 Claude settings），首个设置项 = **模型目录管理**（Catalog 表格增删，admin 写入），admin 不再需要手调接口喂数据。
 - **前端工具模块占位页（静态 mock）**：`/tools` 三带式（Header / 统计带 / Tab）+ 按来源 tab（全部/内置/MCP）+ 卡片网格 + 单卡启用开关。后端 tool/skill 暂缓，纯前端骨架。
-- **前端知识库模块 CRUD 接通**：库级 list/get/create/update/delete 全对接后端 `/knowledge-bases`；列表页卡片网格 + 详情页（库信息 header + 文档/检索测试/设置 三 tab）；删除入口双处（卡片三点 + 设置页），成功后自动关闭对应 workspace tab。文档列表/上传弹窗/检索测试 tab 仍 mock，等后端片4/片6。
+- **前端知识库模块 CRUD 接通**：库级 list/get/create/update/delete 全对接后端 `/knowledge-bases`；列表页卡片网格 + 详情页（库信息 header + 文档/检索测试/设置 三 tab）；删除入口双处（卡片三点 + 设置页）。**检索测试 tab 接 mock**（`runMockRetrieval` 500ms + 6 段业务贴真 chunk + 递减相似度，后端片6 接入只换函数实现）；**文档列表三点 Dropdown 接通**（下载占位 toast / 删除 AlertDialog 二次确认 + 本地 state 移除）；文档上传 sheet 仍 mock，等后端 4b-2/4b-3。
 - **后端存储抽象层就位**：`app/core/storage/`（`Storage` ABC + R2/Local 双实现 + 按 `STORAGE_BACKEND` 装配的模块级单例 `storage`）；R2 支持预签名直传/下载、Local 走后端中转 + 路径穿越防护；同步 IO 全包 `asyncio.to_thread`、boto3 client 懒加载。
 - **知识库 Document 数据层就绪（4b-1）**：`DocumentService`（create_pending / list_by_kb / get_by_id / delete）+ 扩展名白名单 md/txt + 大小上限 50MB + storage 对象联动清理（删失败仅 log 不阻塞）；schemas 含 `UploadInitOut` 带 strategy 字段为 4b-2 端点分流预埋。**无路由，4b-2 才接端点**。
 - **前端 admin 用户管理页（mock）**：`/admin/users` 表格（用户/邮箱/角色 badge/状态 switch/创建时间/删除）+ 搜索过滤 + 角色筛选 + AlertDialog 二次确认；自己的行禁用 switch 和删除；纯前端 mock，后端 user 管理接口齐了再换。
 - **Agent 模块设计 spec 定稿**：`docs/design/agent-module-v1.md`（14 节产品+架构 spec）+ `agent-module-frontend-v1.md`（前端画法指南）。
 - **Agent 模块前端切片 0 全栈打通（纯 mock）**：列表页三带式（模板池 + 我的 Agent 网格）+ 创建弹窗（选模板起名）+ 详情页（左 ConfigPanel 配置 40% / 右 Playground 沙盒试运行 60%，配置即时落 store）；`agent-mock-store`（zustand 列表/详情共用）。**砍掉「正式对话」**——详情页只做沙盒，正式对话归 workspace。后端 Agent 模型 + LangGraph 未起。
+- **Workspace 模块前端完整骨架（纯 mock + local state）**：列表页卡片网格（成员头像堆叠 + 管家戴皇冠 + +N 折叠）+ 创建弹窗（带默认管家 + 初始对话）+ 详情页三栏（通讯录 240 / 主对话 flex-1 / 产出物 320，两侧均可独立收起）+ 招募弹窗两 tab（选模板 / 选 Agent，对齐 spec 三层分离）+ Conversation 切换条（顶部 popover 列出历史 + 「新对话」，切换走 `key` 重挂清消息）。主对话区核心 = **@mention 自动补全 popover**（光标前正则检测 `@<query>` → 候选成员浮层 → 点选替换光标位文本）+ mock 双轨路由（@某成员 → 那成员答，否则 → 管家答）+ assistant 气泡带头像（管家皇冠 / 成员色块）+ 品牌色名字。统一容器样式 `bg-background border shadow-sm overflow-hidden rounded-lg`（修圆角被子元素方角覆盖问题）。后端 Workspace 数据模型 + 注入引擎 + LangGraph 调度未起。
 - **全局：路由→tab 自动同步机制**。路由 `staticData` + `useTabSync`（router onResolved 事件驱动），调用方只 `navigate`、tab 自动跟随；详情页 `useTabTitle` 覆盖动态名。工作台 + admin 两套 tab 都接入。
 
 ## 下一步
-- **当前优先 = 知识库 / RAG 模块**（独立于 Agent / 对话，是更硬的基础设施，优先级上调）。前端**库级 CRUD 全接通**（列表/详情/新建/保存/删除，见最近迭代）；前端待办：文档列表/上传弹窗（mock 中，待片4）、检索测试页（待片6）。
+- **当前优先 = 知识库 / RAG 模块**（独立于 Agent / 对话，是更硬的基础设施，优先级上调）。前端**库级 CRUD 全接通 + 检索测试 mock 骨架 + 文档列表三点接通**（最近迭代）；前端剩文档上传 sheet（mock，待 4b-2）+ 文档下载真接（待 4b-3）+ 检索测试真接（待片6），全部只换函数实现、组件不动。
   - **后端方案已定稿**：见 `docs/design/knowledge-rag-v1.md`（spec + §13 实施切片清单）+ `knowledge-rag-decisions.md`（决策/权衡）。按 §13 切 6 片小步推进：**片1+2+3 + 4a + 4b-1 已完成**（VectorField + pgvector + 4 表迁移 0005 + AIModel.meta 迁移 0006 + 知识库 CRUD `/api/v1/knowledge-bases` 5 端点 + 存储抽象层 R2/Local 双后端 + Document schemas/service）；**片4b 剩**：4b-2 上传端点（R2 三段式 presign→PUT→confirm + Local passthrough multipart 分流，`upload-init` 自带 strategy 字段）+ 4b-3 列表/删除/下载链接 → 片5 处理管线 → 片6 检索+命中测试。详见最近迭代。
   - 既有决策：embedding 每库锁一个模型、rerank 先阿里、全文检索先 Postgres 原生 FTS（不够再上 ParadeDB pg_search，不上 ES）、切块默认（递归~512token+50overlap）+ 可配；混合检索/FTS/RRF/rerank/多向量 = v2；文档编辑用自封装 tiptap（后做）。
 - **Agent 模块（设计已定稿，前端可独立推进）**：完整 spec 见 `docs/design/agent-module-v1.md`（14 节）+ 前端画法指南 `agent-module-frontend-v1.md`（三批实施建议）。范式 = 工作空间 + 单 agent 双入口；不调试不发布；模板/Agent/实例三层分离（模板=平台预置纯 LangGraph 行为骨架空壳，Agent=用户装备好的资产，实例=空间内成员含注入）；@直连 vs 不@走管家双轨调度；3 层长期记忆 L1/L2/L3 严格作用域。架构亮点：Hybrid Schema（核心列+jsonb 扩展）+ 三层分离（ContextBuilder/LangGraph/PostProcessor）+ 7 设计模式（Builder/CoR/Strategy/Mediator/Repository/Observer-EDA + Layered）+ Hexagonal。**前端切片 0 已完成**（列表/创建/详情配置/沙盒，纯 mock + local state，旧 agent 代码已替换；详见最近迭代）；后续切片 1+（模板 seed / Agent CRUD 接 API / 对话接 LLM）+ 后端 Agent 模型 + LangGraph 待知识库 RAG 收尾后启动。设计已砍 agent 详情页「正式对话」——正式对话归 workspace。
+- **Workspace 模块（前端骨架完成，等后端起）**：列表 + 详情三栏 + 招募 + Conversation 切换 + @mention 双轨路由 mock 全画完（最近迭代）；后端待做：Workspace 模型 + CRUD（切片4）→ 实例注入引擎（切片5）→ supervisor LangGraph 调度（切片7+），跟 Agent 模块切片大纲走。
 - **前端 App Shell**：批次1骨架 ✅、批次2 头像菜单 ✅、批次3 admin 独立壳 ✅、批次4 Home 卡片式 dashboard ✅（静态占位版，数字待各模块接口就绪后灌真数）。
 - 后端可选生产功能（RBAC / Email 校验 / 密码重置 / 限流）随需推进。
 
@@ -76,10 +78,22 @@
 
 ## 最近迭代
 
+### 2026-05-28 — Workspace 模块前端完整画完（列表/三栏详情/@mention/Conversation）+ KB 检索测试 mock + 文档三点 + 卡片三点统一
+
+- **Workspace 模块前端骨架（纯 mock + local state，对齐 spec §5/§6）**：types/workspace.ts（WorkspaceMember + Conversation + Workspace，画图占位 schema、成员/对话内嵌）+ mock（3 空间，成员复用 agent mock 人设）+ `workspace-mock-store`（zustand，含 `addConversation`）。
+- **列表页 `/workspaces`**：Header + 卡片网格 + 创建弹窗（默认带管家 + 初始 conversation）；`WorkspaceCard` 成员头像堆叠（管家戴皇冠 + 最多 4 + +N 折叠）+ 三点删除（AlertDialog + 关 tab）。
+- **详情页 `/workspaces/$workspaceId` 三栏**：通讯录 240（管家固定第一 + 来源标签 + 招募按钮 + X 收起）/ 主对话 flex-1 / 产出物 320（占位空态 + X 收起）。**两侧均可独立收起**，关闭后顶部出 `PanelLeft / PanelRight` toggle 按钮恢复。统一容器 `bg-background border shadow-sm overflow-hidden rounded-lg`——`overflow-hidden` 是关键，否则子元素方角覆盖外层圆角。
+- **主对话区核心（spec §5.4 + §6 双轨）**：复用 Playground 气泡 + 输入区模式 + 加两特性 = ① **@mention 自动补全 popover**（textarea ref + 光标 selectionStart 检测最后 `@<query>` 正则 + 候选成员浮层 + 点选 `before.replace(/@([^\s@]*)$/, '@${name} ')` + setSelectionRange 复位光标） ② **mock 路由**（消息开头 `@某成员` → 那成员答；否则 → 管家答）；assistant 气泡带头像（管家皇冠 / 成员色块）+ 品牌色名字标注；消息纯内存、刷新即清；切 conversation 走 `<WorkspaceChat key={convId} />` 重挂清空。
+- **招募弹窗（spec §5.2）**：两 tab「从模板 / 从我的 Agent」共用头像 + 名 + 描述卡片形态；招进来都是该空间实例（v0 简化复制基础字段，跟源脱钩对齐 spec §3.4）。
+- **Conversation 切换条**：主对话区顶部独立 row（跟 WorkspaceChat 共享外层 border 容器，WorkspaceChat 顶层改 Fragment 让父统一包）；当前标题 + ChevronDown popover 列出按 updated_at 倒序的历史 + 「+ 新对话」按钮 push 进 store 并自动切换。
+- **KB 检索测试 tab 接 mock**：从 TabPlaceholder 占位换成 `RetrievalTest`（query Textarea + topK Select(3/5/10/20) + Cmd/Ctrl+Enter 触发 + 四态结果区）；`runMockRetrieval` 500ms 延迟 + 6 段贴近真实业务的 chunk 文本（白皮书 / API 指南 / 用户手册 / FAQ / 更新日志）+ 递减相似度（0.92 起步、每条 -0.07、最低 0.3）。后端片6 接入只换函数实现，组件不动。
+- **KB DocumentList 三点 Dropdown**：抽 `DocumentRow` 子组件管 confirm state；「下载」（占位 toast）+「删除」（AlertDialog 二次确认）；KnowledgeDetailPage 传 `onDelete` 让 mock 真生效。
+- **卡片网格三点位置统一右上角**：AgentCard / ProviderCard / KnowledgeCard / AIModelCard / WorkspaceCard 五张卡片三点都到顶部右上角。KnowledgeCard 顶部状态点 + label「就绪」**挪到底部 embedding badge 行最左**；AIModelCard「✓启用」图标**挪到左侧类型 badge 旁**——避免「状态信息 + 操作菜单」两类元素挤同一角；删 4 处 `translate-y-3` 旧底部对齐 hack，统一用 `-mt-1` 微调。
+
 ### 2026-05-28 — Agent 模块前端切片 0（列表三带式 + 详情左配右沙盒）+ 路由→tab 自动同步 + 砍正式对话
 
 - **切片 0 完成（批次 1+2+3，纯 mock + local state）**：`types/agent.ts` 重写（`Template`/`Agent`/`AgentConfig`/`Message`，删旧 status/agent_type）；`mock.ts`（8 模板 + 5 Agent 含裸 Agent + ChatModel/Knowledge/Tool mock）；`AgentsPage` 三带式（Header + 模板池横向带 + 我的 Agent 网格）；`AgentCard`/`TemplateCard`/`CreateAgentDialog`；`AgentDetailPage`（左 `ConfigPanel` 40% + 右 `Playground` 沙盒 60%）；`agent-mock-store.ts`（zustand，列表/详情共用，刷新还原）。
-- **全局机制：路由→tab 自动同步**。各叶子路由加 `staticData: {tabTitle, tabIcon}`；`stores/use-tab-sync.ts` 的 `useTabSync` 用 `router.subscribe('onResolved')` 在导航完成后同步 tab（避开 selector 多取值错位/title 串台），调用方只写 `navigate` 不再手动 `openTab`；详情页 `useTabTitle(name)` 覆盖动态名（mount 时锁 pathname，防 unmount 瞬间误改旁路 tab）。删了 7 处 openTab 双调用；AppShell/AdminShell 各接一次。
+- **全局机制：路由→tab 自动同步**。各叶子路由加 `staticData: {tabTitle, tabIcon}`；`stores/use-tab-sync.ts` 的 `useTabSync` 用 `router.subscribe('onResolved')` 在导航完成后同步 tab（避开 selector 多取值错位/title 串台），调用方只写 `navigate` 不再手动 `openTab`；详情页 `useTabTitle(path, name)` 覆盖动态名（path 由 `useParams` 派生 + 订阅「该 path tab 是否已存在」：解决 ① 同路由 params 切换复用组件时 title 串台 ② open/setTitle 时序竞争导致 tab 卡在 fallback 名）。删了 7 处 openTab 双调用；AppShell/AdminShell 各接一次。
 - **产品简化：砍掉 agent 详情页「正式对话」**，只留沙盒试运行（消息纯内存、刷新即清）；正式对话归 workspace 模块（避免「同一对话能力两个入口」心智冲突）。`docs/design/agent-module-frontend-v1.md` 同步更新（§6/§10/§11 + 布局图改 40/60 单一沙盒）。
 - 配套：装 shadcn `popover`/`command`/`breadcrumb`；nav 加「工作空间」(Layers icon) + `/workspaces` 占位页；`ConfigPanel` 用方案 A（无外框 + Separator 分段 + header 区放大头像/名字）；抽 `hooks/use-horizontal-wheel-scroll.ts`（模板池 + TabBar 横向滚轮共用）；`PagePlaceholder` 加可选 `description`。
 - **App Shell 高度链锁定**：`SidebarProvider` `min-h-svh`→`h-svh` + 内容 wrapper 补 `min-h-0`，详情页全程 `flex-1`+`min-h-0` 配对，Playground 内部消息区自滚、输入区贴底，整页不再溢出。
@@ -146,16 +160,8 @@
 - 验收：smoke 跑通（5 路由注册、annotate 查询执行）。旧 embedding 模型 `meta` 为空也能用——建库探测兜底会补；想干净可删后重建。
 - 前端 KB 静态页此前已有，待另起会话接 API。
 
-### 2026-05-24 — 知识库/RAG 后端：设计定稿 + 数据层（片1+2）+ AIModel.meta
-- 设计文档定稿：`docs/design/knowledge-rag-v1.md`（spec + §13 切片清单）+ `knowledge-rag-decisions.md`（决策/权衡）；通用学习笔记 `notes/backend/`（4 模块，已 gitignore 不入库）。
-- 模型决策：4 表 `knowledge_bases`/`documents`/`paragraphs`/`embeddings`（全在 `app/models/knowledge.py` **单文件**）。父子块：embed 小子块、命中返回**整段**；**子块不落表**，文本存 `embedding.text`；Embedding 独立成表（一对多指回段 + `source_type` content/question/title，多向量留口子，v1 只 content）；Embedding 不可变、只 `created_at` 无 `updated_at`。
-- pgvector：容器原无、已装 **0.8.1**（PG 18）。Tortoise 无原生支持 → 自定义 `app/db/fields.py:VectorField`（`SQL_TYPE="vector"` **不锁维度**、list↔文本转换；相似度查询走原生 SQL `embedding::vector(dims) <=>`，按段去重 `DISTINCT ON`）。ANN 索引按知识库建**部分索引** + `embedding::vector(dims)` 表达式 cast（参考 MaxKB；查询 cast/过滤须与索引一致才命中），v1 量小先 seq scan；>2000 维 HNSW 不支持（halfvec/降维）。
-- 存储：抽象 + 双后端（本地默认 / S3 兼容 R2，启动按 `STORAGE_BACKEND` 选）——**延后到片4 上传时再写**（不硬绑 R2，自托管可用本地盘、零基建不走网络）。v1 **手动向量化**（上传只建 pending、手动触发，逻辑收在 `process_document()`，FastAPI BackgroundTasks 跑；将来换 ARQ 不返工）。
-- 进度：片1 ✅ VectorField；片2 ✅ 迁移 0005 已 apply，4 表建好、`embeddings.embedding` 列 = vector（迁移头部 RunSQL `CREATE EXTENSION IF NOT EXISTS vector`）。
-- AIModel 加 `meta` JSONField（**`null=True`**，存 dim/context_window 等「模型固有事实」，区别于用户可调的 `config`；前端 Model 卡片将展示）。建库取 `embedding_dim` 用**懒填充**：首次用到该 embedding 模型时实测 embed 拿 dim 回写 `AIModel.meta`。**迁移 0006 待跑**：旧 0006（meta NOT NULL）因已有行报 NotNullViolation → 已删旧文件、模型改 `null=True`；下一步 `uv run tortoise makemigrations -n add_aimodel_meta` 重生成 → 审 → `migrate`。
-- 协作约定：**小步！一次只写一小块、等用户确认再继续**；迁移先 `makemigrations` 给用户审、**由用户跑 `migrate`**；代码读 meta 兜底 `(m.meta or {})`。
-
 ## 历史摘要
+- **2026-05-24 — 知识库/RAG 设计定稿 + 数据层（片1+2）+ AIModel.meta**：spec `knowledge-rag-v1.md` + decisions 定稿；4 表 single-file（KB/Document/Paragraph/Embedding）+ 父子块（embed 子块、命中返整段、子块不落表、文本存 `embedding.text`）+ Embedding 独立表（一对多 + source_type + 多向量留口子）；pgvector 0.8.1 已装，自定义 `VectorField`（不锁维度、原生 SQL 相似度查询、按段 DISTINCT ON 去重）+ 部分索引 + 表达式 cast 与查询一致才命中；存储抽象延后到片4；v1 手动向量化（FastAPI BackgroundTasks，将来换 ARQ 不返工）；迁移 0005 已 apply（含 RunSQL CREATE EXTENSION vector）；AIModel 加 `meta` JSONField(null=True) 存固有事实（dim/context_window），懒填充 embedding_dim。
 - **2026-05-24 — 知识库列表页 + 详情页前端（静态 mock）+ 模块 IA 决策**：`/knowledge` 三带布局（Header/统计带/卡片网格 + 虚线新建卡），左侧 `KnowledgeFolderTree` 预留壳（return null，两栏 flex 已就位）；详情页 `/knowledge/$kbId` = 面包屑 + 库信息 header + shadcn tabs（文档/检索测试/设置），文档用列表行、库列表用卡片网格（两层不同形态）。决策：详情页不做独立 sidebar 改用 tab。数据形状 `KnowledgeBase`/`KnowledgeDoc` 预埋；后续接 API。
 - **2026-05-23 — Model 模块全栈打通（后端+前端+admin Catalog 管理）**：后端 3 表数据层 Provider/AIModel/ProviderModelCatalog（迁移 0002-0004）+ Fernet 加密 + Validator 策略模式（按 `(provider_type, model_type)` 二维查找）+ 统一 ModelClient（凭证 Model 级 > Provider 级回退）；前端 CRUD 闭环（loader 用 ldrs `l-ring` 品牌色 60vh 居中替代 skeleton，删除统一 AlertDialog，不做编辑）；admin 系统设置二级导航 + Catalog 表格管理（admin 不用手调接口喂数据）。决策细节见 git log（210f620/cf37beb）；后续 5-26 URL nested 化时调整。
 - **2026-05-22 — 前端 Vue→React 19 迁移 + App Shell 批次1+2 + shadcn skill/MCP 接入**：触发=Agent 流式/编排生态 React-first（趁 D1 代码量小切换）；映射 Vue→React 19 / Vue Router→TanStack Router (file-based) / Pinia→Zustand / shadcn-vue→shadcn/ui (Radix UI)；App Shell 跑出 `_authenticated` 守卫 + floating sidebar (collapsible="icon") + UserMenu 头像下拉 + 各模块占位页骨架；shadcn skill+MCP（仓库根 `.mcp.json` 钉 `--cwd frontend`）接入。详细决策见 git log。
