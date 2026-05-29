@@ -13,7 +13,7 @@ from typing import Annotated
 from urllib.parse import quote
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, UploadFile,BackgroundTasks
 from fastapi.responses import StreamingResponse
 
 from app.core.depends import get_current_user
@@ -23,6 +23,7 @@ from app.core.storage import storage
 from app.models.user import User
 from app.schemas.knowledge import DocumentOut, UploadInitIn, UploadInitOut
 from app.services.knowledge import DocumentService, get_document_service
+from app.services.knowledge.document_processor import process_document
 
 router = APIRouter(
     prefix="/knowledge-bases/{kb_id}/documents",
@@ -127,6 +128,21 @@ async def upload_complete(
     await svc.mark_uploaded(current_user, kb_id, doc_id)
     return success(message="上传已确认")
 
+@router.post("/{doc_id}/process", summary="触发文档处理管线（向量化）")
+async def process(
+kb_id: UUID,
+        doc_id: UUID,
+background_tasks: BackgroundTasks,
+        current_user: CurrentUserDep,
+        svc: DocumentServiceDep,
+) -> ResponseModel[DocumentOut]:
+    """手动触发文档向量化：解析→切段→切块→embed。
+
+        端点立即返回，处理在后台跑；前端轮询 `GET /{doc_id}` 看 status / stage 推进。
+    """
+    doc = await svc.trigger_progress(current_user,kb_id, doc_id)
+    background_tasks.add_task(process_document, doc_id)
+    return success(data=DocumentOut.model_validate(doc), message="已触发处理")
 
 @router.get("", summary="列出知识库下的文档")
 async def list_documents(

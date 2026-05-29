@@ -8,7 +8,32 @@ from tortoise import fields
 
 from app.db.fields import VectorField
 from app.models.base import TimestampMixin, UUIDBaseModel
+from enum import StrEnum
 
+
+class KBStatus(StrEnum):
+    READY = "ready"
+    REINDEXING = "reindexing"
+
+
+class DocStatus(StrEnum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class DocStage(StrEnum):
+    NONE = ""  # 没在任何阶段（pending / completed 时）
+    UPLOADED = "uploaded"
+    PARSING = "parsing"
+    SPLITTING = "splitting"
+    EMBEDDING = "embedding"
+
+class SourceType(StrEnum):
+    CONTENT = "content"
+    QUESTION = "question"  # v2 多向量留口子
+    TITLE = "title"        # v2 多向量留口子
 
 class KnowledgeBase(UUIDBaseModel, TimestampMixin):
     """知识库：一组文档的集合，建库时锁定一个 embedding 模型。
@@ -29,7 +54,10 @@ class KnowledgeBase(UUIDBaseModel, TimestampMixin):
     )
     embedding_dim = fields.IntField(description="向量维度，建库时随模型锁定")
     chunk_config = fields.JSONField(default=dict, description="切块配置：chunk_size / overlap / strategy")
-    status = fields.CharField(max_length=20, default="ready", description="库级状态：ready / reindexing")
+    status = fields.CharEnumField(
+        KBStatus, max_length=20, default=KBStatus.READY,
+        description="库级状态（换模型重建时切 reindexing）",
+    )
 
     class Meta:
         table = "knowledge_bases"
@@ -56,12 +84,13 @@ class Document(UUIDBaseModel, TimestampMixin):
     char_length = fields.IntField(default=0, description="字符数（冗余展示）")
     paragraph_count = fields.IntField(default=0, description="段数（冗余展示）")
     chunk_count = fields.IntField(default=0, description="子块数 = content 向量数（冗余展示）")
-    status = fields.CharField(
-        max_length=20, default="pending",
-        description="pending / processing / completed / failed",
+    status = fields.CharEnumField(
+        DocStatus, max_length=20, default=DocStatus.PENDING,
+        description="处理状态",
     )
-    stage = fields.CharField(
-        max_length=20, default="", description="处理阶段：parsing / splitting / embedding",
+    stage = fields.CharEnumField(
+        DocStage, max_length=20, default=DocStage.NONE,
+        description="处理阶段（pending / completed 时为空）",
     )
     error_message = fields.TextField(default="", description="失败原因")
 
@@ -111,8 +140,9 @@ class Embedding(UUIDBaseModel):
         "models.Paragraph", related_name="embeddings", on_delete=fields.CASCADE,
         description="始终有——命中后据此返回整段",
     )
-    source_type = fields.CharField(
-        max_length=20, default="content", description="content / question / title",
+    source_type = fields.CharEnumField(
+        SourceType, max_length=20, default=SourceType.CONTENT,
+        description="向量来源类型（多向量留口子）",
     )
     text = fields.TextField(description="被 embed 的源文本（content 行 = 子块原文）")
     position = fields.IntField(null=True, description="子块在段内顺序（非 content 行可空）")

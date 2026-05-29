@@ -12,7 +12,7 @@ from uuid import UUID
 from app.core.config import settings
 from app.core.exceptions.types import NotFound404, ValidationException
 from app.core.storage import storage
-from app.models.knowledge import Document, KnowledgeBase
+from app.models.knowledge import Document, KnowledgeBase, DocStatus, DocStage
 from app.models.user import User
 from app.schemas.knowledge import ALLOWED_FILE_TYPES
 
@@ -79,7 +79,7 @@ class DocumentService:
             file_type=file_type,
             size=size,
             storage_key="",  # 占位，拿到 id 后回填
-            status="pending",
+            status=DocStatus.PENDING,
         )
         doc.storage_key = _build_storage_key(kb.id, doc.id, file_type)
         await doc.save(update_fields=["storage_key"])
@@ -118,9 +118,28 @@ class DocumentService:
             raise ValidationException(f"文件超出大小上限 {mb}MB")
 
         doc.size = actual_size
-        doc.stage = "uploaded"
+        doc.stage = DocStage.UPLOADED
         await doc.save(update_fields=["size", "stage"])
         return doc
+
+    async def trigger_progress(self, user: User, kb_id: UUID, doc_id: UUID) -> Document:
+        """触发文档处理：只允许已上传或失败重试的 doc 进入管线。
+
+                - stage=uploaded：首次触发
+                - status=failed：失败重试
+                - 其余（pending 未传字节 / processing 已在跑 / completed 想重跑）一律拒绝
+        """
+        doc = await self._get_user_doc(user, kb_id, doc_id)
+        if doc.status == DocStatus.FAILED:
+            return doc  # 允许重试
+        if doc.stage == DocStage.UPLOADED:
+            return doc  # 首次触发
+        if doc.status == DocStatus.PROCESSING:
+            raise ValidationException("文档处理中，请稍候")
+        if doc.status == DocStatus.COMPLETED:
+            raise ValidationException("文档已处理完成，如需重切请删除后重传")
+            # pending 未传字节
+        raise ValidationException("文档尚未上传完成")
 
     async def delete(
             self, user: User, kb_id: UUID, doc_id: UUID,

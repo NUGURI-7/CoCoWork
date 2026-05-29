@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import dayjs from 'dayjs'
-import { Download, FileText, Inbox, MoreHorizontal, Trash2 } from 'lucide-react'
+import { Download, FileText, Inbox, MoreHorizontal, Sparkles, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { deleteDocument, getDocumentDownloadUrl } from '@/api/knowledge'
+import { deleteDocument, getDocumentDownloadUrl, triggerProcessDocument } from '@/api/knowledge'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,9 +30,11 @@ interface DocumentListProps {
   docs: Document[]
   /** 删除成功后回调，父组件用来 refetch 文档列表 */
   onDeleted?: () => void
+  /** 触发向量化成功后回调，父组件乐观更新 + 启动轮询 */
+  onProcessed?: (docId: string) => void
 }
 
-export function DocumentList({ kbId, docs, onDeleted }: DocumentListProps) {
+export function DocumentList({ kbId, docs, onDeleted, onProcessed }: DocumentListProps) {
   if (docs.length === 0) {
     return (
       <div className="text-muted-foreground flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed py-16 text-sm">
@@ -46,7 +48,13 @@ export function DocumentList({ kbId, docs, onDeleted }: DocumentListProps) {
   return (
     <div className="divide-y rounded-lg border">
       {docs.map((d) => (
-        <DocumentRow key={d.id} kbId={kbId} doc={d} onDeleted={onDeleted} />
+        <DocumentRow
+          key={d.id}
+          kbId={kbId}
+          doc={d}
+          onDeleted={onDeleted}
+          onProcessed={onProcessed}
+        />
       ))}
     </div>
   )
@@ -56,17 +64,36 @@ function DocumentRow({
   kbId,
   doc,
   onDeleted,
+  onProcessed,
 }: {
   kbId: string
   doc: Document
   onDeleted?: () => void
+  onProcessed?: (docId: string) => void
 }) {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [triggering, setTriggering] = useState(false)
 
   const display = getDocDisplayStatus(doc)
   const s = docStatusMeta[display]
+  const canProcess = display === 'uploaded' || display === 'failed'
+
+  async function handleProcess() {
+    if (triggering) return
+    setTriggering(true)
+    try {
+      await triggerProcessDocument(kbId, doc.id)
+      toast.success(`已触发「${doc.name}」向量化`)
+      // 乐观更新：父组件立即把 doc 标 processing，UI 即时反馈 + 轮询自动启动
+      onProcessed?.(doc.id)
+    } catch {
+      // 拦截器已 toast
+    } finally {
+      setTriggering(false)
+    }
+  }
 
   async function handleDownload() {
     if (downloading) return
@@ -127,6 +154,12 @@ function DocumentRow({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            {canProcess && (
+              <DropdownMenuItem onSelect={handleProcess} disabled={triggering}>
+                <Sparkles className="size-4" />
+                {display === 'failed' ? '重试向量化' : '向量化'}
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onSelect={handleDownload} disabled={downloading}>
               <Download className="size-4" />
               下载

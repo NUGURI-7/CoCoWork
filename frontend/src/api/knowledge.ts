@@ -94,6 +94,15 @@ export function confirmDocumentUpload(kbId: string, docId: string) {
   )
 }
 
+/** 触发文档处理管线（向量化）。后端 BackgroundTasks 跑，立即返回，前端轮询看状态。 */
+export function triggerProcessDocument(kbId: string, docId: string) {
+  return post<Document>(
+    `/knowledge-bases/${kbId}/documents/${docId}/process`,
+    undefined,
+    { silent: true },
+  )
+}
+
 /**
  * Local 模式：把文件 multipart POST 给后端 `upload-endpoint`。
  *

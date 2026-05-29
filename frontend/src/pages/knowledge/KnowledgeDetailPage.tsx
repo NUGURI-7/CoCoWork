@@ -50,6 +50,14 @@ export default function KnowledgeDetailPage() {
     refetch()
   }, [refetch])
 
+  // 任一文档处于 processing → 1.5s 后再 refetch，循环直到全部脱离 processing
+  useEffect(() => {
+    const hasProcessing = docs.some((d) => d.status === 'processing')
+    if (!hasProcessing) return
+    const timer = setTimeout(refetchDocs, 1500)
+    return () => clearTimeout(timer)
+  }, [docs, refetchDocs])
+
   useTabTitle(`/knowledge/${kbId}`, kb?.name)
 
   if (loading || !kb) {
@@ -115,7 +123,18 @@ export default function KnowledgeDetailPage() {
         </TabsList>
 
         <TabsContent value="documents" className="mt-4">
-          <DocumentList kbId={kbId} docs={docs} onDeleted={refetchDocs} />
+          <DocumentList
+            kbId={kbId}
+            docs={docs}
+            onDeleted={refetchDocs}
+            onProcessed={(docId) =>
+              setDocs((prev) =>
+                prev.map((d) =>
+                  d.id === docId ? { ...d, status: 'processing', stage: 'parsing' } : d,
+                ),
+              )
+            }
+          />
         </TabsContent>
 
         <TabsContent value="retrieval" className="mt-4">

@@ -6,7 +6,7 @@ from tortoise.functions import Count, Sum
 from tortoise.queryset import QuerySet
 
 from app.core.exceptions.types import NotFound404, ValidationException
-from app.models.knowledge import KnowledgeBase
+from app.models.knowledge import KnowledgeBase, KBStatus
 from app.models.model import AIModel
 from app.models.user import User
 from app.schemas.knowledge import (
@@ -98,7 +98,7 @@ class KnowledgeBaseService:
                 embedding_model=model,
                 embedding_dim=dim,
                 chunk_config=data.chunk_config.model_dump(),
-                status="ready",
+                status=KBStatus.READY,
             )
         except IntegrityError as e:
             raise ValidationException(f"知识库名称 '{data.name}' 已存在") from e
