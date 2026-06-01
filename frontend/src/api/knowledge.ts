@@ -10,6 +10,7 @@ import type {
   KnowledgeBase,
   KnowledgeBaseCreatePayload,
   KnowledgeBaseUpdatePayload,
+  RetrievalHit,
   UploadInitOut,
 } from '@/types'
 
@@ -154,5 +155,17 @@ export function uploadDocumentToR2(
     }
     xhr.onerror = () => reject(new Error('网络错误，R2 上传中断'))
     xhr.send(file)
+  })
+}
+
+// ============================================================================
+// 检索 / 命中测试
+// ============================================================================
+
+/** 命中测试（语义检索）：返回命中段 + 相似度，不落库。 */
+export function retrievalTest(kbId: string, query: string, topK: number) {
+  return post<RetrievalHit[]>(`/knowledge-bases/${kbId}/retrieval-test`, {
+    query,
+    top_k: topK,
   })
 }

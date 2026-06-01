@@ -123,6 +123,21 @@
 - v1 简单：`status`(pending/processing/completed/failed) + `stage`(挂在哪步) + `error_message`(为啥挂)。
 - MaxKB 那种「多任务复合状态字符串」（embedding / 生成问题 / 同步 各占一位）先不用，等以后多任务再升级。
 
+### 11.1 v1 简化点 → 生产级升级触发条件（2026-05-29）
+
+v1 处理管线刻意走最朴素路径，主要为对齐当前场景（单任务、单进程、无并发、文档量级小）。下面 4 个简化点都不是技术不会，是**当前场景不需要**。升级时按各自触发条件单独切片实施，不预先堆。
+
+| v1 简化 | 现在为啥不做 | 升级触发条件 | 升级方案 |
+|---|---|---|---|
+| **单字段 status + stage**（不分任务类型） | v1 只有 embedding 一条流程，无其他任务并行 | 加多任务（rerank / 自动生成假设问题 / 同步等任意 2 个起） | **走 JSONB 或 `document_task` 子表**（参考 Agent 模块 Hybrid Schema），**不学 MaxKB 位运算字符串**（自描述性近零、加任务要改解析、并发不安全） |
+| **无分布式锁** | `BackgroundTasks` 在 web 进程内单线程跑，不会同 doc 并发 | 切 ARQ 多 worker、或同 doc 可能被并发触发 | Redis 分布式锁（`SET NX EX`），lock key = `process:doc:{id}`，TTL > 单文档最长处理时间 |
+| **无任务中断检查** | v1 没暴露「取消」给用户、且单文档处理时间短（秒级） | 暴露用户「取消」按钮、或处理时间拉长到用户会想中断的量级（分钟级 +） | `process_document` 各阶段前 `await Document.get(id).only("status")` 查 `status == 'cancelled'` 即抛 `CancelledError`；状态机加 `cancelled` 终态 |
+| **全量 in-memory 处理段 / 子块** | v1 限 50MB md/txt、段数百级、子块数千级，内存压力可忽略 | 解 PDF/DOCX 后单文档段数 10万+、内存撑不住 | 流式处理：段循环里产出子块就批量 embed + insert 一批，hold 时间窗口控制；状态机加段级进度（`paragraph_done_count`） |
+
+**统一原则**：每条升级都是「**加新东西**」而非「**改老结构**」，v1 状态机字段（`status / stage / error_message`）+ 表结构（Paragraph/Embedding）保持不变，向上兼容。
+
+**反模式提醒**：别在 v1 阶段为了"以后好升级"提前引复杂度（状态机库、Redis 锁、子表、流式 generator 都不要）。当前最大风险不是"将来重构难"，是"现在堆复杂度导致代码读不懂、改不动、bug 难定位"。
+
 ---
 
 ## 12. 易混点：命中测试 ≠ 命中处理方式
@@ -130,3 +145,72 @@
 - **命中测试**：知识库内的测试面板，输入 query 看命中段 + 分数，**不生成答案**。v1 要做。
 - **命中处理方式**（MaxKB 的 optimization / 直接返回 + 相似度阈值）：**回答时**的行为（命中高相似度段时直接返回原文、跳过 LLM），属 **Agent / 对话阶段**，v1 知识库不碰。
 - 两者一度被混为一谈，这里钉死区分。
+
+---
+
+## 13. 片5 分块实施取舍 + v2 对照路径（2026-05-28）
+
+### 13.1 v1 用 LangChain 作 baseline 跑通 + v2 自研对照（不当永久依赖）
+
+- **解析**：`path.read_text(encoding='utf-8')` 直接读 md/txt（v1 白名单仅 md/txt，无 PDF/DOCX 等脏格式，**零 loader 依赖**）
+- **切块**：`langchain-text-splitters` 子包的 `RecursiveCharacterTextSplitter`
+- 仅引该子包（独立轻量），**不引全套 `langchain`**
+- 抽 `Splitter` 抽象基类，业务代码（`process_document`）只依赖接口；v2 替换 = 改装配一行、不动业务
+- chunk_config 默认值：chunk_size=512 chars / overlap=50 chars / strategy=recursive / unit=chars
+
+### 13.2 为啥 v1 用 LangChain 而非直接手搓
+
+- **对照实验更硬**：v1 baseline = 业界标杆 LangChain，v2 = 自研超越版；这套对比比"自己 v1 朴素 vs 自己 v2 优化"有说服力得多——面试里能讲"我评估了行业标准、发现局限、做了针对性优化"，体现工程判断力而非体力
+- **v1 跑通快**：分块逻辑不卡壳、不调边界 bug，时间转头投到检索评估（片 6）和 multi-agent（含金量更高）
+- **简历可信度高**：项目里**真实用过 LangChain**，被问"你用过 LangChain 吗"时有底气
+- 父子块设计（Paragraph + Embedding 分层）已经覆盖了"层级分块"亮点，分块算法精调收益不大、对照实验收益更大
+
+### 13.3 LangChain RecursiveCharacterTextSplitter 已知局限（认领、准备对照）
+
+- **语义盲目**：不识 markdown 结构（heading / 代码块 / 表格全混着切）
+- **中英文混排不友好**：按字符算 chunk_size，一个汉字 ≈ 1.5–2 token，实际上中英文 chunk 大小不等价
+- **跨块断裂**：完整论点 / 代码块可能被切两半
+- **overlap 是补丁**：加 overlap 本质是承认切割策略不够好、用冗余救场
+
+### 13.4 v2 自研对照路径
+
+- **切换 trigger**：
+  - 必要条件：片 6 检索评估体系跑起来、产出第一份 baseline 数据
+  - 强制条件：**投简历前**必须换掉，不留 LangChain 在核心
+- **优化项（逐项 A/B 对照）**：
+  1. **md 结构感知**：按 heading 切段、保留章节上下文
+  2. **token-based 切块**：装 tiktoken、`chunk_config.unit="tokens"`
+  3. **多向量索引**：每段加 `source_type=question` 假设问题向量 + `source_type=title` 标题向量（表结构已留口子）
+  4. **语义感知切块**：用 embedding 相似度判断邻句是否属同语义段
+- **评估指标**：召回率@k / MRR / 命中率（量化对比）
+- **评估数据集**：human-labeled `(query, 期望命中段)` 对（可借 §13.4.3 的"问题向量"文本反向当 ground truth）
+- **切换后**：从 `pyproject.toml` 移除 `langchain-text-splitters` 依赖
+
+### 13.5 实施层面保障"可替换"
+
+```python
+# app/services/knowledge/splitter/base.py
+class Splitter(ABC):
+    @abstractmethod
+    def split(self, text: str, config: ChunkConfig) -> list[str]: ...
+
+# app/services/knowledge/splitter/langchain_impl.py
+class LangChainSplitter(Splitter):  # v1
+    ...
+
+# app/services/knowledge/splitter/cocowork_impl.py
+class CocoWorkSplitter(Splitter):  # v2 自研
+    ...
+
+# 装配（硬编码、不入 env——splitter 不是部署变量）
+splitter: Splitter = LangChainSplitter()  # v1 → v2 改这一行
+```
+
+- 业务代码只 `from app.services.knowledge.splitter import splitter; splitter.split(...)`，**不感知实现**
+- v2 切换 = 改一行装配 + 移除旧依赖、零业务改动
+
+### 13.6 PDF / DOCX 等复杂格式何时加 loader 库
+
+- v1 白名单仅 md/txt → 不需要 loader 库
+- 将来加 PDF/DOCX 时单独决策：候选 `pypdf` / `pdfplumber` / `unstructured`
+- 选库标准：单一职责（只做格式解析、不带分块逻辑）、轻量、不抢自研叙事

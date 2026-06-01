@@ -43,10 +43,12 @@
 - **前端 Model 模块全栈打通**：Provider/AIModel 的创建 + 删除（不做编辑，改配置=重建）+ Catalog 查询展示 + 参数动态表单，全部对接后端 API。`api/model.ts` 统一封装三层接口；删除走 AlertDialog 二次确认；列表 loading 用 ldrs `l-ring`（品牌色 `#2f6b53`、60vh 居中）替代 skeleton。
 - **前端 admin 后台分区**：`/admin` 独立壳（AdminShell/AdminSidebar/admin-nav + isAdmin 守卫 + 独立 tab 系统），头像下拉「后台管理」入口。系统设置用「左侧二级导航 + 右侧内容」（仿 Claude settings），首个设置项 = **模型目录管理**（Catalog 表格增删，admin 写入），admin 不再需要手调接口喂数据。
 - **前端工具模块占位页（静态 mock）**：`/tools` 三带式（Header / 统计带 / Tab）+ 按来源 tab（全部/内置/MCP）+ 卡片网格 + 单卡启用开关。后端 tool/skill 暂缓，纯前端骨架。
-- **前端知识库模块 CRUD 接通**：库级 list/get/create/update/delete 全对接后端 `/knowledge-bases`；列表页卡片网格 + 详情页（库信息 header + 文档/检索测试/设置 三 tab）；删除入口双处（卡片三点 + 设置页）。**检索测试 tab 接 mock**（`runMockRetrieval` 500ms + 6 段业务贴真 chunk + 递减相似度，后端片6 接入只换函数实现）；**文档列表三点 Dropdown 接通**（下载占位 toast / 删除 AlertDialog 二次确认 + 本地 state 移除）；文档上传 sheet 仍 mock，等后端 4b-2/4b-3。
+- **前端知识库模块 CRUD 接通**：库级 list/get/create/update/delete 全对接后端 `/knowledge-bases`；列表页卡片网格 + 详情页（库信息 header + 文档/检索测试/设置 三 tab）；删除入口双处（卡片三点 + 设置页）。**检索测试 tab 已接真接口**（片6，见下）；**文档列表三点 Dropdown 接通**（下载占位 toast / 删除 AlertDialog 二次确认 + 本地 state 移除）；文档上传 sheet 仍 mock，等后端 4b-2/4b-3。
 - **后端存储抽象层就位**：`app/core/storage/`（`Storage` ABC + R2/Local 双实现 + 按 `STORAGE_BACKEND` 装配的模块级单例 `storage`）；R2 支持预签名直传/下载、Local 走后端中转 + 路径穿越防护；同步 IO 全包 `asyncio.to_thread`、boto3 client 懒加载。
 - **知识库文档上传 + CRUD 后端齐全（片4 完工）**：8 个端点全挂 `/knowledge-bases/{kb_id}/documents/*` 下。上传 3 个：`upload-init` 按 `supports_presigned` 返 `strategy=presign|passthrough` / `upload-passthrough`（仅 Local）/ `upload-complete`（仅 R2 + head 验对象在）；CRUD 4 个：list / detail / delete（联动清 storage）/ download-url（统一接口，R2 返 presigned GET 带 RFC 6266 filename / Local 返 raw 路径）；下载 1 个：`/raw`（仅 Local，StreamingResponse 吐字节）。Storage 扩 `stat_size` 复校真实大小，超限自动清干净。扩展名 md/txt + 大小上限 50MB。
 - **知识库前端文档全流程接通**：`api/knowledge.ts` 7 函数（含裸 XHR 真进度的 `uploadDocumentToR2` + axios `onUploadProgress` 的 `uploadDocumentPassthrough`）；DocumentList 接 `Document` 真类型、`<a download>` 触发下载、AlertDialog 删除；UploadDocumentSheet 真上传状态机（Promise.allSettled 并发 + setQueue 函数式更新 + 单文件失败不影响其他）；R2 桶 CORS + Object R&W token 配妥。**上传 / 列表 / 下载 / 删除全链路 OK**。
+- **知识库处理管线（片5 完工）全栈打通**：后端 Splitter 抽象层（`Splitter` ABC + `LangChainSplitter` 包 langchain `RecursiveCharacterTextSplitter`，v2 自研对照 swap 业务零改动）+ `process_document(doc_id)` 入口（解析→切段（双换行）→ 切块→批量 embed，状态机 status/stage 推进、try/except 兜底 failed、重入清旧 paragraphs FK CASCADE 自动连带清 embeddings）+ 触发端点 `POST /documents/{id}/process`（service 状态校验 uploaded/failed 可触发、`BackgroundTasks.add_task` 异步跑）；模型层 enum 改造（`KBStatus / DocStatus / DocStage / SourceType` StrEnum + `CharEnumField`，迁移 0007/0008 no-op SQL）；前端三点菜单加「向量化/重试向量化」入口 + 1.5s setTimeout 单次轮询自动续 + 乐观更新（点击立即 setDocs 标 processing，避开 BackgroundTasks 启动 race）。**上传 → 待向量化 → 触发 → 处理中 → 就绪 端到端 OK**。
+- **知识库检索 + 命中测试（片6 完工）全栈打通**：后端检索 service（query 向量化 → 原生 SQL `embedding::vector(dim) <=> query` 余弦距离 → `DISTINCT ON (paragraph_id)` 按段去重取最近子块 → 外层阈值过滤 + 重排 + top_k；`{dim}` f-string 拼类型修饰符、向量/kb_id/阈值/top_k 走 `$` 参数防注入）+ 端点 `POST /knowledge-bases/{kb_id}/retrieval-test`（归属校验 + query/top_k/similarity_threshold）；schema `RetrievalTestIn`/`RetrievalHit`（父子块：返整段 content + 命中子块 chunk_text + score=1-距离）；前端 `runMockRetrieval` → `retrievalTest` 真接口、检索 mock 删净。**端到端 OK**。**命中测试首次暴露切块问题**：双换行段切分对 list-heavy md 失效（一整天行程挤成一巨段、命中返整段过长）→ 留 v2 heading 感知切块当对照案例。**RAG v1 六片整片收官。**
 - **前端 admin 用户管理页（mock）**：`/admin/users` 表格（用户/邮箱/角色 badge/状态 switch/创建时间/删除）+ 搜索过滤 + 角色筛选 + AlertDialog 二次确认；自己的行禁用 switch 和删除；纯前端 mock，后端 user 管理接口齐了再换。
 - **Agent 模块设计 spec 定稿**：`docs/design/agent-module-v1.md`（14 节产品+架构 spec）+ `agent-module-frontend-v1.md`（前端画法指南）。
 - **Agent 模块前端切片 0 全栈打通（纯 mock）**：列表页三带式（模板池 + 我的 Agent 网格）+ 创建弹窗（选模板起名）+ 详情页（左 ConfigPanel 配置 40% / 右 Playground 沙盒试运行 60%，配置即时落 store）；`agent-mock-store`（zustand 列表/详情共用）。**砍掉「正式对话」**——详情页只做沙盒，正式对话归 workspace。后端 Agent 模型 + LangGraph 未起。
@@ -54,8 +56,9 @@
 - **全局：路由→tab 自动同步机制**。路由 `staticData` + `useTabSync`（router onResolved 事件驱动），调用方只 `navigate`、tab 自动跟随；详情页 `useTabTitle` 覆盖动态名。工作台 + admin 两套 tab 都接入。
 
 ## 下一步
-- **当前优先 = 知识库 / RAG 模块**（独立于 Agent / 对话，是更硬的基础设施，优先级上调）。前端**库级 CRUD 全接通 + 检索测试 mock 骨架 + 文档列表三点接通**（最近迭代）；前端剩文档上传 sheet（mock，待 4b-2）+ 文档下载真接（待 4b-3）+ 检索测试真接（待片6），全部只换函数实现、组件不动。
-  - **后端方案已定稿**：见 `docs/design/knowledge-rag-v1.md`（spec + §13 实施切片清单）+ `knowledge-rag-decisions.md`（决策/权衡）。按 §13 切 6 片小步推进：**片1+2+3+4（整片）已完成**（VectorField + pgvector + 4 表迁移 0005 + AIModel.meta 迁移 0006 + 知识库 CRUD 5 端点 + 存储抽象层 R2/Local 双后端 + Document schemas/service + 上传 3 端点 + CRUD/下载 5 端点）；**剩**：片5 处理管线（手动触发向量化、BackgroundTasks 跑 `process_document()`、解析→切段→切块→embed） → 片6 检索 + 命中测试。详见最近迭代。
+- **知识库 / RAG 模块 v1 整片完工（片1-6 收官）**：数据层 + KB CRUD + 存储抽象 + 文档上传/下载 + 处理管线 + 检索/命中测试全栈打通。
+  - **方案见** `docs/design/knowledge-rag-v1.md`（spec + §13 切片清单全部勾掉）+ `knowledge-rag-decisions.md`（决策/权衡）。六片：VectorField + pgvector + 4 表迁移 0005 + AIModel.meta 0006 + KB CRUD + 存储抽象 R2/Local + Document 上传 CRUD 下载 8 端点 + Splitter 抽象层 + `process_document()` + 触发端点 + enum 化迁移 0007/0008 + 检索 service + 命中测试端点。详见最近迭代。
+  - **v2 方向**：混合检索 / FTS / RRF / rerank / 多向量；切块优化（heading 感知——命中测试已暴露双换行段切分对 list-heavy md 失效，留作自研切块器 A/B 对照案例）；评估体系（Recall@k/MRR + LLM 自动造测试集）。
   - 既有决策：embedding 每库锁一个模型、rerank 先阿里、全文检索先 Postgres 原生 FTS（不够再上 ParadeDB pg_search，不上 ES）、切块默认（递归~512token+50overlap）+ 可配；混合检索/FTS/RRF/rerank/多向量 = v2；文档编辑用自封装 tiptap（后做）。
 - **Agent 模块（设计已定稿，前端可独立推进）**：完整 spec 见 `docs/design/agent-module-v1.md`（14 节）+ 前端画法指南 `agent-module-frontend-v1.md`（三批实施建议）。范式 = 工作空间 + 单 agent 双入口；不调试不发布；模板/Agent/实例三层分离（模板=平台预置纯 LangGraph 行为骨架空壳，Agent=用户装备好的资产，实例=空间内成员含注入）；@直连 vs 不@走管家双轨调度；3 层长期记忆 L1/L2/L3 严格作用域。架构亮点：Hybrid Schema（核心列+jsonb 扩展）+ 三层分离（ContextBuilder/LangGraph/PostProcessor）+ 7 设计模式（Builder/CoR/Strategy/Mediator/Repository/Observer-EDA + Layered）+ Hexagonal。**前端切片 0 已完成**（列表/创建/详情配置/沙盒，纯 mock + local state，旧 agent 代码已替换；详见最近迭代）；后续切片 1+（模板 seed / Agent CRUD 接 API / 对话接 LLM）+ 后端 Agent 模型 + LangGraph 待知识库 RAG 收尾后启动。设计已砍 agent 详情页「正式对话」——正式对话归 workspace。
 - **Workspace 模块（前端骨架完成，等后端起）**：列表 + 详情三栏 + 招募 + Conversation 切换 + @mention 双轨路由 mock 全画完（最近迭代）；后端待做：Workspace 模型 + CRUD（切片4）→ 实例注入引擎（切片5）→ supervisor LangGraph 调度（切片7+），跟 Agent 模块切片大纲走。
@@ -78,6 +81,71 @@
 - 如果某次改动不足以影响项目理解，就不要把噪音写进来。
 
 ## 最近迭代
+
+### 2026-06-01 — 知识库片6 全栈：检索 service + 命中测试端点 + 前端切真接口（RAG v1 收官）
+
+**后端检索 service（`retrieval_service.py`，含设计取舍故归用户写）**
+
+- `RetrievalService.retrieval_test(user, kb_id, query, top_k, similarity_threshold)`：① `KnowledgeBase.filter(id, created_by=user).prefetch_related("embedding_model__provider")` 校验归属 + 取 embedding 模型 ② `ModelClient.create_embedding` 把 query 转**一条**向量 → pgvector 文本字面量 `[..]` ③ 原生 SQL 走 `connections.get("default").execute_query_dict`。
+- **检索 SQL（两层）**：内层 `DISTINCT ON (paragraph_id)` + `ORDER BY paragraph_id, distance` 按段去重、每段取最近子块（DISTINCT ON 强制以 paragraph_id 打头、顺序被绑死）；外层 `WHERE (1-distance) >= threshold` + `ORDER BY distance` 重排 + `LIMIT top_k`。
+- **参数化要点**：`{dim}`（= `kb.embedding_dim`）是**类型修饰符**语法上不能参数化 → f-string 拼入（DB int 安全）；query 向量 / kb_id / 阈值 / top_k 全 `$1-$4` 防注入。cast 写法须与将来按库建的 HNSW 部分索引表达式一致才命中。`source_type='content'` 写死（v1 唯一，给多向量留口子）。score = 1 - 余弦距离。
+
+**schema（用户写）+ 端点（Claude 写）**
+
+- `retrieval_schema.py`：`RetrievalTestIn`（query + top_k 1-50 + `similarity_threshold` 默认 0=不过滤，方案 B 加的第三旋钮）+ `RetrievalHit`（父子块：返整段 `content` + 命中子块 `chunk_text` + `score`）。
+- 端点 `POST /knowledge-bases/{kb_id}/retrieval-test` → `ResponseModel[list[RetrievalHit]]`，加在 `knowledge_base.py`（单端点不拆文件）。
+
+**前端切 mock → 真接口（Claude 写）**
+
+- `types/knowledge.ts` 加 `RetrievalHit`；`api/knowledge.ts` 加 `retrievalTest(kbId, query, topK)`；`RetrievalTest.tsx` `runMockRetrieval` → `retrievalTest`、key 换 `paragraph_id`；`mock.ts` 删 `RetrievalChunk`/`sampleChunks`/`runMockRetrieval`（只留状态徽标）。组件渲染没动（字段名后端对齐 mock）。`tsc --noEmit` 0 报错。
+
+**端到端验收 + 发现**
+
+- 起后端 + 已向量化 KB → 命中测试输入 → 真命中段 + 分数、DISTINCT ON 去重生效。✅
+- **命中测试首次暴露切块问题**：旅游计划 md 一整天行程（多景点）无空行 → `_split_paragraphs` 双换行切分把它挤成**一个巨型段** → 命中返整段过长（父子块按设计返整段，问题在段切太粗）。属 v1 已知局限，留 v2 heading 感知切块 + 自研切块器 A/B 对照（decisions §13.4）。**命中测试作为「索引体检」的价值即时兑现。**
+
+**SQL 写法选型（讨论沉淀）**
+
+- raw SQL 组织：内联参数化 vs 外置 `.sql` 文件 vs query-builder 编译注入（MaxKB）三档，**按规模匹配**——单条短查询内联最干净；规模涨先升「命名常量」再升「.sql 文件」；动态结构才上 query builder（SQLAlchemy Core/PyPika），不学 MaxKB 土法注入。我们 v2 三模式是「3 条固定 SQL + mode 选 + blend 走 Python RRF」，不需注入机器。
+
+### 2026-05-29 — 知识库片5 全栈：处理管线 + 触发端点 + enum 改造 + 前端入口轮询乐观更新
+
+**后端 5.1 Splitter 抽象层**
+
+- `app/services/knowledge/splitter/`：`Splitter` ABC（`split(text, config) -> list[str]`）+ `LangChainSplitter` 包 langchain `RecursiveCharacterTextSplitter`（v1 baseline）+ 模块级单例 `splitter`。v2 自研对照见 decisions §13，swap 装配一行、业务零改动。
+- 装 `langchain-text-splitters` 子包（不引全套 langchain）；chunk_size/overlap 用库级 `ChunkConfig`，默认 separators 走 `["\n\n", "\n", " ", ""]`。
+
+**后端 5.2 `process_document` 管线主函数**
+
+- 入口 `Document.get_or_none(id=doc_id).prefetch_related("knowledge_base__embedding_model__provider")`——**踩坑**：原本三层 `select_related` 嵌套触发 Tortoise 1.x `_fk_setter` 把 UUID 当 model 实例（`AttributeError: 'UUID' object has no attribute 'id'`），换 prefetch_related 走分多条 SQL 独立 _init_from_db 即稳。代价多几条 SQL，pipeline 场景可忽略。
+- 状态机：入口 `status=processing/stage=parsing` → 切段 `stage=splitting`（按双换行切段朴素版，v2 加 md heading）→ 切块 + 批量 embed `stage=embedding` → 收尾 `status=completed/stage=NONE`；任一步异常 → `status=failed` + `error_message`，stage 留在出错那步。
+- **重入策略**：开头 `Paragraph.filter(document_id=doc.id).delete()` 清旧（FK CASCADE 自动连带清 embeddings），允许 failed 重试 / 完成后重切。
+- **不开事务**：每步分阶段 save 让前端轮询能看到 stage 推进；BackgroundTasks 拿不到异常，try/except 整体包 + 失败落库 + log。
+- **分批 100 调 embedding**：汇总所有段子块 `[(paragraph_id, position, text), ...]` → 切片 batch 100 → 1 次 `ModelClient.create_embedding` + 1 次 `Embedding.bulk_create`；避撞 OpenAI/阿里单请求 input 上限。
+- **UUID7 Python 侧生成**：bulk_create 后 in-place 对象 id 已有、可直接复用挂 FK。
+
+**后端 5.3 触发端点**
+
+- `POST /knowledge-bases/{kb_id}/documents/{doc_id}/process`：`DocumentService.trigger_process` 状态校验（`stage=uploaded` 首次 / `status=failed` 重试可触发，processing/completed/pending 字节未传一律拒绝）+ `BackgroundTasks.add_task(process_document, doc.id)` 异步入队 + 立即返回。
+
+**模型层 enum 改造（顺手收口）**
+
+- `app/models/knowledge.py` 顶部加 4 个 StrEnum：`KBStatus` / `DocStatus` / `DocStage`（含 `NONE=""` 占位）/ `SourceType`（content/question/title v2 多向量留口子）。
+- 4 个字段（KB.status / Document.status,stage / Embedding.source_type）`CharField` → `CharEnumField`，max_length 不变 DB 列定义等价；service 6 处字符串赋值换 enum 引用。
+- 迁移 0007（knowledge_enum_status）+ 0008（embedding_enum_source_type），SQL 几乎 no-op（仅 schema 元数据更新、default 字面量相同）；StrEnum 继承 str 向后兼容、老字符串赋值仍可写入。
+- 收益：IDE 补全、防拼错；DB 读取自动转 enum 实例。
+- 决策：MaxKB 那种位运算多任务状态字符串 v1 不学（参考 decisions §11）；将来真要多任务（rerank / 生成假设问题）走 JSONB / 子表，不走位运算。
+
+**前端 trigger + 轮询 + 乐观更新**
+
+- `api/knowledge.ts` 加 `triggerProcessDocument`；`DocumentList` 三点菜单加「向量化 / 重试向量化」入口（仅 `display=uploaded/failed` 显示）。
+- `KnowledgeDetailPage` 加轮询 useEffect：`docs.some(d => d.status === 'processing')` 时 `setTimeout(refetchDocs, 1500)`，单次触发 + cleanup 自动续；全部脱离 processing 自动停。
+- **乐观更新解 race**：原本 trigger 后立即 refetch 太快、BackgroundTasks 还没设 status=processing → 轮询条件不成立、永远不轮。改 `onProcessed(docId)` 父级 `setDocs` 立即本地标 `processing/parsing`，UI 即时反馈 + 轮询条件立即成立、后端真实状态轮询回填。
+- 端到端：上传 → 待向量化 → 点向量化 → 处理中 pulse → 就绪。
+
+**收口**
+
+- §13 片5 勾掉；只剩**片6 检索 + 命中测试**（前端 RetrievalTest 组件已 mock 就位、后端接入只换函数实现）。
 
 ### 2026-05-28 — 知识库片4 全栈：后端 4b-2/4b-3 + 前端文档真接通 + R2 download filename RFC 6266
 
@@ -168,18 +236,8 @@
 - 配套：§13 把片4 拆 **4a✓ + 4b 待办**；新增 `notes/backend/storage-upload/{notes.md, qa.md}`（4 节原理 + 2 问答）；决策 §8c 入 `knowledge-rag-decisions.md`。
 - 协作偏好新增：notes/ 学习笔记**在模块/切片做完后统一批量写**，不在实现途中写（已记进 MEMORY）。
 
-### 2026-05-25 — 知识库/RAG 后端：片3 CRUD + Model 模块顺手补 dim 探测
-
-- **片3 完成**：`/api/v1/knowledge-bases` 5 端点（POST/GET 列表/GET 详情/PUT/DELETE），鉴权 + 用户级可见。文件 `schemas/services/api/routes/knowledge/`（镜像 model 模块三层结构）。
-- 分层选择：**service 直接返回组装好的 `KnowledgeBaseOut`** 而非 ORM——因为 Out 含跨实体计算字段（embedding 模型名 + 文档/子块计数），model_validate 装不下；route 极薄、纯透传。
-- **Model 模块顺手改（A1–A4）**：`validator.validate` 签名从 `-> None` 改成 `-> dict[str, Any]`；embedding 子类把现有校验请求的响应向量长度 `len(resp.data[0].embedding)` 当作 `{"embedding_dim": N}` 返回；`AIModelService.create` 写入 `AIModel.meta`。**零额外上游调用**——dim 在建模型那一刻就落库。`ModelOut` 加 `meta` 字段对外暴露。
-- 建库 dim 解析：先读 `model.meta["embedding_dim"]`，缺失才走 `_probe_embedding_dim` 兜底（针对老模型，调用 `ModelClient.create_embedding(model, ["x"])` 取 len 并回写 meta）。
-- 计数实现：`annotate(Count("documents", distinct=True), Sum("documents__chunk_count"))`。**踩坑**：select_related + annotate 同用 → 被 join 的 FK 列（`embedding_model.display_name`）不进 GROUP BY → Postgres 报「must appear in the GROUP BY clause」。**解法**：annotate-only 查计数 + 模型名单独 `AIModel.filter(id__in=...).values_list("id","display_name")` 批量查（无 N+1）。
-- 决策：不许换 embedding 模型（换模型 = 全库重建，归 reindexing）；update 只允许 name/description/chunk_config；删库靠 FK CASCADE 自动清文档/段/向量。
-- 验收：smoke 跑通（5 路由注册、annotate 查询执行）。旧 embedding 模型 `meta` 为空也能用——建库探测兜底会补；想干净可删后重建。
-- 前端 KB 静态页此前已有，待另起会话接 API。
-
 ## 历史摘要
+- **2026-05-25 — 知识库/RAG 后端：片3 CRUD + Model 模块顺手补 dim 探测**：`/api/v1/knowledge-bases` 5 端点鉴权 + 用户可见；service 直接返组装好的 `KnowledgeBaseOut`（跨实体计算字段 model_validate 装不下）；Model 模块顺手改：validator.validate 返 dict 携 embedding_dim、AIModelService.create 写入 AIModel.meta（建模型即落库 dim，零额外上游调用），ModelOut 加 meta 对外暴露；建库 dim 解析先 model.meta 再 `_probe_embedding_dim` 兜底；计数 annotate-only 查 + 模型名单独 values_list 批量查（避 select_related + annotate 同用的 GROUP BY 报错）；决策：不许换 embedding 模型（换 = reindexing 全库重建）、update 只允改 name/description/chunk_config、删库 FK CASCADE 清下游。
 - **2026-05-25 — 知识库前端：设置页接通 + 卡片删除入口**：`KnowledgeSettings` 保存/删除接真 API（updateKB silent + deleteKB + 关详情 tab + 跳回列表）；`KnowledgeCard` 仿 ProviderCard 加三点 dropdown + AlertDialog；删除入口卡片三点 + 设置页两处对齐；ProviderCard 补关 tab；决策：设置页只允改 name/description，向量化配置锁死只读。
 - **2026-05-24 — 知识库/RAG 设计定稿 + 数据层（片1+2）+ AIModel.meta**：spec `knowledge-rag-v1.md` + decisions 定稿；4 表 single-file（KB/Document/Paragraph/Embedding）+ 父子块（embed 子块、命中返整段、子块不落表、文本存 `embedding.text`）+ Embedding 独立表（一对多 + source_type + 多向量留口子）；pgvector 0.8.1 已装，自定义 `VectorField`（不锁维度、原生 SQL 相似度查询、按段 DISTINCT ON 去重）+ 部分索引 + 表达式 cast 与查询一致才命中；存储抽象延后到片4；v1 手动向量化（FastAPI BackgroundTasks，将来换 ARQ 不返工）；迁移 0005 已 apply（含 RunSQL CREATE EXTENSION vector）；AIModel 加 `meta` JSONField(null=True) 存固有事实（dim/context_window），懒填充 embedding_dim。
 - **2026-05-24 — 知识库列表页 + 详情页前端（静态 mock）+ 模块 IA 决策**：`/knowledge` 三带布局（Header/统计带/卡片网格 + 虚线新建卡），左侧 `KnowledgeFolderTree` 预留壳（return null，两栏 flex 已就位）；详情页 `/knowledge/$kbId` = 面包屑 + 库信息 header + shadcn tabs（文档/检索测试/设置），文档用列表行、库列表用卡片网格（两层不同形态）。决策：详情页不做独立 sidebar 改用 tab。数据形状 `KnowledgeBase`/`KnowledgeDoc` 预埋；后续接 API。

@@ -11,6 +11,11 @@ from app.schemas.knowledge.knowledge_base_schema import (
     KnowledgeBaseUpdate,
 )
 
+from app.schemas.knowledge.retrieval_schema import (
+    RetrievalHit,
+    RetrievalTestIn,
+)
+
 __all__ = [
     "ALLOWED_FILE_TYPES",
     "ChunkConfig",
@@ -18,6 +23,8 @@ __all__ = [
     "KnowledgeBaseCreate",
     "KnowledgeBaseOut",
     "KnowledgeBaseUpdate",
+    "RetrievalHit",
+    "RetrievalTestIn",
     "UploadInitIn",
     "UploadInitOut",
 ]

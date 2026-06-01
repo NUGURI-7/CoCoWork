@@ -90,3 +90,22 @@ export interface UploadInitOut {
   upload_endpoint?: string
   headers: Record<string, string>
 }
+
+// ============================================================================
+// 检索 / 命中测试
+// ============================================================================
+
+/** 单条命中结果（对齐后端 RetrievalHit）
+ *
+ * - `content`：命中后返回的整段（父子块的父级）
+ * - `chunk_text`：实际命中的子块原文，调试切块时看
+ * - `score`：相似度 0~1（= 1 - 余弦距离），越大越相关
+ */
+export interface RetrievalHit {
+  paragraph_id: string
+  document_id: string
+  doc_name: string
+  content: string
+  chunk_text: string
+  score: number
+}

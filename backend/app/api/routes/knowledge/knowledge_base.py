@@ -10,14 +10,24 @@ from app.schemas.knowledge import (
     KnowledgeBaseCreate,
     KnowledgeBaseOut,
     KnowledgeBaseUpdate,
+    RetrievalHit,
+    RetrievalTestIn,
 )
-from app.services.knowledge import KnowledgeBaseService, get_knowledge_base_service
+from app.services.knowledge import (
+    KnowledgeBaseService,
+    RetrievalService,
+    get_knowledge_base_service,
+    get_retrieval_service,
+)
 
 router = APIRouter(prefix="/knowledge-bases", tags=["knowledge-bases"])
 
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
 KnowledgeBaseServiceDep = Annotated[
     KnowledgeBaseService, Depends(get_knowledge_base_service)
+]
+RetrievalServiceDep = Annotated[
+    RetrievalService, Depends(get_retrieval_service)
 ]
 
 
@@ -69,3 +79,16 @@ async def delete_knowledge_base(
 ) -> ResponseModel[None]:
     await svc.delete(current_user, kb_id)
     return success(message="删除成功")
+
+
+@router.post("/{kb_id}/retrieval-test", summary="命中测试（语义检索）")
+async def retrieval_test(
+    kb_id: UUID,
+    data: RetrievalTestIn,
+    current_user: CurrentUserDep,
+    svc: RetrievalServiceDep,
+) -> ResponseModel[list[RetrievalHit]]:
+    hits = await svc.retrieval_test(
+        current_user, kb_id, data.query, data.top_k, data.similarity_threshold,
+    )
+    return success(data=hits)

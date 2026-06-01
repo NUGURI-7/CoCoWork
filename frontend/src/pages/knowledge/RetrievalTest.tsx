@@ -12,7 +12,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { runMockRetrieval, type RetrievalChunk } from './mock'
+import { retrievalTest } from '@/api/knowledge'
+import type { RetrievalHit } from '@/types'
 
 ring.register()
 
@@ -28,7 +29,7 @@ interface RetrievalTestProps {
 export function RetrievalTest({ kbId }: RetrievalTestProps) {
   const [query, setQuery] = useState('')
   const [topK, setTopK] = useState('5')
-  const [results, setResults] = useState<RetrievalChunk[] | null>(null)
+  const [results, setResults] = useState<RetrievalHit[] | null>(null)
   const [loading, setLoading] = useState(false)
 
   async function handleSearch() {
@@ -36,7 +37,7 @@ export function RetrievalTest({ kbId }: RetrievalTestProps) {
     if (!q) return
     setLoading(true)
     try {
-      const res = await runMockRetrieval(q, kbId, parseInt(topK, 10))
+      const res = await retrievalTest(kbId, q, parseInt(topK, 10))
       setResults(res)
     } finally {
       setLoading(false)
@@ -96,7 +97,7 @@ function ResultsArea({
   results,
 }: {
   loading: boolean
-  results: RetrievalChunk[] | null
+  results: RetrievalHit[] | null
 }) {
   if (loading) {
     return (
@@ -130,7 +131,7 @@ function ResultsArea({
         命中 {results.length} 条片段
       </div>
       {results.map((r, i) => (
-        <div key={r.id} className="bg-card space-y-2 rounded-lg border p-4 shadow-sm">
+        <div key={r.paragraph_id} className="bg-card space-y-2 rounded-lg border p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">
               <span className="text-muted-foreground font-mono text-xs">#{i + 1}</span>

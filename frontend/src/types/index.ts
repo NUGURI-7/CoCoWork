@@ -29,5 +29,6 @@ export type {
   DocumentStage,
   UploadStrategy,
   UploadInitOut,
+  RetrievalHit,
 } from './knowledge'
 export type { WorkspaceMember, Conversation, Workspace } from './workspace'
