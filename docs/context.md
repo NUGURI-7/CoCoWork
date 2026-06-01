@@ -56,7 +56,7 @@
 - **全局：路由→tab 自动同步机制**。路由 `staticData` + `useTabSync`（router onResolved 事件驱动），调用方只 `navigate`、tab 自动跟随；详情页 `useTabTitle` 覆盖动态名。工作台 + admin 两套 tab 都接入。
 
 ## 下一步
-- **知识库 / RAG 模块 v1 整片完工（片1-6 收官）**：数据层 + KB CRUD + 存储抽象 + 文档上传/下载 + 处理管线 + 检索/命中测试全栈打通。
+- **知识库 / RAG 模块 v1 整片完工（片1-6 收官）+ 收尾增强**：数据层 + KB CRUD + 存储抽象 + 文档上传/下载 + 处理管线 + 检索/命中测试全栈打通；**增强**：文档批量向量化/删除（部分成功语义）、命中测试检索耗时展示、文档列表段数展示、触发同步置 processing 修「刷新后轮询丢失」。
   - **方案见** `docs/design/knowledge-rag-v1.md`（spec + §13 切片清单全部勾掉）+ `knowledge-rag-decisions.md`（决策/权衡）。六片：VectorField + pgvector + 4 表迁移 0005 + AIModel.meta 0006 + KB CRUD + 存储抽象 R2/Local + Document 上传 CRUD 下载 8 端点 + Splitter 抽象层 + `process_document()` + 触发端点 + enum 化迁移 0007/0008 + 检索 service + 命中测试端点。详见最近迭代。
   - **v2 方向**：混合检索 / FTS / RRF / rerank / 多向量；切块优化（heading 感知——命中测试已暴露双换行段切分对 list-heavy md 失效，留作自研切块器 A/B 对照案例）；评估体系（Recall@k/MRR + LLM 自动造测试集）。
   - 既有决策：embedding 每库锁一个模型、rerank 先阿里、全文检索先 Postgres 原生 FTS（不够再上 ParadeDB pg_search，不上 ES）、切块默认（递归~512token+50overlap）+ 可配；混合检索/FTS/RRF/rerank/多向量 = v2；文档编辑用自封装 tiptap（后做）。
@@ -81,6 +81,14 @@
 - 如果某次改动不足以影响项目理解，就不要把噪音写进来。
 
 ## 最近迭代
+
+### 2026-06-01 — 知识库收尾增强：批量操作 + 检索耗时 + 段数展示 + 轮询修复
+
+3 个 commit（片6 之后）：
+
+- **批量操作（commit 3982d0a）**：后端 `DocumentService.trigger_progress_many`（返 `(triggered, skipped)`，部分成功语义）+ `delete_many`（返计数），各一次 `id__in` JOIN 查 + bulk 写避 N+1；端点 `POST .../batch-process`（逐个入队后台任务）+ `.../batch-delete`；前端 `DocumentList` 多选（行 checkbox + 全选三态 + 操作栏）+ 装 shadcn checkbox。
+- **检索耗时 + 段数（commit 158d1e6 一部分）**：检索响应从 `list[RetrievalHit]` 包一层 `RetrievalTestOut`（hits + embed_ms/search_ms/total_ms），service `perf_counter` 夹两段计时（不落库仅展示，对标 ES `took`）；命中测试面板墨绿 Timer pill 展示耗时；`DocumentList` 行内加段数（`N 段 · M chunks`，未处理不显示）。
+- **轮询丢失修复（commit 158d1e6 一部分）**：`trigger_progress`/`trigger_progress_many` 触发时**同步**置 `status=processing`（先标 in-flight、再入队），修复刷新后乐观态丢失 + DB 还没 processing → 轮询不续的问题。`process_document` 再设一次幂等无害。
 
 ### 2026-06-01 — 知识库片6 全栈：检索 service + 命中测试端点 + 前端切真接口（RAG v1 收官）
 
