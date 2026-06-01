@@ -17,6 +17,7 @@ from app.schemas.knowledge.knowledge_base_schema import (
 from app.schemas.knowledge.retrieval_schema import (
     RetrievalHit,
     RetrievalTestIn,
+    RetrievalTestOut,
 )
 
 __all__ = [
@@ -30,4 +31,5 @@ __all__ = [
     "RetrievalTestIn",
     "UploadInitIn",
     "UploadInitOut",
+    "RetrievalTestOut",
 ]

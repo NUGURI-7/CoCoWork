@@ -130,16 +130,20 @@ class DocumentService:
                 - 其余（pending 未传字节 / processing 已在跑 / completed 想重跑）一律拒绝
         """
         doc = await self._get_user_doc(user, kb_id, doc_id)
-        if doc.status == DocStatus.FAILED:
-            return doc  # 允许重试
-        if doc.stage == DocStage.UPLOADED:
-            return doc  # 首次触发
-        if doc.status == DocStatus.PROCESSING:
-            raise ValidationException("文档处理中，请稍候")
-        if doc.status == DocStatus.COMPLETED:
-            raise ValidationException("文档已处理完成，如需重切请删除后重传")
-            # pending 未传字节
-        raise ValidationException("文档尚未上传完成")
+        # 只有「已上传待处理」或「失败重试」可触发
+        if not (doc.status == DocStatus.FAILED or doc.stage == DocStage.UPLOADED):
+            if doc.status == DocStatus.PROCESSING:
+                raise ValidationException("文档处理中，请稍候")
+            if doc.status == DocStatus.COMPLETED:
+                raise ValidationException("文档已处理完成，如需重切请删除后重传")
+            raise ValidationException("文档尚未上传完成")  # pending 未传字节
+        # 同步置 processing：DB 立即反映「处理中」，刷新页面也能正确续轮询
+        # （process_document 开头会再设一次，幂等无害）
+        doc.status = DocStatus.PROCESSING
+        doc.stage = DocStage.PARSING
+        doc.error_message = ""
+        await doc.save(update_fields=["status", "stage", "error_message"])
+        return doc
 
     async def delete(
             self, user: User, kb_id: UUID, doc_id: UUID,
@@ -184,6 +188,14 @@ class DocumentService:
 
         triggered = [did for did in document_ids if did in allowed]
         skipped = [did for did in document_ids if did not in allowed]
+        # 同步置 processing：DB 立即反映「处理中」，刷新页面也能正确续轮询
+        # （process_document 开头会再设一次，幂等无害）
+        if triggered:
+            await Document.filter(id__in=triggered).update(
+                status=DocStatus.PROCESSING,
+                stage=DocStage.PARSING,
+                error_message="",
+            )
         return triggered, skipped
 
     async def delete_many(

@@ -11,7 +11,7 @@ import type {
   KnowledgeBase,
   KnowledgeBaseCreatePayload,
   KnowledgeBaseUpdatePayload,
-  RetrievalHit,
+  RetrievalTestResult,
   UploadInitOut,
 } from '@/types'
 
@@ -183,9 +183,9 @@ export function uploadDocumentToR2(
 // 检索 / 命中测试
 // ============================================================================
 
-/** 命中测试（语义检索）：返回命中段 + 相似度，不落库。 */
+/** 命中测试（语义检索）：返回命中段 + 相似度 + 三段耗时，不落库。 */
 export function retrievalTest(kbId: string, query: string, topK: number) {
-  return post<RetrievalHit[]>(`/knowledge-bases/${kbId}/retrieval-test`, {
+  return post<RetrievalTestResult>(`/knowledge-bases/${kbId}/retrieval-test`, {
     query,
     top_k: topK,
   })

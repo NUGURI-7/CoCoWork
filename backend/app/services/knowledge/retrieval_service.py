@@ -4,14 +4,14 @@ v1 纯向量检索：query 向量化 → pgvector 余弦距离排序 → 按段�
 → 阈值过滤 → top_k。Tortoise 不支持 pgvector 算子，核心查询走原生 SQL。
 不落库（即时查询），不依赖 LLM / Agent。
 """
-
+import time
 import logging
 from uuid import UUID
 from tortoise import connections
 
 from app.core.exceptions import NotFound404
 from app.models import User, KnowledgeBase
-from app.schemas.knowledge import RetrievalHit
+from app.schemas.knowledge import RetrievalHit, RetrievalTestOut
 from app.services.model import ModelClient
 
 logger = logging.getLogger(__name__)
@@ -28,18 +28,20 @@ class RetrievalService:
     async def retrieval_test(
             self, user: User, kb_id: UUID, query: str,
             top_k: int, similarity_threshold: float
-    ) -> list[RetrievalHit]:
+    ) -> RetrievalTestOut:
         # 1. 校验归属 + 拿到 embedding 模型（带 provider 用于解析凭证）
         kb = (
             await KnowledgeBase.filter(id=kb_id, created_by=user).prefetch_related("embedding_model__provider").first()
         )
         if kb is None:
             raise NotFound404("知识库不存在")
+        t0 = time.perf_counter()
 
         # 2. query 向量化（一条文本 → 一条向量）
         #    注：BGE/E5 等模型需 query 前缀（query: ...）才最优，v1 暂未加（known gap）。
         vectors = await ModelClient.create_embedding(kb.embedding_model, [query.strip()])
         query_literal = _to_vector_literal(vectors[0])
+        t1 = time.perf_counter()
 
         # 3. 原生 SQL 检索：
         #    - 内层 DISTINCT ON (paragraph_id) 按段去重，每段取最近子块
@@ -74,9 +76,10 @@ class RetrievalService:
         rows = await conn.execute_query_dict(
             sql, [query_literal, kb_id, similarity_threshold, top_k],
         )
+        t2 = time.perf_counter()
 
         # 4. 组装：score = 1 - 余弦距离
-        return [
+        hits = [
             RetrievalHit(
                 paragraph_id=row["paragraph_id"],
                 document_id=row["document_id"],
@@ -87,6 +90,12 @@ class RetrievalService:
             )
             for row in rows
         ]
+        return RetrievalTestOut(
+            hits=hits,
+            embed_ms=round((t1 - t0) * 1000, 1),  # perf_counter 返秒，*1000 转毫秒
+            search_ms=round((t2 - t1) * 1000, 1),
+            total_ms=round((t2 - t0) * 1000, 1),
+        )
 
 
 async def get_retrieval_service() -> RetrievalService:

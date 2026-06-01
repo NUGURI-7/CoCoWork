@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FileText, Search } from 'lucide-react'
+import { FileText, Search, Timer } from 'lucide-react'
 import { ring } from 'ldrs'
 
 import { Badge } from '@/components/ui/badge'
@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { retrievalTest } from '@/api/knowledge'
-import type { RetrievalHit } from '@/types'
+import type { RetrievalTestResult } from '@/types'
 
 ring.register()
 
@@ -22,14 +22,13 @@ interface RetrievalTestProps {
 }
 
 /**
- * 检索测试 tab：输入 query → 命中片段列表 + 相似度 + 来源文档
- *
- * v0 mock：500ms 延迟 + 假命中。等后端片6 接入后改 runMockRetrieval → retrieveKnowledge API。
+ * 检索测试 tab：输入 query → 命中片段列表 + 相似度 + 来源文档 + 检索耗时。
+ * 走真实后端语义检索（pgvector），不落库。
  */
 export function RetrievalTest({ kbId }: RetrievalTestProps) {
   const [query, setQuery] = useState('')
   const [topK, setTopK] = useState('5')
-  const [results, setResults] = useState<RetrievalHit[] | null>(null)
+  const [results, setResults] = useState<RetrievalTestResult | null>(null)
   const [loading, setLoading] = useState(false)
 
   async function handleSearch() {
@@ -97,7 +96,7 @@ function ResultsArea({
   results,
 }: {
   loading: boolean
-  results: RetrievalHit[] | null
+  results: RetrievalTestResult | null
 }) {
   if (loading) {
     return (
@@ -117,20 +116,27 @@ function ResultsArea({
       </div>
     )
   }
-  if (results.length === 0) {
+  if (results.hits.length === 0) {
     return (
       <div className="text-muted-foreground rounded-lg border border-dashed py-16 text-center text-sm">
-        没有命中
+        没有命中 · 耗时 {results.total_ms}ms
       </div>
     )
   }
 
   return (
     <div className="space-y-2">
-      <div className="text-muted-foreground text-xs">
-        命中 {results.length} 条片段
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-muted-foreground text-xs">命中 {results.hits.length} 条片段</span>
+        <div className="bg-brand-subtle text-brand flex items-center gap-1.5 rounded-md px-2.5 py-1">
+          <Timer className="size-4" />
+          <span className="font-mono text-sm font-semibold">{results.total_ms} ms</span>
+          <span className="text-brand font-mono text-xs">
+            · 向量化 {results.embed_ms} · 检索 {results.search_ms}
+          </span>
+        </div>
       </div>
-      {results.map((r, i) => (
+      {results.hits.map((r, i) => (
         <div key={r.paragraph_id} className="bg-card space-y-2 rounded-lg border p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">

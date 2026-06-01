@@ -10,8 +10,8 @@ from app.schemas.knowledge import (
     KnowledgeBaseCreate,
     KnowledgeBaseOut,
     KnowledgeBaseUpdate,
-    RetrievalHit,
     RetrievalTestIn,
+    RetrievalTestOut,
 )
 from app.services.knowledge import (
     KnowledgeBaseService,
@@ -87,8 +87,8 @@ async def retrieval_test(
     data: RetrievalTestIn,
     current_user: CurrentUserDep,
     svc: RetrievalServiceDep,
-) -> ResponseModel[list[RetrievalHit]]:
-    hits = await svc.retrieval_test(
+) -> ResponseModel[RetrievalTestOut]:
+    result = await svc.retrieval_test(
         current_user, kb_id, data.query, data.top_k, data.similarity_threshold,
     )
-    return success(data=hits)
+    return success(data=result)

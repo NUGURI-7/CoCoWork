@@ -110,6 +110,19 @@ export interface RetrievalHit {
   score: number
 }
 
+/** 命中测试响应（对齐后端 RetrievalTestOut）：命中列表 + 三段耗时（毫秒）
+ *
+ * - `embed_ms`：query 向量化耗时（调 embedding 模型，通常占大头）
+ * - `search_ms`：检索 SQL 耗时
+ * - `total_ms`：总耗时
+ */
+export interface RetrievalTestResult {
+  hits: RetrievalHit[]
+  embed_ms: number
+  search_ms: number
+  total_ms: number
+}
+
 // ============================================================================
 // Document — 批量操作
 // ============================================================================
