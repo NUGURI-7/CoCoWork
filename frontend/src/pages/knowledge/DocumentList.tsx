@@ -1,9 +1,15 @@
 import { useState } from 'react'
 import dayjs from 'dayjs'
-import { Download, FileText, Inbox, MoreHorizontal, Sparkles, Trash2 } from 'lucide-react'
+import { Download, FileText, Inbox, MoreHorizontal, Sparkles, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { deleteDocument, getDocumentDownloadUrl, triggerProcessDocument } from '@/api/knowledge'
+import {
+  batchDeleteDocuments,
+  batchProcessDocuments,
+  deleteDocument,
+  getDocumentDownloadUrl,
+  triggerProcessDocument,
+} from '@/api/knowledge'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,6 +21,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,6 +42,66 @@ interface DocumentListProps {
 }
 
 export function DocumentList({ kbId, docs, onDeleted, onProcessed }: DocumentListProps) {
+  // 选中态：Set 存选中的 doc id，查/增/删都 O(1)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [batchConfirmOpen, setBatchConfirmOpen] = useState(false)
+  const [batchProcessing, setBatchProcessing] = useState(false)
+  const [batchDeleting, setBatchDeleting] = useState(false)
+
+  const allSelected = docs.length > 0 && selected.size === docs.length
+  const someSelected = selected.size > 0 && !allSelected
+
+  function toggleOne(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev) // 复制再改，不原地改 state（React 靠引用变化判断更新）
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleAll() {
+    setSelected((prev) =>
+      prev.size === docs.length ? new Set() : new Set(docs.map((d) => d.id)),
+    )
+  }
+
+  function clearSelection() {
+    setSelected(new Set())
+  }
+
+  async function handleBatchProcess() {
+    if (batchProcessing) return
+    setBatchProcessing(true)
+    try {
+      const { triggered, skipped } = await batchProcessDocuments(kbId, [...selected])
+      // 每个被触发的 doc 复用单个版乐观更新（父级标 processing + 启动轮询）
+      triggered.forEach((id) => onProcessed?.(id))
+      if (triggered.length) toast.success(`已触发 ${triggered.length} 个文档向量化`)
+      if (skipped.length) toast.warning(`${skipped.length} 个文档状态不允许，已跳过`)
+      clearSelection()
+    } catch {
+      // silent，失败不清选中
+    } finally {
+      setBatchProcessing(false)
+    }
+  }
+
+  async function handleBatchDelete() {
+    setBatchDeleting(true)
+    try {
+      const { deleted } = await batchDeleteDocuments(kbId, [...selected])
+      toast.success(`已删除 ${deleted} 个文档`)
+      setBatchConfirmOpen(false)
+      clearSelection()
+      onDeleted?.()
+    } catch {
+      // 拦截器已 toast
+    } finally {
+      setBatchDeleting(false)
+    }
+  }
+
   if (docs.length === 0) {
     return (
       <div className="text-muted-foreground flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed py-16 text-sm">
@@ -46,16 +113,79 @@ export function DocumentList({ kbId, docs, onDeleted, onProcessed }: DocumentLis
   }
 
   return (
-    <div className="divide-y rounded-lg border">
-      {docs.map((d) => (
-        <DocumentRow
-          key={d.id}
-          kbId={kbId}
-          doc={d}
-          onDeleted={onDeleted}
-          onProcessed={onProcessed}
-        />
-      ))}
+    <div className="space-y-2">
+      {/* 批量操作栏：选中 ≥1 时浮出 */}
+      {selected.size > 0 && (
+        <div className="bg-brand-subtle flex items-center gap-2 rounded-lg border px-4 py-2">
+          <span className="text-brand text-sm font-medium">已选 {selected.size} 个</span>
+          <div className="flex-1" />
+          <Button size="sm" variant="outline" disabled={batchProcessing} onClick={handleBatchProcess}>
+            <Sparkles className="size-4" />
+            批量向量化
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-destructive hover:text-destructive"
+            onClick={() => setBatchConfirmOpen(true)}
+          >
+            <Trash2 className="size-4" />
+            批量删除
+          </Button>
+          <Button size="icon" variant="ghost" className="size-7" onClick={clearSelection}>
+            <X className="size-4" />
+          </Button>
+        </div>
+      )}
+
+      <div className="divide-y rounded-lg border">
+        {/* 全选行 */}
+        <div className="text-muted-foreground flex items-center gap-3 px-4 py-2 text-xs">
+          <Checkbox
+            checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+            onCheckedChange={toggleAll}
+            aria-label="全选"
+          />
+          <span>全选（{docs.length}）</span>
+        </div>
+
+        {docs.map((d) => (
+          <DocumentRow
+            key={d.id}
+            kbId={kbId}
+            doc={d}
+            selected={selected.has(d.id)}
+            onToggle={() => toggleOne(d.id)}
+            onDeleted={onDeleted}
+            onProcessed={onProcessed}
+          />
+        ))}
+      </div>
+
+      {/* 批量删除确认 */}
+      <AlertDialog open={batchConfirmOpen} onOpenChange={setBatchConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除选中的 {selected.size} 个文档？</AlertDialogTitle>
+            <AlertDialogDescription>
+              该操作不可撤销。这些文档及其所有 chunk 与向量将一并清除。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={batchDeleting}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={batchDeleting}
+              onClick={(e) => {
+                e.preventDefault()
+                handleBatchDelete()
+              }}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              {batchDeleting ? '删除中…' : '确认删除'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
@@ -63,11 +193,15 @@ export function DocumentList({ kbId, docs, onDeleted, onProcessed }: DocumentLis
 function DocumentRow({
   kbId,
   doc,
+  selected,
+  onToggle,
   onDeleted,
   onProcessed,
 }: {
   kbId: string
   doc: Document
+  selected: boolean
+  onToggle: () => void
   onDeleted?: () => void
   onProcessed?: (docId: string) => void
 }) {
@@ -86,7 +220,6 @@ function DocumentRow({
     try {
       await triggerProcessDocument(kbId, doc.id)
       toast.success(`已触发「${doc.name}」向量化`)
-      // 乐观更新：父组件立即把 doc 标 processing，UI 即时反馈 + 轮询自动启动
       onProcessed?.(doc.id)
     } catch {
       // 拦截器已 toast
@@ -124,7 +257,13 @@ function DocumentRow({
 
   return (
     <>
-      <div className="hover:bg-muted/40 flex items-center gap-3 px-4 py-3 transition-colors">
+      <div
+        className={cn(
+          'flex items-center gap-3 px-4 py-3 transition-colors',
+          selected ? 'bg-brand-subtle' : 'hover:bg-muted/40',
+        )}
+      >
+        <Checkbox checked={selected} onCheckedChange={onToggle} aria-label={`选择 ${doc.name}`} />
         <FileText className="text-muted-foreground size-4 shrink-0" />
 
         <div className="min-w-0 flex-1">
@@ -218,7 +357,6 @@ function triggerDownload(url: string, filename: string) {
   const a = document.createElement('a')
   a.href = url
   a.download = filename
-  // 同源时 download 属性生效；跨域时由响应头 Content-Disposition: attachment 接管
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)

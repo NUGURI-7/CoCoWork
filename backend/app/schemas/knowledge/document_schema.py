@@ -38,6 +38,27 @@ class DocumentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class BatchDocumentIn(BaseModel):
+    """批量操作（删除 / 向量化）请求体：一组文档 id。"""
+
+    document_ids: list[UUID] = Field(
+        min_length=1, max_length=200, description="目标文档 id 列表",
+    )
+
+
+class BatchDeleteOut(BaseModel):
+    """批量删除响应：实际删除的文档数。"""
+
+    deleted: int = Field(description="实际删除的文档数")
+
+
+class BatchProcessOut(BaseModel):
+    """批量向量化响应：已触发 / 被跳过（状态不允许）的文档 id。"""
+
+    triggered: list[UUID] = Field(description="已入队处理的文档 id")
+    skipped: list[UUID] = Field(description="状态不允许、被跳过的文档 id")
+
+
 class UploadInitIn(BaseModel):
     """发起上传请求。后端据此预校验（扩展名 / 大小）并建 pending document。
 

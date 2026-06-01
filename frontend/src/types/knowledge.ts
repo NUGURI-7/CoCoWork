@@ -109,3 +109,17 @@ export interface RetrievalHit {
   chunk_text: string
   score: number
 }
+
+// ============================================================================
+// Document — 批量操作
+// ============================================================================
+
+/** 批量向量化结果（对齐后端 BatchProcessOut）
+ *
+ * - `triggered`：已入队处理的文档 id（前端乐观标 processing + 轮询）
+ * - `skipped`：状态不允许、被跳过的文档 id（前端提示用户）
+ */
+export interface BatchProcessResult {
+  triggered: string[]
+  skipped: string[]
+}

@@ -21,7 +21,14 @@ from app.core.exceptions.types import ValidationException
 from app.core.http import ResponseModel, success
 from app.core.storage import storage
 from app.models.user import User
-from app.schemas.knowledge import DocumentOut, UploadInitIn, UploadInitOut
+from app.schemas.knowledge import (
+    BatchDeleteOut,
+    BatchDocumentIn,
+    BatchProcessOut,
+    DocumentOut,
+    UploadInitIn,
+    UploadInitOut,
+)
 from app.services.knowledge import DocumentService, get_document_service
 from app.services.knowledge.document_processor import process_document
 
@@ -143,6 +150,43 @@ background_tasks: BackgroundTasks,
     doc = await svc.trigger_progress(current_user,kb_id, doc_id)
     background_tasks.add_task(process_document, doc_id)
     return success(data=DocumentOut.model_validate(doc), message="已触发处理")
+
+@router.post("/batch-process", summary="批量触发文档处理（向量化）")
+async def batch_process(
+        kb_id: UUID,
+        data: BatchDocumentIn,
+        background_tasks: BackgroundTasks,
+        current_user: CurrentUserDep,
+        svc: DocumentServiceDep,
+) -> ResponseModel[BatchProcessOut]:
+    """批量向量化：service 过滤出可处理的 doc，路由层逐个入队后台任务。
+
+    返回 triggered / skipped 两组 id，前端据此乐观更新 + 提示被跳过的。
+    """
+    triggered, skipped = await svc.trigger_progress_many(
+        current_user, kb_id, data.document_ids,
+    )
+    for doc_id in triggered:
+        background_tasks.add_task(process_document, doc_id)
+    return success(
+        data=BatchProcessOut(triggered=triggered, skipped=skipped),
+        message=f"已触发 {len(triggered)} 个文档处理",
+    )
+
+
+@router.post("/batch-delete", summary="批量删除文档")
+async def batch_delete(
+        kb_id: UUID,
+        data: BatchDocumentIn,
+        current_user: CurrentUserDep,
+        svc: DocumentServiceDep,
+) -> ResponseModel[BatchDeleteOut]:
+    deleted = await svc.delete_many(current_user, kb_id, data.document_ids)
+    return success(
+        data=BatchDeleteOut(deleted=deleted),
+        message=f"已删除 {deleted} 个文档",
+    )
+
 
 @router.get("", summary="列出知识库下的文档")
 async def list_documents(

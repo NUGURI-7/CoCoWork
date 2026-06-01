@@ -30,5 +30,6 @@ export type {
   UploadStrategy,
   UploadInitOut,
   RetrievalHit,
+  BatchProcessResult,
 } from './knowledge'
 export type { WorkspaceMember, Conversation, Workspace } from './workspace'

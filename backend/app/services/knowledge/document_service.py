@@ -159,6 +159,61 @@ class DocumentService:
 
         await doc.delete()  # FK CASCADE 自动清 paragraphs / embeddings
 
+    async def trigger_progress_many(
+            self, user:User, kb_id: UUID, document_ids: list[UUID]
+    ) -> tuple[list[UUID],list[UUID]]:
+        """批量触发处理：过滤出可入队的 doc，返回 (triggered, skipped)。
+
+                单条规则同 `trigger_progress`：stage=uploaded 或 status=failed 可触发，
+                其余（processing / completed / pending 未传字节）跳过；不属本 kb / 不存在
+                的 id 也归 skipped。一次 JOIN 查全部，避免 N+1。
+        """
+        await self._ensure_user_kb(user, kb_id)
+
+        docs = await Document.filter(
+            id__in=document_ids,
+            knowledge_base_id=kb_id,
+            knowledge_base__created_by=user,
+        )
+
+        allowed = {
+            doc.id
+            for doc in docs
+            if doc.status == DocStatus.FAILED or doc.stage == DocStage.UPLOADED
+        }
+
+        triggered = [did for did in document_ids if did in allowed]
+        skipped = [did for did in document_ids if did not in allowed]
+        return triggered, skipped
+
+    async def delete_many(
+            self, user: User, kb_id: UUID, document_ids: list[UUID],
+    )-> int:
+        """批量删除：先逐个清 storage 对象（失败仅 log），再一次 ORM 批量删
+                （FK CASCADE 连带清段 / 向量）。返回实际删除数。
+        """
+        await self._ensure_user_kb(user, kb_id)
+
+        docs = await Document.filter(
+            id__in=document_ids,
+            knowledge_base_id=kb_id,
+            knowledge_base__created_by=user,
+        )
+        if not docs:
+            return 0
+
+        for doc in docs:
+            if doc.storage_key:
+                try:
+                    await storage.delete(doc.storage_key)
+                except Exception as e:
+                    logger.warning(
+                        "批量删除 storage 对象失败 doc_id=%s key=%s: %s",
+                        doc.id, doc.storage_key, e,
+                    )
+        await Document.filter(id__in=[doc.id for doc in docs]).delete()
+        return len(docs)
+
 
 async def get_document_service() -> DocumentService:
     return DocumentService()

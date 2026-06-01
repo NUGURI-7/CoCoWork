@@ -1,5 +1,8 @@
 from app.schemas.knowledge.document_schema import (
     ALLOWED_FILE_TYPES,
+    BatchDeleteOut,
+    BatchDocumentIn,
+    BatchProcessOut,
     DocumentOut,
     UploadInitIn,
     UploadInitOut,

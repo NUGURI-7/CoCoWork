@@ -6,6 +6,7 @@
 
 import { del, get, post, put } from '@/request'
 import type {
+  BatchProcessResult,
   Document,
   KnowledgeBase,
   KnowledgeBaseCreatePayload,
@@ -101,6 +102,26 @@ export function triggerProcessDocument(kbId: string, docId: string) {
     `/knowledge-bases/${kbId}/documents/${docId}/process`,
     undefined,
     { silent: true },
+  )
+}
+
+/**
+ * 批量触发向量化。返回 triggered / skipped 两组 id（skipped = 状态不允许）。
+ * silent：由调用方按 triggered/skipped 自定义 toast（部分成功语义）。
+ */
+export function batchProcessDocuments(kbId: string, documentIds: string[]) {
+  return post<BatchProcessResult>(
+    `/knowledge-bases/${kbId}/documents/batch-process`,
+    { document_ids: documentIds },
+    { silent: true },
+  )
+}
+
+/** 批量删除文档（联动清 storage + 级联清段/向量）。返回实际删除数。 */
+export function batchDeleteDocuments(kbId: string, documentIds: string[]) {
+  return post<{ deleted: number }>(
+    `/knowledge-bases/${kbId}/documents/batch-delete`,
+    { document_ids: documentIds },
   )
 }
 
