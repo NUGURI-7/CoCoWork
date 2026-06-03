@@ -82,6 +82,19 @@
 
 ## 最近迭代
 
+### 2026-06-02 — Agent 体系架构地基定稿（`docs/architecture.md`）
+
+基于 deepagents 源码读核 + LangGraph 适配性确认，落 11 节战略 + 附录 A（源码依据带 file:line）。
+
+- **推翻旧工程底座**：`docs/design/agent-module-v1.md` §10–§11（自研 ContextBuilder / Supervisor Mediator / 7 设计模式 / Hexagonal）整段失效。产品形态（双入口 / 三层资源 / L1-L3 记忆 / @直连 vs 管家）保留为待迭代区。
+- **新地基核心**：deepagents 是无状态执行核（编图 → invoke），CoCoWork 做外层薄壳 + 跑中 middleware；三接入面（跑前装配 / 跑中 middleware 主体 / 跑后收拢）；两锚点（`workspace_id` + `agent_role`）；状态三分（checkpointer / Store / 业务库 铁律不混）；NPC 永远 2 层不可派生（不挂 `SubAgentMiddleware`），招募走花名册装 subagent、临时 NPC 走 `spawn_from_template` 工具绕构造锁。
+- **NPC 形态自由**：手写 `StateGraph`（需固定流程）或 `create_agent`（开放任务）均可——核心横切（视图隔离 + 回写一致性）锚在 Supervisor↔NPC **派活边界**，与 NPC 内部形态解耦。
+- **唯一硬骨头**：`WorkspaceContext` middleware 承载视图隔离 + 回写一致性，机制定死、规则待定、不破 cache。演进预算几乎全押于此。
+- **三条战略护栏**：① Supervisor 必须走 `create_agent` 体系（禁手写 `StateGraph` 调度图，防 middleware 覆盖盲区）；② NPC 形态自由；③ LangChain 跨 2.x 须先回地基重审。
+- **附录 A**：每条地基断言带 deepagents 源码 file:line 出处；LangGraph 适配性 = 无缝（`create_agent` 产物本就是 `CompiledStateGraph`，自研 middleware 走官方 `AgentMiddleware` 协议 + 扩 `AgentState`）。
+- **落地状态**：后端 agent 模块仍未起（无 `app/agents/`、deepagents/langchain 未引入 `pyproject.toml`）；前端 mock 切片不动。地基稳后续切片按地基开工。
+- **同日修订（结构原则 + 命名规范）**：① 外层薄图改为**默认结构**（每次请求都套，无运行时分支），"按需"的是图内节点填充而非图壳存在——口诀「图壳默认有，节点按需填」；② 弃用「Butler / 管家」别名，全程统一 `Supervisor`，精确指代用「Supervisor 系统 / Supervisor 图」（整个外层图）vs「Supervisor brain / Supervisor loop」（那个 `create_agent` 节点）消歧；③ 「图替换 loop ✗ vs 图包 loop ✓」判别口诀进护栏；④ 派活 A（brain 并行 task）vs B（外层图 Send fan-out）按路径选不全局选、默认全 A；⑤ 强制步骤默认 middleware（`before_model`）、命名节点级审计才升级为外层图节点；⑥ 附录补「图包 loop 源码出处」+「并行+checkpointer 命名空间冲突」已知约束（deepagents 默认路径绕开，给 NPC 配 per-thread checkpointer 时才踩雷）；⑦ 版本号回填 `langchain>=1.2.11,<2.0.0` + `langchain-core>=1.2.18,<2.0.0`。
+
 ### 2026-06-01 — 知识库收尾增强：批量操作 + 检索耗时 + 段数展示 + 轮询修复
 
 3 个 commit（片6 之后）：
