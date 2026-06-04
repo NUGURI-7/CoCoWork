@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
+import { AxiosError } from 'axios'
 import { Sparkles } from 'lucide-react'
+import { toast } from 'sonner'
 
+import { createAgent, type AgentCreatePayload } from '@/api/agent'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -14,6 +17,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import type { Agent, Template } from '@/types'
+import { KindBadge } from './KindBadge'
 import { mockTemplates } from './mock'
 import { iconMap } from './TemplateCard'
 
@@ -36,6 +40,7 @@ export function CreateAgentDialog({
   const [name, setName] = useState('')
   /** 用户手改过 name 后，再切模板不再覆盖 */
   const [nameTouched, setNameTouched] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
 
   // 打开时重置（含预选模板）
   useEffect(() => {
@@ -43,6 +48,7 @@ export function CreateAgentDialog({
     setSelectedId(defaultTemplate?.id ?? null)
     setName(defaultTemplate ? `我的${defaultTemplate.name}` : '')
     setNameTouched(false)
+    setSubmitting(false)
   }, [open, defaultTemplate])
 
   // 没动过 name 时，切模板自动填默认名
@@ -52,32 +58,36 @@ export function CreateAgentDialog({
     if (t) setName(`我的${t.name}`)
   }, [selectedId, nameTouched])
 
-  const canCreate = !!selectedId && name.trim().length > 0
+  const selectedTemplate = mockTemplates.find((t) => t.id === selectedId) ?? null
+  const canCreate =
+    !!selectedTemplate &&
+    !selectedTemplate.disabled &&
+    name.trim().length > 0 &&
+    !submitting
 
-  function handleCreate() {
-    const template = mockTemplates.find((t) => t.id === selectedId)
-    if (!template || !name.trim()) return
-    const now = new Date().toISOString()
-    const newAgent: Agent = {
-      id: crypto.randomUUID(),
+  async function handleCreate() {
+    if (!selectedTemplate || selectedTemplate.disabled || !name.trim()) return
+    setSubmitting(true)
+    const payload: AgentCreatePayload = {
       name: name.trim(),
-      template_id: template.id,
-      template_name: template.name,
-      behavior_type: template.behavior_type,
-      avatar_color: template.default_avatar_color,
       description: '',
-      model_id: null,
-      model_display_name: null,
-      system_prompt: null,
-      config: {},
-      knowledge_ids: [],
-      tool_ids: [],
-      mcp_ids: [],
-      created_at: now,
-      updated_at: now,
+      template: selectedTemplate.key,
+      config: {
+        avatar_color: selectedTemplate.default_avatar_color,
+      },
     }
-    onCreate(newAgent)
-    onOpenChange(false)
+    try {
+      const created = await createAgent(payload)
+      toast.success(`Agent「${created.name}」已创建`)
+      onCreate(created)
+      onOpenChange(false)
+    } catch (err) {
+      const msg =
+        err instanceof AxiosError ? err.response?.data?.message : null
+      toast.error(typeof msg === 'string' ? msg : '创建失败')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -94,24 +104,34 @@ export function CreateAgentDialog({
             <Label className="text-xs font-medium tracking-wide uppercase">
               选择模板
             </Label>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {mockTemplates.map((t) => {
                 const Icon = iconMap[t.icon] ?? Sparkles
                 const isSelected = selectedId === t.id
+                const isDisabled = t.disabled === true
                 return (
                   <button
                     key={t.id}
                     type="button"
+                    disabled={isDisabled}
                     onClick={() => setSelectedId(t.id)}
                     className={cn(
                       'flex flex-col items-center gap-1.5 rounded-lg border p-3 text-center transition',
-                      isSelected
-                        ? 'border-brand bg-brand-subtle text-brand'
-                        : 'hover:bg-muted text-foreground',
+                      isDisabled
+                        ? 'cursor-not-allowed opacity-50'
+                        : isSelected
+                          ? 'border-brand bg-brand-subtle text-brand'
+                          : 'hover:bg-muted text-foreground',
                     )}
                   >
-                    <Icon className={cn('size-5', !isSelected && 'text-brand')} />
+                    <Icon
+                      className={cn(
+                        'size-5',
+                        !isSelected && !isDisabled && 'text-brand',
+                      )}
+                    />
                     <span className="text-xs font-medium">{t.name}</span>
+                    <KindBadge kind={t.kind} />
                   </button>
                 )
               })}
@@ -126,7 +146,7 @@ export function CreateAgentDialog({
             <Input
               id="agent-name"
               value={name}
-              placeholder="我的研究员"
+              placeholder="我的通用 Agent"
               onChange={(e) => {
                 setName(e.target.value)
                 setNameTouched(true)
@@ -136,11 +156,11 @@ export function CreateAgentDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" disabled={submitting} onClick={() => onOpenChange(false)}>
             取消
           </Button>
           <Button disabled={!canCreate} onClick={handleCreate}>
-            创建
+            {submitting ? '创建中…' : '创建'}
           </Button>
         </DialogFooter>
       </DialogContent>

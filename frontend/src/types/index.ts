@@ -5,7 +5,14 @@
  *   import type { User, ResponseModel } from '@/types'
  */
 export type { ResponseModel, PageData, PageResponse } from './api'
-export type { BehaviorType, Template, AgentConfig, Agent, Message } from './agent'
+export type {
+  BehaviorType,
+  TemplateKind,
+  Template,
+  AgentConfig,
+  Agent,
+  Message,
+} from './agent'
 export type { User, UserRegisterPayload, UserLoginPayload, TokenPayload } from './user'
 export type {
   ProviderType,

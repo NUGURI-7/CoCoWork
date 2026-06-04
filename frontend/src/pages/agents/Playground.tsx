@@ -30,7 +30,7 @@ export function Playground({ agent }: PlaygroundProps) {
   function send() {
     const content = input.trim()
     if (!content) return
-    if (!agent.model_id) {
+    if (!agent.config.model_id) {
       toast.warning('请先选择模型')
       return
     }
@@ -49,7 +49,7 @@ export function Playground({ agent }: PlaygroundProps) {
         {
           id: crypto.randomUUID(),
           role: 'assistant',
-          content: `（mock 回复）这是来自 ${agent.model_display_name ?? '当前模型'} 的占位回复，等切片接 LLM。`,
+          content: `（mock 回复）这是来自当前模型的占位回复，等切片接 LLM。`,
           created_at: new Date().toISOString(),
         },
       ])
@@ -82,7 +82,7 @@ export function Playground({ agent }: PlaygroundProps) {
           <Textarea
             value={input}
             placeholder={
-              agent.model_id
+              agent.config.model_id
                 ? `跟 ${agent.name} 试聊几句…（Enter 发送，Shift+Enter 换行）`
                 : '先选择模型，然后开始试运行'
             }
@@ -127,7 +127,7 @@ function MessageBubble({ msg, agent }: { msg: Message; agent: Agent }) {
     <div className="flex items-start gap-2.5">
       <div
         className="flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-medium text-white"
-        style={{ backgroundColor: agent.avatar_color }}
+        style={{ backgroundColor: agent.config.avatar_color ?? '#2f6b53' }}
       >
         {agent.name.slice(0, 1)}
       </div>
@@ -146,7 +146,7 @@ function TypingDots({ agent }: { agent: Agent }) {
     <div className="flex items-start gap-2.5">
       <div
         className="flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-medium text-white"
-        style={{ backgroundColor: agent.avatar_color }}
+        style={{ backgroundColor: agent.config.avatar_color ?? '#2f6b53' }}
       >
         {agent.name.slice(0, 1)}
       </div>

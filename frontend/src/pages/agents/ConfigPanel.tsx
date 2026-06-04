@@ -1,6 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { AxiosError } from 'axios'
 import { Check, ChevronsUpDown, Info } from 'lucide-react'
+import { toast } from 'sonner'
 
+import { updateAgent, type AgentUpdatePayload } from '@/api/agent'
 import {
   Accordion,
   AccordionContent,
@@ -33,203 +36,287 @@ import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import type { Agent, AgentConfig } from '@/types'
-import { useAgentMockStore } from './agent-mock-store'
-import { mockChatModels, mockKnowledge, mockTools } from './mock'
+import { KindBadge } from './KindBadge'
+import { mockChatModels, mockKnowledge, mockTemplates, mockTools } from './mock'
 
 interface ConfigPanelProps {
   agent: Agent
+  /** 保存成功后回传整新 agent，父级覆盖详情页 state */
+  onSaved: (agent: Agent) => void
 }
 
-/** Agent 左栏配置——所有改动即时落 store，无保存按钮 */
-export function ConfigPanel({ agent }: ConfigPanelProps) {
-  const update = useAgentMockStore((s) => s.update)
+/** Form 内部形状：从 agent 摊平、保存时再打包回 config */
+interface FormState {
+  name: string
+  description: string
+  model_id: string | null
+  system_prompt: string
+  knowledge_ids: string[]
+  tool_ids: string[]
+  mcp_ids: string[]
+  avatar_color: string
+  temperature: number
+  top_p: number
+  max_tokens: number
+}
 
-  // 名字 / 描述 用本地受控 state，失焦再 sync 到 store（避免每个字符都触发 update + 引发列表卡片闪烁）
-  const [name, setName] = useState(agent.name)
-  const [description, setDescription] = useState(agent.description)
-  const [systemPrompt, setSystemPrompt] = useState(agent.system_prompt ?? '')
-
-  function commitField<K extends keyof Agent>(key: K, value: Agent[K]) {
-    update(agent.id, { [key]: value } as Partial<Agent>)
+function agentToForm(agent: Agent): FormState {
+  const c = agent.config
+  return {
+    name: agent.name,
+    description: agent.description,
+    model_id: c.model_id ?? null,
+    system_prompt: c.system_prompt ?? '',
+    knowledge_ids: c.knowledge_ids ?? [],
+    tool_ids: c.tool_ids ?? [],
+    mcp_ids: c.mcp_ids ?? [],
+    avatar_color: c.avatar_color ?? '#2f6b53',
+    temperature: c.params?.temperature ?? 1,
+    top_p: c.params?.top_p ?? 1,
+    max_tokens: c.params?.max_tokens ?? 1024,
   }
+}
 
-  function setModel(modelId: string) {
-    const model = mockChatModels.find((m) => m.id === modelId)
-    update(agent.id, {
-      model_id: model?.id ?? null,
-      model_display_name: model?.display_name ?? null,
-    })
-  }
+/**
+ * Agent 左栏配置。
+ *
+ * **保存模式**：表单态全部走本地 state；右上「保存」按钮触发整体 PUT
+ * （`AgentUpdatePayload` 把摊平字段打包回 `config`）。脏态显示橙点提示。
+ */
+export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
+  const [form, setForm] = useState<FormState>(() => agentToForm(agent))
+  const [saving, setSaving] = useState(false)
 
-  function setConfig(patch: Partial<AgentConfig>) {
-    update(agent.id, { config: { ...agent.config, ...patch } })
-  }
+  // 切换 agent / 外部 setAgent 时（保存成功覆盖）同步本地 form
+  useEffect(() => {
+    setForm(agentToForm(agent))
+  }, [agent])
 
-  function setKnowledgeIds(ids: string[]) {
-    update(agent.id, { knowledge_ids: ids })
+  const dirty = useMemo(() => {
+    const fresh = agentToForm(agent)
+    return JSON.stringify(fresh) !== JSON.stringify(form)
+  }, [agent, form])
+
+  function patch<K extends keyof FormState>(key: K, value: FormState[K]) {
+    setForm((prev) => ({ ...prev, [key]: value }))
   }
 
   function setToolSelection(ids: string[]) {
     // mock 的 ToolMock 区分 builtin / mcp，按 type 落到对应字段
-    const tool_ids = ids.filter((id) => mockTools.find((t) => t.id === id)?.type === 'builtin')
-    const mcp_ids = ids.filter((id) => mockTools.find((t) => t.id === id)?.type === 'mcp')
-    update(agent.id, { tool_ids, mcp_ids })
+    const tool_ids = ids.filter(
+      (id) => mockTools.find((t) => t.id === id)?.type === 'builtin',
+    )
+    const mcp_ids = ids.filter(
+      (id) => mockTools.find((t) => t.id === id)?.type === 'mcp',
+    )
+    setForm((prev) => ({ ...prev, tool_ids, mcp_ids }))
   }
 
-  const temperature = agent.config.temperature ?? 1
-  const topP = agent.config.top_p ?? 1
-  const maxTokens = agent.config.max_tokens ?? 1024
-  const selectedToolIds = [...agent.tool_ids, ...agent.mcp_ids]
+  async function save() {
+    const name = form.name.trim()
+    if (!name) {
+      toast.warning('名字不能为空')
+      return
+    }
+    setSaving(true)
+    const config: AgentConfig = {
+      ...agent.config,
+      model_id: form.model_id,
+      system_prompt: form.system_prompt.trim() || null,
+      knowledge_ids: form.knowledge_ids,
+      tool_ids: form.tool_ids,
+      mcp_ids: form.mcp_ids,
+      avatar_color: form.avatar_color,
+      params: {
+        temperature: form.temperature,
+        top_p: form.top_p,
+        max_tokens: form.max_tokens,
+      },
+    }
+    const payload: AgentUpdatePayload = {
+      name,
+      description: form.description,
+      config,
+    }
+    try {
+      const updated = await updateAgent(agent.id, payload)
+      onSaved(updated)
+      toast.success('已保存')
+    } catch (err) {
+      const msg =
+        err instanceof AxiosError ? err.response?.data?.message : null
+      toast.error(typeof msg === 'string' ? msg : '保存失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // 模板元数据反查（kind badge 展示）
+  const template = mockTemplates.find((t) => t.key === agent.template)
+  const templateKind = template?.kind ?? 'loop'
+  const selectedToolIds = [...form.tool_ids, ...form.mcp_ids]
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="px-1 py-1">
-        {/* Header：头像 + 名字 + behavior badge + 描述（一个 block，作为视觉焦点） */}
-        <div className="space-y-3 pb-5">
-          <div className="flex items-center gap-3">
-            <div
-              className="flex size-14 shrink-0 items-center justify-center rounded-full text-lg font-medium text-white"
-              style={{ backgroundColor: agent.avatar_color }}
-            >
-              {agent.name.slice(0, 1)}
-            </div>
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              <Input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                onBlur={() => {
-                  const trimmed = name.trim()
-                  if (trimmed && trimmed !== agent.name) commitField('name', trimmed)
-                  else setName(agent.name)
-                }}
-                className="h-9 border-none px-0 text-base font-semibold shadow-none focus-visible:ring-0"
-              />
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Badge variant="secondary" className="cursor-help shrink-0">
-                    {agent.behavior_type}
-                  </Badge>
-                </TooltipTrigger>
-                <TooltipContent>行为模板创建时选定，不可更改</TooltipContent>
-              </Tooltip>
-            </div>
-          </div>
-          <Textarea
-            value={description}
-            placeholder="一句话告诉别人这个 Agent 擅长什么"
-            onChange={(e) => setDescription(e.target.value)}
-            onBlur={() => {
-              if (description !== agent.description) commitField('description', description)
-            }}
-            className="text-muted-foreground min-h-12 resize-none border-none px-0 text-sm shadow-none focus-visible:ring-0"
-          />
+    <div className="flex h-full min-h-0 flex-col">
+      {/* Sticky 顶栏：dirty + 保存 */}
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b px-1 pb-2">
+        <div className="text-muted-foreground inline-flex items-center gap-1.5 text-xs">
+          {dirty ? (
+            <>
+              <span className="bg-warning size-1.5 rounded-full" />
+              <span>有未保存改动</span>
+            </>
+          ) : (
+            <span>已同步</span>
+          )}
         </div>
+        <Button size="sm" disabled={!dirty || saving} onClick={save}>
+          {saving ? '保存中…' : '保存'}
+        </Button>
+      </div>
 
-        <Separator />
-
-        {/* 模型 */}
-        <Field label="模型" hint="必填——不配模型没法调 LLM">
-          <Select value={agent.model_id ?? undefined} onValueChange={setModel}>
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="选择对话模型" />
-            </SelectTrigger>
-            <SelectContent>
-              {mockChatModels.map((m) => (
-                <SelectItem key={m.id} value={m.id}>
-                  {m.display_name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-
-        <Separator />
-
-        {/* 调用参数（默认折叠） */}
-        <Accordion type="single" collapsible className="py-2">
-          <AccordionItem value="params" className="border-none">
-            <AccordionTrigger className="py-1 text-sm font-medium hover:no-underline">
-              调用参数
-            </AccordionTrigger>
-            <AccordionContent className="space-y-5 pt-3">
-              <SliderField
-                label="temperature"
-                value={temperature}
-                min={0}
-                max={2}
-                step={0.1}
-                onCommit={(v) => setConfig({ temperature: v })}
-              />
-              <SliderField
-                label="top_p"
-                value={topP}
-                min={0}
-                max={1}
-                step={0.05}
-                onCommit={(v) => setConfig({ top_p: v })}
-              />
-              <div className="space-y-2">
-                <Label className="text-muted-foreground text-xs">max_tokens</Label>
-                <Input
-                  type="number"
-                  value={maxTokens}
-                  onChange={(e) => setConfig({ max_tokens: Number(e.target.value) || 0 })}
-                  className="h-8"
-                />
+      <div className="flex-1 overflow-y-auto">
+        <div className="px-1 py-3">
+          {/* Header：头像 + 名字 + kind badge + 描述 */}
+          <div className="space-y-3 pb-5">
+            <div className="flex items-center gap-3">
+              <div
+                className="flex size-14 shrink-0 items-center justify-center rounded-full text-lg font-medium text-white"
+                style={{ backgroundColor: form.avatar_color }}
+              >
+                {form.name.slice(0, 1) || '?'}
               </div>
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <Input
+                  value={form.name}
+                  onChange={(e) => patch('name', e.target.value)}
+                  className="h-9 border-none px-0 text-base font-semibold shadow-none focus-visible:ring-0"
+                />
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="shrink-0">
+                      <KindBadge kind={templateKind} className="cursor-help" />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>模板创建时选定，不可更改</TooltipContent>
+                </Tooltip>
+              </div>
+            </div>
+            <Textarea
+              value={form.description}
+              placeholder="一句话告诉别人这个 Agent 擅长什么"
+              onChange={(e) => patch('description', e.target.value)}
+              className="text-muted-foreground min-h-12 resize-none border-none px-0 text-sm shadow-none focus-visible:ring-0"
+            />
+          </div>
 
-        <Separator />
+          <Separator />
 
-        {/* System Prompt */}
-        <Field label="System Prompt">
-          <Textarea
-            value={systemPrompt}
-            placeholder="留空 = 使用模板默认行为"
-            onChange={(e) => setSystemPrompt(e.target.value)}
-            onBlur={() => {
-              const next = systemPrompt.trim() || null
-              if (next !== agent.system_prompt) commitField('system_prompt', next)
-            }}
-            className="min-h-32 resize-y font-mono text-xs leading-relaxed"
-          />
-        </Field>
+          {/* 模型 */}
+          <Field label="模型" hint="必填——不配模型沙盒没法跑">
+            <Select
+              value={form.model_id ?? undefined}
+              onValueChange={(v) => patch('model_id', v)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="选择对话模型" />
+              </SelectTrigger>
+              <SelectContent>
+                {mockChatModels.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    {m.display_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
 
-        <Separator />
+          <Separator />
 
-        {/* 知识库 */}
-        <Field label="知识库">
-          <MultiSelectPopover
-            items={mockKnowledge.map((k) => ({ id: k.id, name: k.name }))}
-            value={agent.knowledge_ids}
-            onChange={setKnowledgeIds}
-            placeholder="搜索知识库..."
-            emptyLabel="未挂载任何知识库"
-          />
-        </Field>
+          {/* 调用参数（默认折叠） */}
+          <Accordion type="single" collapsible className="py-2">
+            <AccordionItem value="params" className="border-none">
+              <AccordionTrigger className="py-1 text-sm font-medium hover:no-underline">
+                调用参数
+              </AccordionTrigger>
+              <AccordionContent className="space-y-5 pt-3">
+                <SliderField
+                  label="temperature"
+                  value={form.temperature}
+                  min={0}
+                  max={2}
+                  step={0.1}
+                  onChange={(v) => patch('temperature', v)}
+                />
+                <SliderField
+                  label="top_p"
+                  value={form.top_p}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  onChange={(v) => patch('top_p', v)}
+                />
+                <div className="space-y-2">
+                  <Label className="text-muted-foreground text-xs">max_tokens</Label>
+                  <Input
+                    type="number"
+                    value={form.max_tokens}
+                    onChange={(e) =>
+                      patch('max_tokens', Number(e.target.value) || 0)
+                    }
+                    className="h-8"
+                  />
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
 
-        <Separator />
+          <Separator />
 
-        {/* 工具 / MCP */}
-        <Field label="工具 / MCP">
-          <MultiSelectPopover
-            items={mockTools.map((t) => ({
-              id: t.id,
-              name: t.name,
-              meta: t.type === 'mcp' ? 'MCP' : '内置',
-            }))}
-            value={selectedToolIds}
-            onChange={setToolSelection}
-            placeholder="搜索工具..."
-            emptyLabel="未挂载任何工具"
-          />
-        </Field>
+          {/* System Prompt */}
+          <Field label="System Prompt">
+            <Textarea
+              value={form.system_prompt}
+              placeholder="留空 = 使用模板默认行为"
+              onChange={(e) => patch('system_prompt', e.target.value)}
+              className="min-h-32 resize-y font-mono text-xs leading-relaxed"
+            />
+          </Field>
 
-        <p className="text-muted-foreground/60 pt-6 text-center text-[10px]">
-          配置变更即时生效
-        </p>
+          <Separator />
+
+          {/* 知识库 */}
+          <Field label="知识库">
+            <MultiSelectPopover
+              items={mockKnowledge.map((k) => ({ id: k.id, name: k.name }))}
+              value={form.knowledge_ids}
+              onChange={(ids) => patch('knowledge_ids', ids)}
+              placeholder="搜索知识库..."
+              emptyLabel="未挂载任何知识库"
+            />
+          </Field>
+
+          <Separator />
+
+          {/* 工具 / MCP */}
+          <Field label="工具 / MCP">
+            <MultiSelectPopover
+              items={mockTools.map((t) => ({
+                id: t.id,
+                name: t.name,
+                meta: t.type === 'mcp' ? 'MCP' : '内置',
+              }))}
+              value={selectedToolIds}
+              onChange={setToolSelection}
+              placeholder="搜索工具..."
+              emptyLabel="未挂载任何工具"
+            />
+          </Field>
+
+          <p className="text-muted-foreground/60 pt-6 text-center text-[10px]">
+            点击右上「保存」提交本次改动
+          </p>
+        </div>
       </div>
     </div>
   )
@@ -263,38 +350,36 @@ function Field({
   )
 }
 
-/** Slider + 当前值显示，拖动停下才提交（避免高频 update） */
+/** Slider + 当前值显示，拖动随动即落 form（保存按钮才提交后端） */
 function SliderField({
   label,
   value,
   min,
   max,
   step,
-  onCommit,
+  onChange,
 }: {
   label: string
   value: number
   min: number
   max: number
   step: number
-  onCommit: (v: number) => void
+  onChange: (v: number) => void
 }) {
-  const [local, setLocal] = useState(value)
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <Label className="text-xs">{label}</Label>
         <span className="text-muted-foreground font-mono text-xs tabular-nums">
-          {local.toFixed(step < 0.1 ? 2 : 1)}
+          {value.toFixed(step < 0.1 ? 2 : 1)}
         </span>
       </div>
       <Slider
-        value={[local]}
+        value={[value]}
         min={min}
         max={max}
         step={step}
-        onValueChange={(v) => setLocal(v[0])}
-        onValueCommit={(v) => onCommit(v[0])}
+        onValueChange={(v) => onChange(v[0])}
       />
     </div>
   )

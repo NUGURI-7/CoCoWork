@@ -11,8 +11,24 @@ import {
 } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
-import { mockAgents, mockTemplates } from '@/pages/agents/mock'
-import type { WorkspaceMember } from '@/types'
+import { mockTemplates } from '@/pages/agents/mock'
+import type { BehaviorType, Template, WorkspaceMember } from '@/types'
+
+/** mockAgents 已下线（agents 列表接真后端）；workspace 切片本身也未接真接口，
+ *  「从我的 Agent」tab 暂以空数组占位，下一口跟 workspace 切片一起接 `listAgents()`。 */
+type AgentLite = {
+  id: string
+  name: string
+  avatar_color: string
+  behavior_type: BehaviorType
+  template_name: string
+}
+const mockAgents: AgentLite[] = []
+
+/** mock 时代 `template.behavior_type` 已删，UI 仍需一个 BehaviorType 取值——按 kind 派生。 */
+function templateBehavior(t: Template): BehaviorType {
+  return t.kind === 'graph' ? 'supervisor' : 'single'
+}
 
 interface RecruitDialogProps {
   open: boolean
@@ -57,7 +73,7 @@ export function RecruitDialog({ open, onOpenChange, onRecruit }: RecruitDialogPr
         role: 'agent',
         source: 'template',
         source_name: t.name,
-        behavior_type: t.behavior_type,
+        behavior_type: templateBehavior(t),
       })
     } else {
       const a = mockAgents.find((x) => x.id === selectedAgentId)

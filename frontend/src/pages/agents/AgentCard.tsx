@@ -3,6 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { Bot, BookOpen, Copy, MoreHorizontal, Trash2, Wrench } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { deleteAgent } from '@/api/agent'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,12 +28,15 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { useWorkspaceTabsStore } from '@/stores/tab-store'
 import type { Agent } from '@/types'
+import { KindBadge } from './KindBadge'
+import { mockTemplates } from './mock'
 
 interface AgentCardProps {
   agent: Agent
-  /** 不传则 dropdown 删除项 disabled —— v0 列表页接 onDelete 改本地 state */
-  onDelete?: (id: string) => void
+  /** 删除成功后通知父级 refetch */
+  onDeleted?: () => void
 }
 
 /** 相对时间（简易版） */
@@ -46,23 +50,39 @@ function timeAgo(dateStr: string): string {
   return `${days} 天前`
 }
 
-export function AgentCard({ agent, onDelete }: AgentCardProps) {
+export function AgentCard({ agent, onDeleted }: AgentCardProps) {
   const navigate = useNavigate()
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  // 模板元数据反查（mock 模板池里查 key；找不到回退到 key 本身展示）
+  const template = mockTemplates.find((t) => t.key === agent.template)
+  const templateName = template?.name ?? agent.template
+  const templateKind = template?.kind ?? 'loop'
+  const avatarColor = agent.config.avatar_color ?? template?.default_avatar_color ?? '#2f6b53'
+  const hasModel = !!agent.config.model_id
+  const knowledgeCount = agent.config.knowledge_ids?.length ?? 0
+  const toolCount =
+    (agent.config.tool_ids?.length ?? 0) + (agent.config.mcp_ids?.length ?? 0)
 
   function handleClick() {
     navigate({ to: '/agents/$agentId', params: { agentId: agent.id } })
   }
 
-  function handleDelete() {
-    onDelete?.(agent.id)
-    toast.success(`Agent「${agent.name}」已删除`)
-    setConfirmOpen(false)
+  async function handleDelete() {
+    setDeleting(true)
+    try {
+      await deleteAgent(agent.id)
+      toast.success(`Agent「${agent.name}」已删除`)
+      useWorkspaceTabsStore.getState().close(`/agents/${agent.id}`)
+      setConfirmOpen(false)
+      onDeleted?.()
+    } finally {
+      setDeleting(false)
+    }
   }
 
   const initial = agent.name.slice(0, 1)
-  const knowledgeCount = agent.knowledge_ids.length
-  const toolCount = agent.tool_ids.length + agent.mcp_ids.length
 
   return (
     <>
@@ -73,21 +93,24 @@ export function AgentCard({ agent, onDelete }: AgentCardProps) {
             <div className="flex min-w-0 items-start gap-3">
               <div
                 className="flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-medium text-white"
-                style={{ backgroundColor: agent.avatar_color }}
+                style={{ backgroundColor: avatarColor }}
               >
                 {initial}
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <h3 className="truncate font-medium">{agent.name}</h3>
-                <p className="text-muted-foreground mt-0.5 line-clamp-1 text-sm">
-                  <span>{agent.template_name}</span>
-                  {agent.description && (
-                    <>
-                      <span className="mx-1.5">·</span>
-                      <span>{agent.description}</span>
-                    </>
-                  )}
-                </p>
+                <div className="mt-1 flex min-w-0 items-center gap-1.5">
+                  <KindBadge kind={templateKind} className="shrink-0" />
+                  <p className="text-muted-foreground line-clamp-1 min-w-0 flex-1 text-sm">
+                    <span>{templateName}</span>
+                    {agent.description && (
+                      <>
+                        <span className="mx-1.5">·</span>
+                        <span>{agent.description}</span>
+                      </>
+                    )}
+                  </p>
+                </div>
               </div>
             </div>
             <div onClick={(e) => e.stopPropagation()}>
@@ -96,7 +119,7 @@ export function AgentCard({ agent, onDelete }: AgentCardProps) {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="text-muted-foreground hover:text-foreground -mr-1 -mt-1 size-6"
+                    className="text-muted-foreground hover:text-foreground -mt-1 -mr-1 size-6"
                   >
                     <MoreHorizontal className="size-3.5" />
                   </Button>
@@ -115,7 +138,6 @@ export function AgentCard({ agent, onDelete }: AgentCardProps) {
                   </Tooltip>
                   <DropdownMenuItem
                     variant="destructive"
-                    disabled={!onDelete}
                     onSelect={(e) => {
                       e.preventDefault()
                       setConfirmOpen(true)
@@ -131,14 +153,12 @@ export function AgentCard({ agent, onDelete }: AgentCardProps) {
 
           <Separator />
 
-          {/* 数据区：左 meta（模型/知识库/工具） | 右 更新时间 + 三点 */}
+          {/* 数据区：左 meta（模型/知识库/工具） | 右 更新时间 */}
           <div className="flex items-end justify-between gap-3">
             <div className="text-muted-foreground flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
               <span className="inline-flex items-center gap-1">
                 <Bot className="size-3.5" />
-                {agent.model_display_name ?? (
-                  <span className="italic">未选模型</span>
-                )}
+                {hasModel ? '已选模型' : <span className="italic">未选模型</span>}
               </span>
               <span className="inline-flex items-center gap-1">
                 <BookOpen className="size-3.5" />
@@ -165,15 +185,16 @@ export function AgentCard({ agent, onDelete }: AgentCardProps) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
             <AlertDialogAction
+              disabled={deleting}
               onClick={(e) => {
                 e.preventDefault()
                 handleDelete()
               }}
-              className="bg-destructive text-white hover:bg-destructive/90"
+              className="bg-destructive hover:bg-destructive/90 text-white"
             >
-              确认删除
+              {deleting ? '删除中…' : '确认删除'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

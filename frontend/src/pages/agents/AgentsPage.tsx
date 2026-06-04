@@ -1,27 +1,43 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Bot, Plus } from 'lucide-react'
-import { toast } from 'sonner'
+import { ring } from 'ldrs'
 
+import { listAgents } from '@/api/agent'
 import { Button } from '@/components/ui/button'
 import { useHorizontalWheelScroll } from '@/hooks/use-horizontal-wheel-scroll'
-import { useWorkspaceTabsStore } from '@/stores/tab-store'
 import type { Agent, Template } from '@/types'
 import { AgentCard } from './AgentCard'
 import { CreateAgentDialog } from './CreateAgentDialog'
 import { TemplateCard } from './TemplateCard'
-import { useAgentMockStore } from './agent-mock-store'
 import { mockTemplates } from './mock'
+
+ring.register()
 
 /** /agents — Agent 列表页（三带式：Header / 模板池 / 我的 Agent 网格） */
 export default function AgentsPage() {
   const navigate = useNavigate()
-  const agents = useAgentMockStore((s) => s.agents)
-  const addAgent = useAgentMockStore((s) => s.add)
-  const removeAgent = useAgentMockStore((s) => s.remove)
+  const [agents, setAgents] = useState<Agent[]>([])
+  const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [defaultTemplate, setDefaultTemplate] = useState<Template | null>(null)
   const templateScrollRef = useHorizontalWheelScroll<HTMLDivElement>()
+
+  const refetch = useCallback(async () => {
+    setLoading(true)
+    try {
+      const data = await listAgents()
+      setAgents(data)
+    } catch {
+      // 全局拦截器已 toast；保持空列表
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    refetch()
+  }, [refetch])
 
   function handleCreateClick() {
     setDefaultTemplate(null)
@@ -33,15 +49,9 @@ export default function AgentsPage() {
     setDialogOpen(true)
   }
 
-  function handleCreate(agent: Agent) {
-    addAgent(agent)
-    toast.success(`Agent「${agent.name}」已创建`)
+  function handleCreated(agent: Agent) {
+    setAgents((prev) => [agent, ...prev])
     navigate({ to: '/agents/$agentId', params: { agentId: agent.id } })
-  }
-
-  function handleDelete(id: string) {
-    removeAgent(id)
-    useWorkspaceTabsStore.getState().close(`/agents/${id}`)
   }
 
   return (
@@ -78,7 +88,7 @@ export default function AgentsPage() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         defaultTemplate={defaultTemplate}
-        onCreate={handleCreate}
+        onCreate={handleCreated}
       />
 
       {/* ③ 我的 Agent 网格 */}
@@ -86,12 +96,16 @@ export default function AgentsPage() {
         <h2 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
           我的 Agent
         </h2>
-        {agents.length === 0 ? (
+        {loading ? (
+          <div className="flex min-h-[40vh] items-center justify-center">
+            <l-ring size="36" stroke="3" speed="2" color="#2f6b53" />
+          </div>
+        ) : agents.length === 0 ? (
           <EmptyState onCreate={handleCreateClick} />
         ) : (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {agents.map((agent) => (
-              <AgentCard key={agent.id} agent={agent} onDelete={handleDelete} />
+              <AgentCard key={agent.id} agent={agent} onDeleted={refetch} />
             ))}
           </div>
         )}
