@@ -54,13 +54,14 @@
 - **Agent 模块前端切片 0 全栈打通（纯 mock）**：列表页三带式（模板池 + 我的 Agent 网格）+ 创建弹窗（选模板起名）+ 详情页（左 ConfigPanel 配置 40% / 右 Playground 沙盒试运行 60%，配置即时落 store）；`agent-mock-store`（zustand 列表/详情共用）。**砍掉「正式对话」**——详情页只做沙盒，正式对话归 workspace。后端 Agent 模型 + LangGraph 未起。
 - **Workspace 模块前端完整骨架（纯 mock + local state）**：列表页卡片网格（成员头像堆叠 + 管家戴皇冠 + +N 折叠）+ 创建弹窗（带默认管家 + 初始对话）+ 详情页三栏（通讯录 240 / 主对话 flex-1 / 产出物 320，两侧均可独立收起）+ 招募弹窗两 tab（选模板 / 选 Agent，对齐 spec 三层分离）+ Conversation 切换条（顶部 popover 列出历史 + 「新对话」，切换走 `key` 重挂清消息）。主对话区核心 = **@mention 自动补全 popover**（光标前正则检测 `@<query>` → 候选成员浮层 → 点选替换光标位文本）+ mock 双轨路由（@某成员 → 那成员答，否则 → 管家答）+ assistant 气泡带头像（管家皇冠 / 成员色块）+ 品牌色名字。统一容器样式 `bg-background border shadow-sm overflow-hidden rounded-lg`（修圆角被子元素方角覆盖问题）。后端 Workspace 数据模型 + 注入引擎 + LangGraph 调度未起。
 - **全局：路由→tab 自动同步机制**。路由 `staticData` + `useTabSync`（router onResolved 事件驱动），调用方只 `navigate`、tab 自动跟随；详情页 `useTabTitle` 覆盖动态名。工作台 + admin 两套 tab 都接入。
+- **Agent 模块后端整片打通**：`agents` 表（Hybrid Schema：核心列 + `config` jsonb，迁移 0009）+ CRUD（schema/service/route，5 端点 `/api/v1/agents`，归属隔离 + `get_template` 校验 + template 创建后锁死）+ **模板层 `app/agents/templates/`**（三层基类 `AgentTemplate/LoopTemplate/GraphTemplate` + 装饰器注册表 + `builtin/general`）。**结构 1+N**：1 个可配置 loop 引擎（能力靠 `config.capabilities` + 注册表 + 装配器组合，占位待接 LLM）+ N 个 graph 模板（首批 0）。前端 mock 待接真接口。
 
 ## 下一步
 - **知识库 / RAG 模块 v1 整片完工（片1-6 收官）+ 收尾增强**：数据层 + KB CRUD + 存储抽象 + 文档上传/下载 + 处理管线 + 检索/命中测试全栈打通；**增强**：文档批量向量化/删除（部分成功语义）、命中测试检索耗时展示、文档列表段数展示、触发同步置 processing 修「刷新后轮询丢失」。
   - **方案见** `docs/design/knowledge-rag-v1.md`（spec + §13 切片清单全部勾掉）+ `knowledge-rag-decisions.md`（决策/权衡）。六片：VectorField + pgvector + 4 表迁移 0005 + AIModel.meta 0006 + KB CRUD + 存储抽象 R2/Local + Document 上传 CRUD 下载 8 端点 + Splitter 抽象层 + `process_document()` + 触发端点 + enum 化迁移 0007/0008 + 检索 service + 命中测试端点。详见最近迭代。
   - **v2 方向**：混合检索 / FTS / RRF / rerank / 多向量；切块优化（heading 感知——命中测试已暴露双换行段切分对 list-heavy md 失效，留作自研切块器 A/B 对照案例）；评估体系（Recall@k/MRR + LLM 自动造测试集）。
   - 既有决策：embedding 每库锁一个模型、rerank 先阿里、全文检索先 Postgres 原生 FTS（不够再上 ParadeDB pg_search，不上 ES）、切块默认（递归~512token+50overlap）+ 可配；混合检索/FTS/RRF/rerank/多向量 = v2；文档编辑用自封装 tiptap（后做）。
-- **Agent 模块（设计已定稿，前端可独立推进）**：完整 spec 见 `docs/design/agent-module-v1.md`（14 节）+ 前端画法指南 `agent-module-frontend-v1.md`（三批实施建议）。范式 = 工作空间 + 单 agent 双入口；不调试不发布；模板/Agent/实例三层分离（模板=平台预置纯 LangGraph 行为骨架空壳，Agent=用户装备好的资产，实例=空间内成员含注入）；@直连 vs 不@走管家双轨调度；3 层长期记忆 L1/L2/L3 严格作用域。架构亮点：Hybrid Schema（核心列+jsonb 扩展）+ 三层分离（ContextBuilder/LangGraph/PostProcessor）+ 7 设计模式（Builder/CoR/Strategy/Mediator/Repository/Observer-EDA + Layered）+ Hexagonal。**前端切片 0 已完成**（列表/创建/详情配置/沙盒，纯 mock + local state，旧 agent 代码已替换；详见最近迭代）；后续切片 1+（模板 seed / Agent CRUD 接 API / 对话接 LLM）+ 后端 Agent 模型 + LangGraph 待知识库 RAG 收尾后启动。设计已砍 agent 详情页「正式对话」——正式对话归 workspace。
+- **Agent 模块（设计已定稿，前端可独立推进）**：完整 spec 见 `docs/design/agent-module-v1.md`（14 节）+ 前端画法指南 `agent-module-frontend-v1.md`（三批实施建议）。范式 = 工作空间 + 单 agent 双入口；不调试不发布；模板/Agent/实例三层分离（模板=平台预置纯 LangGraph 行为骨架空壳，Agent=用户装备好的资产，实例=空间内成员含注入）；@直连 vs 不@走管家双轨调度；3 层长期记忆 L1/L2/L3 严格作用域。架构亮点：Hybrid Schema（核心列+jsonb 扩展）+ 三层分离（ContextBuilder/LangGraph/PostProcessor）+ 7 设计模式（Builder/CoR/Strategy/Mediator/Repository/Observer-EDA + Layered）+ Hexagonal。**前端切片 0 已完成**（列表/创建/详情配置/沙盒，纯 mock + local state）；**后端 CRUD + 模板层（1+N）已整片打通**（agents 表/迁移 0009 + schema/service/route 5 端点 + `app/agents/templates/` 装饰器注册表 + general 引擎；详见最近迭代）；接下来前端 `api/agent.ts` mock 换真接口；能力注册表/装配器/`build()` + LangGraph 待接 LLM 那片。设计已砍 agent 详情页「正式对话」——正式对话归 workspace。
 - **Workspace 模块（前端骨架完成，等后端起）**：列表 + 详情三栏 + 招募 + Conversation 切换 + @mention 双轨路由 mock 全画完（最近迭代）；后端待做：Workspace 模型 + CRUD（切片4）→ 实例注入引擎（切片5）→ supervisor LangGraph 调度（切片7+），跟 Agent 模块切片大纲走。
 - **前端 App Shell**：批次1骨架 ✅、批次2 头像菜单 ✅、批次3 admin 独立壳 ✅、批次4 Home 卡片式 dashboard ✅（静态占位版，数字待各模块接口就绪后灌真数）。
 - 后端可选生产功能（RBAC / Email 校验 / 密码重置 / 限流）随需推进。
@@ -81,6 +82,16 @@
 - 如果某次改动不足以影响项目理解，就不要把噪音写进来。
 
 ## 最近迭代
+
+### 2026-06-03 — Agent 模块后端整片打通 + 模板设计 1+N 重构
+
+**Agent 后端 CRUD 全栈**：`agents` 表（Hybrid Schema：核心列 name/description/created_by/template + `config` jsonb；迁移 0009）；`schemas/agent`（Create/Update/Out，Update 无 template）；`services/agent`（`AgentService` 5 方法，`AgentOut.model_validate` 直转 + 归属隔离 + `get_template` 校验 template 在册 + template 创建后锁死）；`api/routes/agent`（5 端点 `/api/v1/agents`，put 整体更新）。`config` = 行为(loop `{prompt,model}` / graph `{nodes:{...}}`) + 资源(knowledge/tools/skills id) + `capabilities`，全宽松 dict、暂不严格校验。
+
+**模板层 `app/agents/templates/`**：`base.py` 三层基类（`AgentTemplate` 抽象 + `LoopTemplate` 实现共享 build + `GraphTemplate` 留抽象逼子类各写）；**装饰器注册表**（`@register` + `get_template`/`list_templates`，**防环三铁律**：registry 只 import base、模板 import registry 子模块不 import 包、点火放 `builtin/__init__`）；`builtin/general` 一个 loop 引擎。模板存 key 不建表，元数据声明在代码、图代码（build）占位待接 LLM。
+
+**模板设计大重构 k+n → 1+N**（`agent-templates-v1.md` 重写 v1.1）：能力（强制搜索/反思/沙箱）不再是模板、是**实例层可组合开关**（`config.capabilities` + 能力注册表 + 装配器，最终 middleware = 统一层 + 能力层）；retrieval/builder/reflective 从「模板」降级为能力；loop 收成 **1 个可配置引擎**、graph 首批 0。依据 Anthropic「Augmented LLM 基线 + 能力可组合不是分类格子」。能力注册表/装配器/build 全占位、接 LLM 那片做。
+
+**协作**：全局规则加第 4 条「一次只给一口信息」（写进 `~/.claude/CLAUDE.md`）；中途纠正——能力当模板轴是 spec §8 自警的反模式，写真代码前揪出、零成本改正。
 
 ### 2026-06-02 — Agent 体系架构地基定稿（`docs/architecture.md`）
 
@@ -213,51 +224,10 @@
 - 配套：装 shadcn `popover`/`command`/`breadcrumb`；nav 加「工作空间」(Layers icon) + `/workspaces` 占位页；`ConfigPanel` 用方案 A（无外框 + Separator 分段 + header 区放大头像/名字）；抽 `hooks/use-horizontal-wheel-scroll.ts`（模板池 + TabBar 横向滚轮共用）；`PagePlaceholder` 加可选 `description`。
 - **App Shell 高度链锁定**：`SidebarProvider` `min-h-svh`→`h-svh` + 内容 wrapper 补 `min-h-0`，详情页全程 `flex-1`+`min-h-0` 配对，Playground 内部消息区自滚、输入区贴底，整页不再溢出。
 
-### 2026-05-26 — Agent 模块设计 spec 定稿 + admin 用户管理页（mock）
-
-- **核心产出**：`docs/design/agent-module-v1.md`（14 节产品+架构 spec）+ `agent-module-frontend-v1.md`（纯前端画法指南，三批实施 + 类型/mock/布局/交互全描述、不涉及代码）。设计未实施，今天只动手了 admin 用户管理页占位。
-- **范式定型**：工作空间 + 单 agent 双入口（Agents `/agents` 单 agent / Workspace `/workspaces` 多 agent 协作）；**砍掉调试-发布二元状态**——配置即时生效；模板/Agent/实例**三层分离**：模板=平台预置纯 LangGraph 行为骨架空壳（无 prompt 无资源、用户不可建不可改），Agent=用户基于模板装备的资产（挂 prompt/模型/资源），实例=空间内成员（由模板或 Agent 复制 + 空间注入）。Sidebar 加 Workspace 项放 Agents 之上。
-- **关键决策**：`@某 agent 直连` vs `不@ 走管家` 双轨调度（@ 直连贴 Slack 直觉）；subagent 用完即销毁；资源三层（自带/共享/实例覆盖）取并集去重；3 层长期记忆 `L1 用户画像(user)` / `L2 空间世界观(workspace)` / `L3 实例工作记忆(workspace,instance)`——agent 自身无跨空间状态，仅 L1 跨空间。Agent 列表页**三带式**（Header + 模板池横向卡片条 + 我的 Agent 网格），创建 Agent = 选模板 + 起名。
-- **架构亮点（§10-11，简历加分）**：① **Hybrid Schema**（核心字段用列+扩展字段 jsonb，避免大 JSON / EAV / 全固定列三种反模式）；② **三层分离架构**（Build-Execute-Postprocess）：ContextBuilder→LangGraph→PostProcessor，LangGraph 只负责业务编排，**反对把上下文注入塞进 LangGraph 节点**（明确反模式）；③ **7 个设计模式**：Layered / Builder（ContextBuilder fluent API）/ Chain of Responsibility（注入责任链——加新注入类型只加 Injector 不动其他）/ Strategy（行为模板 + 调度算法）/ Mediator（supervisor 本质）/ Repository（数据访问抽象）/ Observer-EDA（沉淀解耦）；④ **3 个高阶概念**：Hexagonal Ports & Adapters / EDA / CQRS（v2+）。各模式都附简历叙述版。
-- **业界对照（spec 附录 B）**：MaxKB 单 agent 固定字段 / Dify 工作流画布 / LangChain Runnable / CrewAI dataclass / OpenAI Assistant 固定 schema / Claude Code 后台 Task tool；CoCoWork 定位 = **同会话多 agent 接力 + @ 直选 + Hybrid Schema + 注入引擎**。Context Engineering 是产品 narrative，Configuration Composition with Hybrid Schema 是技术叫法。
-- **v1 切片大纲（11 片）**：切片 0 前端基建（nav+workspace 占位+agent 三带式列表+左配右聊详情骨架，纯 mock）→ 1 模板 seed → 2 Agent CRUD → 3 单 agent 对话 → 4 Workspace CRUD → 5 招募注入 → 6 工作空间详情页 → 7 supervisor+@路由 → 8 长任务+SSE → 9 subagent → 10 产出物。**前端切片 0 可独立于后端推进**。
-- **admin 用户管理页（mock）**：`pages/admin/UsersPage.tsx` + `users-mock.ts` + 路由接上；表格（头像+username/邮箱/角色 badge/状态 switch/创建时间/删除）+ 搜索 + 角色筛选 Select + 自己行禁用 switch/删除（tooltip 提示）+ AlertDialog 二次确认；纯前端，后端 user 管理接口齐了再接。
-- **设计纠结过程**：曾陷入「多 agent 看着像 MaxKB 复制品」「Claude Code 也有 subagent，我换皮？」等焦虑——结论：差异化不在产品形态而在 narrative + 工程立场（Hybrid Schema + 注入引擎 + 三层分离），且 CoCoWork 服务"自用+简历+Star+艺术品"四目标交集，P3 完整版是最优解。设计阶段最大教训：完美主义瘫痪要靠"写一段最小代码跑出来用感觉替代想象"破局。
-- **未做**：旧 `pages/agents/*` 仍是 status/agent_type 等过时字段；类型 / mock / 卡片 / 详情都未改造。计划随切片 0 实施一并替换（不预清理避免幽灵代码）。
-
-### 2026-05-26 — 知识库/RAG 后端：4b-1 Document schemas + service
-
-- **4b-1 完成**：Document 数据层平地起步，模型早在迁移 0005，不动表/迁移。
-- 新增 `schemas/knowledge/document_schema.py`：`DocumentOut` + `UploadInitIn` + `UploadInitOut`（带 `strategy: "presign"|"passthrough"` 字段，4b-2 端点按存储后端分流用）+ 常量 `ALLOWED_FILE_TYPES = {"md","txt"}`（放代码、不入 env——产品/业务边界，部署者不该随手放宽）。
-- 新增 `services/knowledge/document_service.py`：`DocumentService`（class 风格对齐 KB service）+ helper `_parse_file_type`/`_build_storage_key`。方法 `create_pending` / `list_by_kb` / `get_by_id` / `delete`，全 nested 签名 `(user, kb_id, ...)`，doc_id 永远在 kb_id 之后（URL 同步 nested 化）。
-- `storage_key` 约定 `kb/{kb_id}/doc/{doc_id}.{ext}`，两后端通用；含 doc_id 故 create 占位 → 拿 id → update 回填（两次写但顺现有风格）。
-- 删文档：先 `storage.delete`（失败仅 log 不阻塞）→ ORM delete（FK CASCADE 自动清 paragraphs/embeddings）。理由：用户始终能清掉 ORM 记录，孤儿对象交给桶生命周期。
-- 归属校验：`_get_user_doc` 一次 SQL JOIN 同时验「doc 在 kb 下 + kb 归属当前用户」（filter 走 FK 路径 `knowledge_base__created_by=user`，不用 select_related——前者是"我要用字段"，后者是"我只过滤"）。
-- config 加 `STORAGE_MAX_UPLOAD_SIZE = 50MB`（env 可调）；扩展名白名单不入 env。
-- 不含路由（4b-2 才接端点）；端点设计：`upload-init` 自带 `strategy` 字段按 backend 分流（R2 presign 三段式 / Local passthrough 一步），前端按 strategy switch、不用提前问能力。
-
-### 2026-05-26 — Model 模块：AIModel URL nested 化（/providers/{pid}/models）
-
-- 后端路由 `ai_model.py` 拆 `nested_router`（`/providers/{pid}/models`，5 个 CRUD）+ `flat_router`（保留 `/models` 跨 provider 列表 + `/models/param-definitions`）；`model/__init__.py` 注册两个 router。
-- 拍板保留 `GET /models?model_type=...`：建 KB 选 embedding 模型场景需要跨 provider 列出，强制 nested 会让前端 N+1（先 listProviders 再每个 provider 调一次），不值。
-- `ModelCreate` 删 `provider_id` 字段：path 单源、避免 path/body 双源歧义（万一 path 是 abc 但 body 是 def，听谁都是坑）。
-- `AIModelService` 加 `_ensure_user_provider` helper；按 provider 的方法签名都带 pid；`list_own` 一分为二：`list_by_provider`（nested 端点用，强校验 pid 归属）+ `list_own`（跨 provider 列出，只过滤 user）。
-- 前端 `api/model.ts`：`listModels` 拆 `listModelsByProvider` + `listAllModels`；`createModel(providerId, payload)` / `deleteModel(providerId, modelId)` 多 pid 参数；`ModelCreatePayload` 去 `provider_id`。
-- 前端 4 个调用点适配：`CreateModelDialog`（payload 去 provider_id 改单独传）/ `AIModelCard`（props 加 providerId）/ `ProviderDetailPage`（调 listModelsByProvider + 给 AIModelCard 传 providerId）/ `CreateKnowledgeDialog`（调 listAllModels）。`tsc --noEmit` 0 报错。
-- 决策对齐：现有 KB/Provider/Catalog 已 flat（顶层无父），nested 只用于真正的父子关系（KB→Document / Provider→AIModel）；纯静态资源（param-definitions）不强求 nested。
-
-### 2026-05-25 — 知识库/RAG 后端：4a 存储抽象层（R2 预签名 + Local 中转）
-
-- **4a 完成**：`app/core/storage/` 抽象基类 + R2/Local 双后端 + `STORAGE_BACKEND` env 装配。业务用法 `from app.core.storage import storage; await storage.save(...)`，后端类型透明。
-- 文件：`base.py`（4 字节操作 `save/read/delete/exists` + 2 预签名方法 + `supports_presigned` 标志）/ `local.py`（`shutil.copyfileobj` 流式拷贝 + 路径穿越防护）/ `r2.py`（boto3 + `to_thread` + 客户端 `@cached_property` 懒加载）/ `__init__.py`（按 env 装配单例）。配套：`config.py` 加 `STORAGE_BACKEND` + R2 4 字段（去掉 `R2_PUBLIC_URL`，YAGNI）；`.env.example` 同步；`.gitignore` 加 `backend/data/`。
-- **上传/下载选型（实施时定，不对称）**：**R2 走预签名直传**（客户端→R2 直连，**服务器零出站**）+ 下载走预签名 GET URL；**Local 走后端中转**（本地盘没"直传 URL"概念）。接口用 `supports_presigned: bool` 标志 + 基类抛 `NotImplementedError` 默认实现表达；业务层按标志分流上传路径。
-- **关键洞察（戳破认知坑）**：「RAG 反正要处理拉回来 → presigned 省上传带宽有限」**错**——服务器**出站(egress)收费 / 入站(ingress)免费**；passthrough 上传的「后端→R2」是出站，presigned 直接绕开，**入站和出站不对称、presigned 省的是真金白银**。详 `knowledge-rag-decisions.md` §8c + `notes/backend/storage-upload/notes.md`。
-- 工程点：boto3 client **`@cached_property` 懒加载**——import/启动不依赖 R2 凭证（修了"空 endpoint 启动崩"的真问题）；同步 IO 全包 `asyncio.to_thread`（预签名生成不包，纯本地 HMAC）；大文件靠 `UploadFile` 1MB spool + `shutil.copyfileobj` 64KB 分块拷贝，几十兆不爆内存。
-- 验收：local smoke 全过（save→exists→read→delete + 路径穿越拦截 + 预签名拒抛 `NotImplementedError`）；R2 smoke 等 `backend/.env` 填真凭证后跑或前端集成时验。
-- 配套：§13 把片4 拆 **4a✓ + 4b 待办**；新增 `notes/backend/storage-upload/{notes.md, qa.md}`（4 节原理 + 2 问答）；决策 §8c 入 `knowledge-rag-decisions.md`。
-- 协作偏好新增：notes/ 学习笔记**在模块/切片做完后统一批量写**，不在实现途中写（已记进 MEMORY）。
-
 ## 历史摘要
+- **2026-05-26 — Agent 模块设计 spec + admin 用户管理页(mock)**：`agent-module-v1.md`（14 节）+ `agent-module-frontend-v1.md` 定稿；范式 = 工作空间 + 单 agent 双入口、模板/Agent/实例三层分离、@直连 vs 管家双轨、L1-L3 记忆。**注意：工程底座 §10-11（ContextBuilder/7 设计模式/Hexagonal）已被 2026-06-02 架构地基推翻、模板模型又被 1+N 重构，仅产品形态仍有效。** admin 用户管理页 `UsersPage`（mock：表格 + 搜索 + 角色筛选 + 自身行禁用 + AlertDialog）。
+- **2026-05-26 — 知识库片4b-1 Document 数据层 + Model URL nested 化**：Document schemas/service 平地起步（`create_pending/list/get/delete` nested 签名 `(user,kb_id,...)`、`storage_key=kb/{kb}/doc/{doc}.{ext}`、删文档先 storage 后 ORM、`_get_user_doc` 一次 JOIN 验归属）；AIModel URL nested 化 `/providers/{pid}/models`（5 CRUD）+ 保留 flat `/models` 跨 provider 查 + `param-definitions`，`ModelCreate` 去 `provider_id`（path 单源）。
+- **2026-05-25 — 知识库片4a 存储抽象层**：`app/core/storage/`（`Storage` ABC + R2/Local 双后端 + `STORAGE_BACKEND` 装配）；R2 预签名直传（服务器零出站；egress 收费 / ingress 免费的不对称是关键）+ Local 后端中转；boto3 `@cached_property` 懒加载、同步 IO 全 `to_thread`。
 - **2026-05-25 — 知识库/RAG 后端：片3 CRUD + Model 模块顺手补 dim 探测**：`/api/v1/knowledge-bases` 5 端点鉴权 + 用户可见；service 直接返组装好的 `KnowledgeBaseOut`（跨实体计算字段 model_validate 装不下）；Model 模块顺手改：validator.validate 返 dict 携 embedding_dim、AIModelService.create 写入 AIModel.meta（建模型即落库 dim，零额外上游调用），ModelOut 加 meta 对外暴露；建库 dim 解析先 model.meta 再 `_probe_embedding_dim` 兜底；计数 annotate-only 查 + 模型名单独 values_list 批量查（避 select_related + annotate 同用的 GROUP BY 报错）；决策：不许换 embedding 模型（换 = reindexing 全库重建）、update 只允改 name/description/chunk_config、删库 FK CASCADE 清下游。
 - **2026-05-25 — 知识库前端：设置页接通 + 卡片删除入口**：`KnowledgeSettings` 保存/删除接真 API（updateKB silent + deleteKB + 关详情 tab + 跳回列表）；`KnowledgeCard` 仿 ProviderCard 加三点 dropdown + AlertDialog；删除入口卡片三点 + 设置页两处对齐；ProviderCard 补关 tab；决策：设置页只允改 name/description，向量化配置锁死只读。
 - **2026-05-24 — 知识库/RAG 设计定稿 + 数据层（片1+2）+ AIModel.meta**：spec `knowledge-rag-v1.md` + decisions 定稿；4 表 single-file（KB/Document/Paragraph/Embedding）+ 父子块（embed 子块、命中返整段、子块不落表、文本存 `embedding.text`）+ Embedding 独立表（一对多 + source_type + 多向量留口子）；pgvector 0.8.1 已装，自定义 `VectorField`（不锁维度、原生 SQL 相似度查询、按段 DISTINCT ON 去重）+ 部分索引 + 表达式 cast 与查询一致才命中；存储抽象延后到片4；v1 手动向量化（FastAPI BackgroundTasks，将来换 ARQ 不返工）；迁移 0005 已 apply（含 RunSQL CREATE EXTENSION vector）；AIModel 加 `meta` JSONField(null=True) 存固有事实（dim/context_window），懒填充 embedding_dim。
