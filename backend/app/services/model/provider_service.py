@@ -1,10 +1,8 @@
 import logging
 from uuid import UUID
 
-from tortoise.exceptions import IntegrityError
-
 from app.core.encryption import decrypt, encrypt
-from app.core.exceptions.types import NotFound404, ValidationException
+from app.core.exceptions.types import NotFound404
 from app.models.model import Provider
 from app.models.user import User
 from app.schemas.model import ProviderCreate, ProviderUpdate
@@ -27,17 +25,14 @@ class ProviderService:
         return provider
 
     async def create(self, user: User, data: ProviderCreate) -> Provider:
-        try:
-            return await Provider.create(
-                created_by=user,
-                name=data.name,
-                provider_type=data.provider_type,
-                base_url=data.base_url,
-                api_key_encrypted=encrypt(data.api_key),
-                description=data.description,
-            )
-        except IntegrityError as e:
-            raise ValidationException(f"Provider 名称 '{data.name}' 已存在") from e
+        return await Provider.create(
+            created_by=user,
+            name=data.name,
+            provider_type=data.provider_type,
+            base_url=data.base_url,
+            api_key_encrypted=encrypt(data.api_key),
+            description=data.description,
+        )
 
     async def update(self, user: User, provider_id: UUID, data: ProviderUpdate) -> Provider:
         provider = await self.get_by_id(user, provider_id)
@@ -57,10 +52,7 @@ class ProviderService:
         if not update_fields:
             return provider
 
-        try:
-            await Provider.filter(id=provider_id).update(**update_fields)
-        except IntegrityError as e:
-            raise ValidationException(f"Provider 名称 '{data.name}' 已存在") from e
+        await Provider.filter(id=provider_id).update(**update_fields)
 
         return await Provider.get(id=provider_id)
 

@@ -1,7 +1,6 @@
 import logging
 from uuid import UUID
 
-from tortoise.exceptions import IntegrityError
 from tortoise.functions import Count, Sum
 from tortoise.queryset import QuerySet
 
@@ -90,18 +89,15 @@ class KnowledgeBaseService:
             dim = await self._probe_embedding_dim(model)
 
         # 3. 入库
-        try:
-            kb = await KnowledgeBase.create(
-                created_by=user,
-                name=data.name,
-                description=data.description,
-                embedding_model=model,
-                embedding_dim=dim,
-                chunk_config=data.chunk_config.model_dump(),
-                status=KBStatus.READY,
-            )
-        except IntegrityError as e:
-            raise ValidationException(f"知识库名称 '{data.name}' 已存在") from e
+        kb = await KnowledgeBase.create(
+            created_by=user,
+            name=data.name,
+            description=data.description,
+            embedding_model=model,
+            embedding_dim=dim,
+            chunk_config=data.chunk_config.model_dump(),
+            status=KBStatus.READY,
+        )
 
         return await self.get_by_id(user, kb.id)
 
@@ -133,10 +129,7 @@ class KnowledgeBaseService:
             update_fields["chunk_config"] = data.chunk_config.model_dump()
 
         if update_fields:
-            try:
-                await KnowledgeBase.filter(id=kb_id).update(**update_fields)
-            except IntegrityError as e:
-                raise ValidationException(f"知识库名称 '{data.name}' 已存在") from e
+            await KnowledgeBase.filter(id=kb_id).update(**update_fields)
 
         return await self.get_by_id(user, kb_id)
 

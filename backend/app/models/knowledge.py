@@ -61,8 +61,6 @@ class KnowledgeBase(UUIDBaseModel, TimestampMixin):
 
     class Meta:
         table = "knowledge_bases"
-        unique_together = (("created_by", "name"),)
-
 
 class Document(UUIDBaseModel, TimestampMixin):
     """知识库下的文档。

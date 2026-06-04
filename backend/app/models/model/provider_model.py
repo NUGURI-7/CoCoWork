@@ -22,4 +22,3 @@ class Provider(UUIDBaseModel, TimestampMixin):
 
     class Meta:
         table = "providers"
-        unique_together = (("created_by", "name"),)
