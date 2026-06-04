@@ -33,7 +33,7 @@ class AgentService:
 
 
     async def get_by_id(self, user:User, agent_id: UUID) -> AgentOut:
-        agent = await Agent.filter(created_by=user, id=agent_id).filter()
+        agent = await Agent.filter(created_by=user, id=agent_id).first()
         if agent is None:
             raise NotFound404("Agent 不存在")
         return AgentOut.model_validate(agent)
