@@ -51,7 +51,9 @@
 - **知识库检索 + 命中测试（片6 完工）全栈打通**：后端检索 service（query 向量化 → 原生 SQL `embedding::vector(dim) <=> query` 余弦距离 → `DISTINCT ON (paragraph_id)` 按段去重取最近子块 → 外层阈值过滤 + 重排 + top_k；`{dim}` f-string 拼类型修饰符、向量/kb_id/阈值/top_k 走 `$` 参数防注入）+ 端点 `POST /knowledge-bases/{kb_id}/retrieval-test`（归属校验 + query/top_k/similarity_threshold）；schema `RetrievalTestIn`/`RetrievalHit`（父子块：返整段 content + 命中子块 chunk_text + score=1-距离）；前端 `runMockRetrieval` → `retrievalTest` 真接口、检索 mock 删净。**端到端 OK**。**命中测试首次暴露切块问题**：双换行段切分对 list-heavy md 失效（一整天行程挤成一巨段、命中返整段过长）→ 留 v2 heading 感知切块当对照案例。**RAG v1 六片整片收官。**
 - **前端 admin 用户管理页（mock）**：`/admin/users` 表格（用户/邮箱/角色 badge/状态 switch/创建时间/删除）+ 搜索过滤 + 角色筛选 + AlertDialog 二次确认；自己的行禁用 switch 和删除；纯前端 mock，后端 user 管理接口齐了再换。
 - **Agent 模块设计 spec 定稿**：`docs/design/agent-module-v1.md`（14 节产品+架构 spec）+ `agent-module-frontend-v1.md`（前端画法指南）。
-- **Agent 模块前端切片 0 全栈打通（纯 mock）**：列表页三带式（模板池 + 我的 Agent 网格）+ 创建弹窗（选模板起名）+ 详情页（左 ConfigPanel 配置 40% / 右 Playground 沙盒试运行 60%，配置即时落 store）；`agent-mock-store`（zustand 列表/详情共用）。**砍掉「正式对话」**——详情页只做沙盒，正式对话归 workspace。后端 Agent 模型 + LangGraph 未起。
+- **Agent 模块前后端整片打通（CRUD 接真接口）**：列表 / 创建 / 详情 / 保存 / 删除 5 端点全栈联通。列表页三带式（模板池 2 张：真 loop `general` + graph 占位 disabled / 我的 Agent 网格 / ldrs l-ring loader）+ 创建弹窗（`template + config` payload）+ 详情页（左 ConfigPanel 40% / 右 Playground 沙盒 60%）。**ConfigPanel 显式保存模式**：本地 form state + Sticky 顶栏「橙点·有未保存改动」+ 整体 PUT；`agentToForm` 摊平 / `save()` 时打包回 config jsonb；mock-store 退役。配置里 chat 模型 + 知识库选择器接真 `listAllModels({modelType:'chat',enabledOnly:true})` + `listKnowledgeBases()`；AgentCard meta 行真显模型名（父级一次拉 model map 避 N+1）。工具仍 mock（后端 tool 模块未起）；Playground 沙盒回复仍是 500ms 假回复待接 LLM。**砍掉「正式对话」**——详情页只做沙盒，正式对话归 workspace。
+- **全局允许同名资源**：KB / Provider 删 `unique_together = (("created_by", "name"),)` 约束 + service 清理 try/IntegrityError + 迁移 0010；AIModel / Agent 本就没约束。对齐 ChatGPT custom GPT / Claude Project / Notion 行业惯例——列表 UI 靠头像 / 描述 / 时间区分，不用 name 唯一兜底。
+- **Agent Playground 端到端 + 通用对话层整片完工**：后端 `runtime/`（events / adapter / runner，build_chat_model + prepare_stream + run_chat_stream）+ route `POST /agents/{id}/playground/stream`（StreamingResponse + 内联 ORM 归属校验）+ 路由挂载；前端 `types/chat.ts`（通用契约三层结构 + API snake_case 透传 / 内部 camelCase）+ `api/chat-stream.ts`（parseSSEStream + streamChat endpoint 形参注入 + AbortSignal 透传 + ChatStreamHttpError）+ `stores/chat-store.ts`（**Zustand 工厂 createStore + immer + 11 case dispatch + AbortController 内部维护 + messagesToHistory 摊平**）+ `components/chat/`（MarkdownRender + 三块组件 + MessageList 智能滚动 + MessageInput 停止按钮 + ChatProvider Context vanilla store + useStore）+ Playground 重写（useMemo + endpoint deps + unmount cleanup reset）。沙盒不入库前端持 history 摊平送；stop() 全链路真停（fetch abort → asyncio cancel → 上游 LLM 真停、不再吐 token）。**runtime / chat 命名都刻意避场景，workspace 真对话片直接 mount `createChatStore({ endpoint })` 全复用、零工作量**。底部 loader 走 ldrs `l-bouncy` + drop-shadow 暖橙发光做冷暖混色光晕。
 - **Workspace 模块前端完整骨架（纯 mock + local state）**：列表页卡片网格（成员头像堆叠 + 管家戴皇冠 + +N 折叠）+ 创建弹窗（带默认管家 + 初始对话）+ 详情页三栏（通讯录 240 / 主对话 flex-1 / 产出物 320，两侧均可独立收起）+ 招募弹窗两 tab（选模板 / 选 Agent，对齐 spec 三层分离）+ Conversation 切换条（顶部 popover 列出历史 + 「新对话」，切换走 `key` 重挂清消息）。主对话区核心 = **@mention 自动补全 popover**（光标前正则检测 `@<query>` → 候选成员浮层 → 点选替换光标位文本）+ mock 双轨路由（@某成员 → 那成员答，否则 → 管家答）+ assistant 气泡带头像（管家皇冠 / 成员色块）+ 品牌色名字。统一容器样式 `bg-background border shadow-sm overflow-hidden rounded-lg`（修圆角被子元素方角覆盖问题）。后端 Workspace 数据模型 + 注入引擎 + LangGraph 调度未起。
 - **全局：路由→tab 自动同步机制**。路由 `staticData` + `useTabSync`（router onResolved 事件驱动），调用方只 `navigate`、tab 自动跟随；详情页 `useTabTitle` 覆盖动态名。工作台 + admin 两套 tab 都接入。
 - **Agent 模块后端整片打通**：`agents` 表（Hybrid Schema：核心列 + `config` jsonb，迁移 0009）+ CRUD（schema/service/route，5 端点 `/api/v1/agents`，归属隔离 + `get_template` 校验 + template 创建后锁死）+ **模板层 `app/agents/templates/`**（三层基类 `AgentTemplate/LoopTemplate/GraphTemplate` + 装饰器注册表 + `builtin/general`）。**结构 1+N**：1 个可配置 loop 引擎（能力靠 `config.capabilities` + 注册表 + 装配器组合，占位待接 LLM）+ N 个 graph 模板（首批 0）。前端 mock 待接真接口。
@@ -61,7 +63,7 @@
   - **方案见** `docs/design/knowledge-rag-v1.md`（spec + §13 切片清单全部勾掉）+ `knowledge-rag-decisions.md`（决策/权衡）。六片：VectorField + pgvector + 4 表迁移 0005 + AIModel.meta 0006 + KB CRUD + 存储抽象 R2/Local + Document 上传 CRUD 下载 8 端点 + Splitter 抽象层 + `process_document()` + 触发端点 + enum 化迁移 0007/0008 + 检索 service + 命中测试端点。详见最近迭代。
   - **v2 方向**：混合检索 / FTS / RRF / rerank / 多向量；切块优化（heading 感知——命中测试已暴露双换行段切分对 list-heavy md 失效，留作自研切块器 A/B 对照案例）；评估体系（Recall@k/MRR + LLM 自动造测试集）。
   - 既有决策：embedding 每库锁一个模型、rerank 先阿里、全文检索先 Postgres 原生 FTS（不够再上 ParadeDB pg_search，不上 ES）、切块默认（递归~512token+50overlap）+ 可配；混合检索/FTS/RRF/rerank/多向量 = v2；文档编辑用自封装 tiptap（后做）。
-- **Agent 模块（设计已定稿，前端可独立推进）**：完整 spec 见 `docs/design/agent-module-v1.md`（14 节）+ 前端画法指南 `agent-module-frontend-v1.md`（三批实施建议）。范式 = 工作空间 + 单 agent 双入口；不调试不发布；模板/Agent/实例三层分离（模板=平台预置纯 LangGraph 行为骨架空壳，Agent=用户装备好的资产，实例=空间内成员含注入）；@直连 vs 不@走管家双轨调度；3 层长期记忆 L1/L2/L3 严格作用域。架构亮点：Hybrid Schema（核心列+jsonb 扩展）+ 三层分离（ContextBuilder/LangGraph/PostProcessor）+ 7 设计模式（Builder/CoR/Strategy/Mediator/Repository/Observer-EDA + Layered）+ Hexagonal。**前端切片 0 已完成**（列表/创建/详情配置/沙盒，纯 mock + local state）；**后端 CRUD + 模板层（1+N）已整片打通**（agents 表/迁移 0009 + schema/service/route 5 端点 + `app/agents/templates/` 装饰器注册表 + general 引擎；详见最近迭代）；接下来前端 `api/agent.ts` mock 换真接口；能力注册表/装配器/`build()` + LangGraph 待接 LLM 那片。设计已砍 agent 详情页「正式对话」——正式对话归 workspace。
+- **Agent 模块（CRUD + Playground 全打通）**：架构地基见 `docs/architecture.md`（11 节战略 + 附录 A），产品形态（双入口 / 三层资源 / L1-L3 记忆 / @直连 vs 管家）保留为待迭代区。Hybrid Schema（核心列 + jsonb 扩展，AgentConfig 嵌套 schema 强类型契约 Pydantic + `extra="forbid"`）+ 模板层 1+N（1 个可配置 loop 引擎 `general` + N 个 graph 模板首批 0）。**已完成**：后端 5 端点 + 模板层 + LoopTemplate.build() 真实装配（共享 create_agent 工厂 + base_prompt 追加 system_prompt 不覆盖）+ Playground 对话流整片（runtime/runner + route + 前端通用对话层）+ 字段对齐（types/agent.ts + ConfigPanel + AgentCard 嵌套 schema）+ 头像统一默认 gopher 不暴露上传 UI。前端工具仍 mock（后端 tool 模块未起）。**接下来候选**：actions row（copy/regenerate/赞踩 + 静态 logo）/ agent-templates v1.1 能力装配器接入（capability registry + middleware 按 `config.capabilities` 装配）/ workspace 真对话片（**chat 层全复用零工作量**，仅后端 Conversation + Redis cache-aside）。详情页砍「正式对话」——归 workspace。
 - **Workspace 模块（前端骨架完成，等后端起）**：列表 + 详情三栏 + 招募 + Conversation 切换 + @mention 双轨路由 mock 全画完（最近迭代）；后端待做：Workspace 模型 + CRUD（切片4）→ 实例注入引擎（切片5）→ supervisor LangGraph 调度（切片7+），跟 Agent 模块切片大纲走。
 - **前端 App Shell**：批次1骨架 ✅、批次2 头像菜单 ✅、批次3 admin 独立壳 ✅、批次4 Home 卡片式 dashboard ✅（静态占位版，数字待各模块接口就绪后灌真数）。
 - 后端可选生产功能（RBAC / Email 校验 / 密码重置 / 限流）随需推进。
@@ -82,6 +84,116 @@
 - 如果某次改动不足以影响项目理解，就不要把噪音写进来。
 
 ## 最近迭代
+
+### 2026-06-07 — Playground 整片端到端打通 + 字段对齐 + immer/Zustand 工厂踩坑
+
+**后端补完 runtime / route**
+
+- `runtime/runner.py`：`build_chat_model(ModelSlot) → BaseChatModel`（函数形态；provider_type → LangChain model_provider 映射表，OpenAI 兼容 provider 全走 `"openai"` + base_url 区分上游，仅 Anthropic 走官方协议；凭证 Model 级覆盖优先 fallback Provider 级）+ `prepare_stream(agent, request)` 同步装配（AgentConfig.model_validate + 模板取 + chat_model build + graph build + 拼 messages，**所有可能 raise 的活在此完成、FastAPI handler 接 400 JSON**）+ `run_chat_stream(graph, messages)` SSE 编排（message_start → adapter → finally 兜底 message_stop）。
+- 路由 `playground.py`：`POST /agents/{id}/playground/stream` → `StreamingResponse(media_type="text/event-stream")`。route 直接 ORM 查 Agent 内联归属校验（不走 service，service 返 AgentOut Pydantic 不适合 SSE 路径）。挂在 agent 子路由聚合。
+- 配套：`templates/base.py` `LoopTemplate.build()` 占位换成真实 `create_agent(model, tools, prompt)`；prompt 合成 = base_prompt（模板出厂底座）+ system_prompt（用户实例特化）**追加**（不覆盖，客服 / 老师等模板场景才不会丢底座）。
+
+**前端通用对话层整片落盘**
+
+- `types/chat.ts` 三层结构（协议层 ApiContentBlock + SSE event payload + RenderBlock UI 状态 + Message union）。命名约定：API 字段 snake_case 透传后端零映射、前端内部状态字段 camelCase，**`UserMessage.content: ApiContentBlock[]`**（不是 string，未来 image 多模态不破坏 schema）。
+- `api/chat-stream.ts` `parseSSEStream` async generator（buffer + `\n\n` 切事件 + finally 释放 reader lock）+ `streamChat(endpoint, body, opts?)` 主入口（endpoint 形参注入、Playground / Workspace 通用、AbortSignal 透传）+ 自定义 `ChatStreamHttpError`。
+- `stores/chat-store.ts` **Zustand 工厂模式 `createStore` + immer middleware + Context Provider**（详坑 #2）+ 11 case dispatch + `messagesToHistory` 摊平 helper（user 透传 / assistant 把 RenderBlock filter 出 done text block 拼）+ AbortController 内部维护，stop() 立即 UI 反馈 + abort signal 全链路真停。
+- `components/chat/` 通用组件套：MarkdownRender（react-markdown + remark-gfm + Tailwind Typography `prose-sm` 14px）+ TextBlock / ThinkingBlock（折叠 + Brain icon + auto-collapse on done）/ ToolUseBlock（4 态图标 + JSON 美化 + 折叠）+ MessageList（ResizeObserver 跟随滚 + 20px 触底容差 + 手势停跟随 + "回到最新" sticky）+ MessageInput（textarea auto-resize + composition 拦截中文输入法 + isLoading 时键变停止）+ ChatProvider Context（vanilla store + useStore hook）。
+- `pages/agents/Playground.tsx` 重写：useMemo + endpoint deps（切 agent 重建 store）+ unmount cleanup `store.getState().reset()`。
+
+**字段对齐 = 预期内的字段错位（详坑 #3）**
+
+- `types/agent.ts` `AgentConfig` 嵌套对齐后端 `schemas/agent/config_schema.py`：`models.{chat|stt|tts|vision|image_gen|video}.{id, params}` + `system_prompt` + `capabilities` + `knowledge / tools / skills` + `behavior` + `ui.avatar_url`。
+- `ConfigPanel.tsx` form state 仍扁平方便编辑（model_id / knowledge_ids / tool_ids / skill_ids / temperature / top_p / max_tokens），`agentToForm` 从嵌套读 / `save()` 显式构造嵌套不 spread 旧 config（防带入旧 schema 残留）；头像 UI 删色块改静态 `<img src="/gopher-fcb-glass.png" />` 圆形（**P0 不暴露上传 UI、所有 Agent 默认 gopher**）。
+- `AgentCard.tsx` 取数同步嵌套、头像同款。`mock.ts` Template 删 `default_avatar_color`。
+
+**三个深坑（新对话直接抄就能避）**
+
+- **#1 immer copy-on-write vs Vue reactive**：旧版 Vue `streaming.value = msg` + `messages.push(msg)` 两引用共享一个 reactive 对象、mutate 一边两边同步；React 移植到 immer 时存独立 `streaming` 字段引用 → immer mutate `s.streaming.blocks.push(...)` 复制 streaming 对象、`messages[N]` 仍指旧、blocks 永远空、UI 完全不渲染。**修法 = 删 `streaming` 字段，所有 dispatch case 在 set 内查 `s.messages[s.messages.length - 1]` 拿 Draft 引用**（流中 assistant 永远是最后一条，语义清晰、无引用分裂）。
+- **#2 Zustand 工厂 + Context 标准 pattern**：必须 vanilla store `createStore` + `useStore(store, selector)`（来自 `zustand`）。`create()` 返的 `useBoundStore` 通过 Context 传下来再直接调 `store(selector)` 看似可工作但**React 不识别这是 hook 订阅、state 变化不触发 re-render**。
+- **#3 ConfigPanel 字段不对齐**：后端按 spec 改 `AgentConfig` Pydantic + `extra="forbid"`、前端 mock 字段名（`model_id` / `knowledge_ids` / `mcp_ids` / `avatar_color` / `params`）没跟上 → `prepare_stream` 取 agent.config 时 ValidationError 6 项 extra_forbidden 全爆。修：DB 现存 Agent 删了重建 + 前端字段全部对齐嵌套 schema。
+
+**loader icon 演化（产品决策）**
+
+- inline 闪烁光标（▊ char → CSS 矩形圆角）→ 用户指认要消息级 → lucide `Sparkles` + 自定义变速 `animate-[spin_2s_ease-in-out_infinite]` → 用户否决（太垃圾 + 跟项目其他 Sparkles 重合）→ **最终 ldrs `l-bouncy`**（三球弹跳、size=28 / speed=1.2 / brand 墨绿 `#2f6b53`）+ 外层 wrap div `filter: drop-shadow(0 0 5px rgba(217, 119, 6, 0.55))` **暖橙发光做冷暖混色光晕**（ldrs 单 color 限制，混色只能靠外层 CSS filter）。流式中显示 / 完成后不显示等 actions row。
+
+**通用对话层不绑场景（关键设计沉淀）**
+
+- 后端 `runtime/` 包名、`chat_schema.py` 注释、前端 `chat.ts` / `chat-stream.ts` / `chat-store.ts` 命名都刻意避 playground / workspace 场景。workspace 真对话片直接 mount `createChatStore({ endpoint: 'workspaces/.../stream' })` 全复用、零工作量。
+- Redis 不引中间态：workspace 持久化走 **PostgreSQL（真源）+ Redis cache-aside**（DB 查询加速、不当 session 短期存储；30min TTL 跨界 + 多 Tab 撞 + 过期不直观）—— cache-aside 标准做法，前端持 history（沙盒）vs 后端 PG 持 history（workspace）两套设计 runtime 层零差异。
+
+**stop() 全链路真停（沉淀）**
+
+- 前端 `ctrl.abort()` → fetch 抛 AbortError → TCP/HTTP 关 → Starlette/Uvicorn 收到 client disconnect → asyncio cancel response task → runner generator 收到 `CancelledError`（**adapter 的 `except Exception` 抓不到 `CancelledError`，3.8+ 是 `BaseException` 直接子类、cancel 信号穿透**）→ langgraph / langchain / openai SDK / httpx 全链路 cancel → 上游 LLM API 收到客户端断开 → 真停（不再吐 token、不再计费 future）。**但已生成的 token 仍计费**（业界限制、ChatGPT / Claude 网页同款）。
+
+### 2026-06-06 — Playground 对话流 P0 核心翻译层（events / schema / adapter）+ CLAUDE.md 第 9 条
+
+**runtime 层立起（`app/agents/runtime/`）**
+
+- `events.py`：`EventType` StrEnum 覆盖 Anthropic 风 11 个事件名（message_start/content_block_*/message_delta/message_stop/tool_use_*/tool_result/error）+ `sse_event(event, data) -> str` 序列化，`json.dumps(ensure_ascii=False)` 中文不 escape。
+- `schemas/agent/chat_schema.py`：通用对话契约（不绑 playground / workspace）—— `TextBlock`/`ContentBlock`（P0 union 只含 TextBlock，扩 union 不动上层）+ `HistoryMessage`（role + content: list[ContentBlock]）+ `ChatStreamRequest`（content + history）。content 一开始就走 block 数组形态，避免后续多模态升级时改上层。同时把原 `chat_schema.py` 错放 agent CRUD 内容拨乱反正为 `agent_schema.py`、`__init__.py` 双 re-export。
+
+**adapter.py — LangChain `astream_events(v2)` → SSE 翻译器**
+
+数据结构（高内聚低耦合，可跨 playground / workspace 复用）：
+- `SingletonSlot`（dataclass holder，纯数据）：text / thinking 各持一个，index != None ⇒ 块开着。
+- `ToolRegistry`：多并发 tool 块三表（chunk_to_block / id_to_block / block_to_id 双向）+ `register` / `release` 原子方法防多表同步漂移；`block_to_id` 反向表保证 on_tool_end 反查 O(1) 而非线性扫。
+- `StreamState`：聚合 next_index（跨类型单调） + text/thinking/tools。
+- **模块顶部常量集中**：BLOCK_TEXT/THINKING、DELTA_TYPE_*、DELTA_KEY_*、DEFAULT_STOP_REASON、ERROR_CODE_INTERNAL、ERROR_MESSAGE_GENERIC、TOOL_SUMMARY_MAX_CHARS。
+
+调度 / 处理：
+- 主入口 `adapt_chat_stream`：dispatch dict + 装饰器登记（`@_register("on_xxx")`）；扩展新事件类型 = 新加一个 handler、主循环零改动。
+- 单例块 helper `_emit_singleton_delta` / `_emit_singleton_stop`：text / thinking 共用「如果没开就开 + 发 delta」模式，消除重复。
+- 抽取 helper `_extract_text` / `_extract_reasoning`：跨 provider 兼容 `chunk.content: str | list[dict]`（Anthropic / Responses API / 多模态）+ reasoning 双路径聚合（DeepSeek-R1 `additional_kwargs.reasoning_content` + Anthropic extended thinking 在 `content[i].type=="thinking"`）。
+- tool 处理 `_emit_tool_call_chunk`：`chunk.tool_call_chunks` 多并发用 `tc.index` 区分，首条带 name+id 才开块，后续 args partial JSON 流式 delta。
+- `on_tool_end`：从 ToolMessage.tool_call_id 反查 block 发 tool_result + `_summarize_tool_result`（100 字截断）。
+
+不变式 / 防漂移：
+- **唯一关块入口 `_close_open_blocks`**：正常路径（`on_chat_model_end`）和异常兜底共用，避免两处逻辑写差。
+- **错误对外脱敏**：`logger.exception` 内部完整 log，对前端发通用文案 `"对话生成失败，请稍后重试"` + `code=internal_error`，防栈 / 路径 / SQL 泄露。
+- **兜底自包 try**：关块和发 error 各自 try，generator 二次失败也只 log、不抛出。
+
+**CLAUDE.md 第 9 条**
+
+> 代码默认生产级最终版：每次落盘的首版即架构 / 命名 / 扩展性 / 类型 / 异常一次到位；不分"先简后繁"、不写阶段化占位（P0/P1、# TODO 这版先这样）。小步迭代是任务分段，不是代码风格分段。
+
+**协作复盘（多次返工的教训）**
+
+- 一开始倾向「先简单后扩展」+ 占位话术，被几轮挑战后改掉默认行为模式。
+- adapter 重写经历 4 版：极简 bool 状态机 → blocks 字典过度设计 → 修正成单指针 → OO 化（SingletonBlock 类）提议被自我复盘推翻（80 行类换 10 行重复，ROI 负）→ 最终落函数式 + dataclass holder + 模块常量集中。教训：Python 风格倾向轻量 dataclass + 模块函数，不是类层次嵌套；过度抽象比重复更难维护。
+- 跨 provider 形态多次违反「不写阶段化占位」原则（`list[dict]` 跳过 = Anthropic 完全不工作），被指认后修正。
+- 评价点：评价者点出 4 个真问题（关块漂移、`str(e)` 外泄、兜底二次失败、O(n) 线性扫）全部纳入修正。
+
+### 2026-06-04 — Agent 前端 mock → 真接口全栈接通 + 允许同名资源 + service bug fix
+
+**Agent 前端整片接真（5 端点全栈）**
+
+- `api/agent.ts` 5 函数（list/get/create/update/delete）+ `AgentCreatePayload/UpdatePayload`。
+- `types/agent.ts` 重构 —— `Agent` 形状对齐后端 `AgentOut`：核心列（name/description/template）+ `config` jsonb；mock 时代扁平字段（model_id / system_prompt / knowledge_ids / tool_ids / mcp_ids / avatar_color / params）全部下沉 `config`；`Template` 加 `kind: 'loop' | 'graph'` + `disabled?` 占位标。
+- AgentsPage 列表接 `listAgents` + ldrs l-ring + refetch on create/delete；mount 一次性拉 chat models 建 `id → display_name` map 传给 AgentCard 避 N+1。
+- AgentCard 字段从 `agent.config.*` 派生 + 右上 Loop/Graph KindBadge + 真显模型名（fallback「已选模型」）；标题独占第一行 + badge 挪第二行解决 truncate 挤问题。
+- CreateAgentDialog 组装 `AgentCreatePayload(template: t.key)` 调 `createAgent`；模板小卡禁用 disabled 模板（graph 占位不可选）。
+- AgentDetailPage 切真 `getAgent` + loading / not-found 双态；agent 作 state，保存成功 `setAgent` 覆盖。
+- **ConfigPanel 大重构**：本地 form state + Sticky 顶栏「橙点·有未保存改动」+「保存中…」按钮 + 整体 PUT；`agentToForm` 摊平 / `save()` 时打包回 `config`；`mockChatModels` / `mockKnowledge` 换 `listAllModels({modelType:'chat',enabledOnly:true})` + `listKnowledgeBases()`。
+- Playground 字段对齐（`agent.model_id` → `agent.config.model_id`；`avatar_color` 同款）；mock 回复留待对话片接 LLM 替换。
+- 抽 `KindBadge` 子组件：Loop = 品牌墨绿 `brand-subtle`，Graph = 灰底虚线（占位感）；4 处统一观感。
+- `agent-mock-store.ts` 删除；mock.ts 砍模板池到 2 张（真 loop `general` + 假 graph `__mock__/graph_demo` disabled）+ 删 `mockAgents` / `mockChatModels` / `mockKnowledge`。
+- workspaces/RecruitDialog 意外牵连止血：`mockAgents` 内联占位 `AgentLite[]`；`template.behavior_type` 删后按 kind 映射。
+
+**全局允许同名资源（chore）**
+
+- KB / Provider 删 `unique_together = (("created_by", "name"),)` + service 清理 try/IntegrityError + 迁移 0010 `RemoveConstraint` 两条。AIModel / Agent 本就没约束。
+- 对齐 ChatGPT custom GPT / Claude Project / Notion 惯例——列表 UI 靠头像 / 描述 / 时间区分，不用 name 唯一兜底。
+
+**Agent service `get_by_id` 笔误**
+
+- `.filter(...).filter()` 返 QuerySet 让 pydantic `model_validate` 当 list 炸；改 `.first()` 跟 update/delete 同款。详情 `GET /agents/{id}` 通。
+
+**协作 / 分工小复盘**
+
+- 后端 service 原归用户写，但用户当场指认让 Claude 直接落盘（重名片那次）——主动权在用户、Claude 提醒并尊重。
+- 前端"显式保存按钮 vs 即时落 store"属于产品行为变化，Claude 按推荐默认开干，用户保留推翻权。
+- 命名空间踩坑：mock 模板池 key 一开始臆造 `'builtin/general'`，实际后端 registry 是 `'general'`——前端只读 registry 字段、不发明约定。
 
 ### 2026-06-03 — Agent 模块后端整片打通 + 模板设计 1+N 重构
 
@@ -179,52 +291,10 @@
 
 - §13 片5 勾掉；只剩**片6 检索 + 命中测试**（前端 RetrievalTest 组件已 mock 就位、后端接入只换函数实现）。
 
-### 2026-05-28 — 知识库片4 全栈：后端 4b-2/4b-3 + 前端文档真接通 + R2 download filename RFC 6266
-
-**后端 4b-2 / 4b-3（8 个端点）**
-
-- **4b-2 上传（3 个）**：`upload-init`（建 pending + 按 `supports_presigned` 返 `strategy=presign|passthrough`）/ `upload-passthrough`（仅 Local）/ `upload-complete`（仅 R2 + head 验对象在）。调错路径直接 `ValidationException` 拒绝。
-- **4b-3 CRUD + 下载（5 个）**：`GET /documents` / `GET/DELETE /documents/{id}` / `GET /documents/{id}/download-url`（按 backend 返 R2 presigned GET / Local raw 路径）/ `GET /documents/{id}/raw`（仅 Local，StreamingResponse 吐字节）。
-- **Storage 扩 `stat_size`**：R2 用 head_object 取 ContentLength、Local 用 path.stat()；给上传完成后复校真实大小用（前端 init 时声明的 size 可能撒谎、必须后端跟 storage 确认）。
-- **service `mark_uploaded`**：复校 → 超限清干净（storage.delete + ORM delete）+ 抛错；正常更 size + 置 `stage="uploaded"`。不加字段、复用 stage 表达。
-- **MIME 后端定**（md→text/markdown / txt→text/plain）；R2 presign 钉 Content-Type、前端 PUT 必须带相同 header。
-- **流程对称**：R2 3 步（行业标准 AWS S3/OSS 同款）+ Local 2 步；砍 Local 到 1 步价值低 + 前端分支反而复杂，弃。
-
-**前端 D-1 / D-2 / D-3（文档全流程真接通）**
-
-- **D-1 types + api**：`Document` / `DocumentStatus(pending|processing|completed|failed)` / `DocumentStage('' | 'uploaded' | parsing/splitting/embedding)` / `UploadStrategy('presign'|'passthrough')` / `UploadInitOut`；`api/knowledge.ts` 加 7 函数：listDocuments / deleteDocument / getDocumentDownloadUrl / initDocumentUpload / confirmDocumentUpload / **uploadDocumentPassthrough**（axios 自带 `onUploadProgress`）/ **uploadDocumentToR2**（**裸 XHR** 真进度——避开 axios 拦截器对 R2 空响应误解包，行业 fetch 不支持 upload progress 标准缺口）。
-- **D-2 DocumentList + KnowledgeDetailPage 接真接口**：mock 清掉（删 mockDocuments/KnowledgeDoc/DocType/DocStatus）；加 `getDocDisplayStatus` helper 把后端 (status, stage) 映射成单一展示态 `uploading|uploaded|processing|completed|failed`；下载用 `<a download>` 程序触发（GitHub/Drive 同款）；删除走真接口 + AlertDialog；dayjs `fromNow()` 相对时间。
-- **D-3 UploadDocumentSheet 真上传状态机**（值得动脑的部分）：抽 `uploadOne(item, onProgress)` 封装 init→上传→(R2 才有 complete) 三步；`startUpload` 用 **Promise.allSettled** 并发跑、`setQueue((prev) => …)` 函数式更新避免 React 异步丢进度；单文件失败不影响其他、记 error message；大小上限 50MB 对齐后端。
-- **R2 直传两关**：① CORS（R2 桶 Settings 配 AllowedOrigins=localhost:7777 + Methods=GET/PUT + AllowedHeaders=*）② API token 必须 **Object Read & Write**（不是只读）。PUT 成功后 response body 是空的（S3 协议设计），DevTools 显示 "Failed to load response data" 正常。
-
-**R2 download filename + RFC 6266**
-
-- 痛点：R2 是跨域，`<a download>` 属性失效；下载文件名靠 `Content-Disposition: attachment` header 决定；R2 默认不带 → 浏览器可能预览不下载、文件名是 storage_key UUID 而非原始名。
-- 改造：`Storage.generate_download_url` 加可选 `filename` 参数；R2 实现把 `ResponseContentDisposition=attachment; filename="..."; filename*=UTF-8''<encoded>` 塞进 presigned URL；`/raw` 端点 header 同步；下载端点调时多传 `filename=doc.name`。
-- 防护：sanitize 去引号/换行防 header 注入；RFC 6266 `filename*=UTF-8''` 中文不乱码。GitHub/Drive/Dropbox 同款做法。
-- **片4 整片收口**：8 后端端点 + 前端真接通 + R2 直传/下载全通；等进片5 处理管线（手动触发向量化）。
-
-### 2026-05-28 — Workspace 模块前端完整画完（列表/三栏详情/@mention/Conversation）+ KB 检索测试 mock + 文档三点 + 卡片三点统一
-
-- **Workspace 模块前端骨架（纯 mock + local state，对齐 spec §5/§6）**：types/workspace.ts（WorkspaceMember + Conversation + Workspace，画图占位 schema、成员/对话内嵌）+ mock（3 空间，成员复用 agent mock 人设）+ `workspace-mock-store`（zustand，含 `addConversation`）。
-- **列表页 `/workspaces`**：Header + 卡片网格 + 创建弹窗（默认带管家 + 初始 conversation）；`WorkspaceCard` 成员头像堆叠（管家戴皇冠 + 最多 4 + +N 折叠）+ 三点删除（AlertDialog + 关 tab）。
-- **详情页 `/workspaces/$workspaceId` 三栏**：通讯录 240（管家固定第一 + 来源标签 + 招募按钮 + X 收起）/ 主对话 flex-1 / 产出物 320（占位空态 + X 收起）。**两侧均可独立收起**，关闭后顶部出 `PanelLeft / PanelRight` toggle 按钮恢复。统一容器 `bg-background border shadow-sm overflow-hidden rounded-lg`——`overflow-hidden` 是关键，否则子元素方角覆盖外层圆角。
-- **主对话区核心（spec §5.4 + §6 双轨）**：复用 Playground 气泡 + 输入区模式 + 加两特性 = ① **@mention 自动补全 popover**（textarea ref + 光标 selectionStart 检测最后 `@<query>` 正则 + 候选成员浮层 + 点选 `before.replace(/@([^\s@]*)$/, '@${name} ')` + setSelectionRange 复位光标） ② **mock 路由**（消息开头 `@某成员` → 那成员答；否则 → 管家答）；assistant 气泡带头像（管家皇冠 / 成员色块）+ 品牌色名字标注；消息纯内存、刷新即清；切 conversation 走 `<WorkspaceChat key={convId} />` 重挂清空。
-- **招募弹窗（spec §5.2）**：两 tab「从模板 / 从我的 Agent」共用头像 + 名 + 描述卡片形态；招进来都是该空间实例（v0 简化复制基础字段，跟源脱钩对齐 spec §3.4）。
-- **Conversation 切换条**：主对话区顶部独立 row（跟 WorkspaceChat 共享外层 border 容器，WorkspaceChat 顶层改 Fragment 让父统一包）；当前标题 + ChevronDown popover 列出按 updated_at 倒序的历史 + 「+ 新对话」按钮 push 进 store 并自动切换。
-- **KB 检索测试 tab 接 mock**：从 TabPlaceholder 占位换成 `RetrievalTest`（query Textarea + topK Select(3/5/10/20) + Cmd/Ctrl+Enter 触发 + 四态结果区）；`runMockRetrieval` 500ms 延迟 + 6 段贴近真实业务的 chunk 文本（白皮书 / API 指南 / 用户手册 / FAQ / 更新日志）+ 递减相似度（0.92 起步、每条 -0.07、最低 0.3）。后端片6 接入只换函数实现，组件不动。
-- **KB DocumentList 三点 Dropdown**：抽 `DocumentRow` 子组件管 confirm state；「下载」（占位 toast）+「删除」（AlertDialog 二次确认）；KnowledgeDetailPage 传 `onDelete` 让 mock 真生效。
-- **卡片网格三点位置统一右上角**：AgentCard / ProviderCard / KnowledgeCard / AIModelCard / WorkspaceCard 五张卡片三点都到顶部右上角。KnowledgeCard 顶部状态点 + label「就绪」**挪到底部 embedding badge 行最左**；AIModelCard「✓启用」图标**挪到左侧类型 badge 旁**——避免「状态信息 + 操作菜单」两类元素挤同一角；删 4 处 `translate-y-3` 旧底部对齐 hack，统一用 `-mt-1` 微调。
-
-### 2026-05-28 — Agent 模块前端切片 0（列表三带式 + 详情左配右沙盒）+ 路由→tab 自动同步 + 砍正式对话
-
-- **切片 0 完成（批次 1+2+3，纯 mock + local state）**：`types/agent.ts` 重写（`Template`/`Agent`/`AgentConfig`/`Message`，删旧 status/agent_type）；`mock.ts`（8 模板 + 5 Agent 含裸 Agent + ChatModel/Knowledge/Tool mock）；`AgentsPage` 三带式（Header + 模板池横向带 + 我的 Agent 网格）；`AgentCard`/`TemplateCard`/`CreateAgentDialog`；`AgentDetailPage`（左 `ConfigPanel` 40% + 右 `Playground` 沙盒 60%）；`agent-mock-store.ts`（zustand，列表/详情共用，刷新还原）。
-- **全局机制：路由→tab 自动同步**。各叶子路由加 `staticData: {tabTitle, tabIcon}`；`stores/use-tab-sync.ts` 的 `useTabSync` 用 `router.subscribe('onResolved')` 在导航完成后同步 tab（避开 selector 多取值错位/title 串台），调用方只写 `navigate` 不再手动 `openTab`；详情页 `useTabTitle(path, name)` 覆盖动态名（path 由 `useParams` 派生 + 订阅「该 path tab 是否已存在」：解决 ① 同路由 params 切换复用组件时 title 串台 ② open/setTitle 时序竞争导致 tab 卡在 fallback 名）。删了 7 处 openTab 双调用；AppShell/AdminShell 各接一次。
-- **产品简化：砍掉 agent 详情页「正式对话」**，只留沙盒试运行（消息纯内存、刷新即清）；正式对话归 workspace 模块（避免「同一对话能力两个入口」心智冲突）。`docs/design/agent-module-frontend-v1.md` 同步更新（§6/§10/§11 + 布局图改 40/60 单一沙盒）。
-- 配套：装 shadcn `popover`/`command`/`breadcrumb`；nav 加「工作空间」(Layers icon) + `/workspaces` 占位页；`ConfigPanel` 用方案 A（无外框 + Separator 分段 + header 区放大头像/名字）；抽 `hooks/use-horizontal-wheel-scroll.ts`（模板池 + TabBar 横向滚轮共用）；`PagePlaceholder` 加可选 `description`。
-- **App Shell 高度链锁定**：`SidebarProvider` `min-h-svh`→`h-svh` + 内容 wrapper 补 `min-h-0`，详情页全程 `flex-1`+`min-h-0` 配对，Playground 内部消息区自滚、输入区贴底，整页不再溢出。
-
 ## 历史摘要
+- **2026-05-28 — 知识库片4 全栈：上传 / CRUD / 下载 8 端点 + 前端文档真接通 + R2 download filename RFC 6266**：上传 3 端点（init / passthrough / complete）按 strategy 分流（R2 走 presign 3 步 / Local 走 passthrough 2 步）+ CRUD/download 4 端点 + raw 端点；Storage 扩 `stat_size` 复校真实大小（前端 init 声明的 size 可能撒谎）；MIME 后端定 + R2 presign 钉 Content-Type、前端 PUT 必须带相同 header。前端 `Document` types + 7 api 函数 + **裸 XHR 真上传进度**（R2，避开 axios 拦截器对 R2 空响应误解包、fetch 不支持 upload progress 标准缺口）+ axios `onUploadProgress`（Local）+ Promise.allSettled 并发 + 单文件失败隔离 + 50MB 上限；R2 CORS + Object R&W token 配妥（PUT 成功 body 空是 S3 协议设计）。R2 download filename：`ResponseContentDisposition=attachment; filename*=UTF-8''<encoded>` 塞 presigned URL + sanitize 去引号/换行防 header 注入，RFC 6266 中文不乱码、GitHub/Drive/Dropbox 同款。
+- **2026-05-28 — Workspace 模块前端完整骨架（纯 mock）+ KB 检索测试 mock + 卡片三点统一**：types/workspace.ts + workspace-mock-store + 列表页（成员头像堆叠 + 管家皇冠 + 三点删除）+ 详情页三栏（通讯录 240 / 主对话 / 产出物 320，两侧可独立收起，统一容器 `border + overflow-hidden + rounded-lg`）+ 主对话区核心 = `@mention 自动补全 popover`（textarea selectionStart 正则检测 + 候选浮层 + setSelectionRange）+ mock 双轨路由（@某成员 → 那成员答 / 否则管家答） + 招募弹窗两 tab（模板/Agent）+ Conversation 切换条（popover + 新对话）。KB 检索测试 tab 接 mock（query / topK Select / Cmd+Enter 触发 / 6 段递减相似度 mock，后端片6 接入只换函数实现组件不动）。卡片三点位置统一右上角（5 张卡片对齐）+ KnowledgeCard 状态点挪 embedding badge 行 + AIModelCard 启用图标挪类型 badge 旁，删 4 处 translate-y-3 hack 统一 -mt-1 微调。
+- **2026-05-28 — Agent 模块前端切片 0 + 路由→tab 自动同步 + 砍正式对话**：types/mock 重写（8 模板 + 5 Agent）+ AgentsPage 三带式 + AgentCard/TemplateCard/CreateAgentDialog + AgentDetailPage 左 ConfigPanel 40 / 右 Playground 60 + agent-mock-store（zustand）；全局机制 `router.subscribe('onResolved')` + `useTabSync` + `useTabTitle` 解决 tab 串台 / 时序竞争（删了 7 处 openTab 双调用）；砍 agent 详情页正式对话改沙盒、正式对话归 workspace。App Shell 高度链 `SidebarProvider h-svh + min-h-0` 锁定。**注意**：本片产物在 2026-06-04 已被「前端接真」彻底重写——Agent 形状对齐 jsonb / ConfigPanel 改保存按钮 / agent-mock-store 删除 / 模板池砍到 2 张。
 - **2026-05-26 — Agent 模块设计 spec + admin 用户管理页(mock)**：`agent-module-v1.md`（14 节）+ `agent-module-frontend-v1.md` 定稿；范式 = 工作空间 + 单 agent 双入口、模板/Agent/实例三层分离、@直连 vs 管家双轨、L1-L3 记忆。**注意：工程底座 §10-11（ContextBuilder/7 设计模式/Hexagonal）已被 2026-06-02 架构地基推翻、模板模型又被 1+N 重构，仅产品形态仍有效。** admin 用户管理页 `UsersPage`（mock：表格 + 搜索 + 角色筛选 + 自身行禁用 + AlertDialog）。
 - **2026-05-26 — 知识库片4b-1 Document 数据层 + Model URL nested 化**：Document schemas/service 平地起步（`create_pending/list/get/delete` nested 签名 `(user,kb_id,...)`、`storage_key=kb/{kb}/doc/{doc}.{ext}`、删文档先 storage 后 ORM、`_get_user_doc` 一次 JOIN 验归属）；AIModel URL nested 化 `/providers/{pid}/models`（5 CRUD）+ 保留 flat `/models` 跨 provider 查 + `param-definitions`，`ModelCreate` 去 `provider_id`（path 单源）。
 - **2026-05-25 — 知识库片4a 存储抽象层**：`app/core/storage/`（`Storage` ABC + R2/Local 双后端 + `STORAGE_BACKEND` 装配）；R2 预签名直传（服务器零出站；egress 收费 / ingress 免费的不对称是关键）+ Local 后端中转；boto3 `@cached_property` 懒加载、同步 IO 全 `to_thread`。
