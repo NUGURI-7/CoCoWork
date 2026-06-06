@@ -35,6 +35,8 @@ import { mockTemplates } from './mock'
 
 interface AgentCardProps {
   agent: Agent
+  /** model id → display_name 反查表（父级 listAllModels 一次性拉好，避免 N+1） */
+  modelNameMap?: Map<string, string>
   /** 删除成功后通知父级 refetch */
   onDeleted?: () => void
 }
@@ -50,7 +52,7 @@ function timeAgo(dateStr: string): string {
   return `${days} 天前`
 }
 
-export function AgentCard({ agent, onDeleted }: AgentCardProps) {
+export function AgentCard({ agent, modelNameMap, onDeleted }: AgentCardProps) {
   const navigate = useNavigate()
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -59,11 +61,13 @@ export function AgentCard({ agent, onDeleted }: AgentCardProps) {
   const template = mockTemplates.find((t) => t.key === agent.template)
   const templateName = template?.name ?? agent.template
   const templateKind = template?.kind ?? 'loop'
-  const avatarColor = agent.config.avatar_color ?? template?.default_avatar_color ?? '#2f6b53'
-  const hasModel = !!agent.config.model_id
-  const knowledgeCount = agent.config.knowledge_ids?.length ?? 0
+  const modelId = agent.config.models?.chat?.id
+  const modelName = modelId ? modelNameMap?.get(modelId) : null
+  const knowledgeCount = agent.config.knowledge?.length ?? 0
   const toolCount =
-    (agent.config.tool_ids?.length ?? 0) + (agent.config.mcp_ids?.length ?? 0)
+    (agent.config.tools?.length ?? 0) + (agent.config.skills?.length ?? 0)
+  // P0 不暴露上传 UI：所有 Agent 头像统一用默认 gopher；未来加上传后这里 fallback
+  const avatarUrl = agent.config.ui?.avatar_url ?? '/gopher-fcb-glass.png'
 
   function handleClick() {
     navigate({ to: '/agents/$agentId', params: { agentId: agent.id } })
@@ -82,8 +86,6 @@ export function AgentCard({ agent, onDeleted }: AgentCardProps) {
     }
   }
 
-  const initial = agent.name.slice(0, 1)
-
   return (
     <>
       <Card className="card-interactive min-w-0 gap-0 py-0" onClick={handleClick}>
@@ -91,12 +93,11 @@ export function AgentCard({ agent, onDeleted }: AgentCardProps) {
           {/* 标题区：头像 + 名字 + 第二行 template · description */}
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 items-start gap-3">
-              <div
-                className="flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-medium text-white"
-                style={{ backgroundColor: avatarColor }}
-              >
-                {initial}
-              </div>
+              <img
+                src={avatarUrl}
+                alt={agent.name}
+                className="size-10 shrink-0 rounded-full object-cover"
+              />
               <div className="min-w-0 flex-1">
                 <h3 className="truncate font-medium">{agent.name}</h3>
                 <div className="mt-1 flex min-w-0 items-center gap-1.5">
@@ -158,7 +159,11 @@ export function AgentCard({ agent, onDeleted }: AgentCardProps) {
             <div className="text-muted-foreground flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
               <span className="inline-flex items-center gap-1">
                 <Bot className="size-3.5" />
-                {hasModel ? '已选模型' : <span className="italic">未选模型</span>}
+                {modelId ? (
+                  <span className="truncate">{modelName ?? '已选模型'}</span>
+                ) : (
+                  <span className="italic">未选模型</span>
+                )}
               </span>
               <span className="inline-flex items-center gap-1">
                 <BookOpen className="size-3.5" />

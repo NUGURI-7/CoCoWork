@@ -1,66 +1,92 @@
 /**
- * Agent 模块类型 — 对齐 backend/app/schemas/agent/agent_schema.py
+ * Agent 模块类型 — 对齐 backend/app/schemas/agent/config_schema.py
  *
- * 后端 `AgentOut` 走 Hybrid Schema：核心列（name/description/template）+ `config` jsonb。
- * 前端 `Agent` 跟后端 1:1；模板时代的扁平字段（model_id / system_prompt / knowledge_ids ...）
- * 全部下沉到 `config` 里，下一口接入组件时再细化 `AgentConfig` 的形状。
+ * Hybrid Schema：核心列（name/description/template）+ config jsonb（强类型契约）。
+ * config 嵌套结构跟后端 AgentConfig Pydantic 1:1。
  */
+
+/** 模板分类——对齐后端 LoopTemplate / GraphTemplate 二分 */
+export type TemplateKind = 'loop' | 'graph'
 
 /** 行为模板枚举（mock 兼容，workspace 仍在用） */
 export type BehaviorType = 'single' | 'supervisor' | 'pipeline' | 'react'
 
-/** 模板分类——对齐后端 `LoopTemplate` / `GraphTemplate` 二分 */
-export type TemplateKind = 'loop' | 'graph'
-
-/** 模板（平台预置的行为骨架空壳，用户不可建不可改；后端目前未暴露列表端点，前端先用占位） */
+/** 模板（平台预置；后端目前未暴露列表端点，前端先用占位） */
 export interface Template {
-  id: string
-  /** 后端 registry key（创建 Agent 时透传到 `AgentCreate.template`） */
+  /** 后端 registry key（创建 Agent 时透传到 AgentCreate.template） */
   key: string
-  /** 显示名（"通用 Loop"） */
+  /** 显示名 */
   name: string
   /** 模板分类（Loop 引擎 / Graph 编排） */
   kind: TemplateKind
   /** 一句话描述 */
   description: string
-  /** Lucide 图标名（"Search"/"PenTool"），渲染时用 dynamic import 或 icon map */
-  icon: string
-  /** 基于此模板创建 Agent 时的默认头像底色（hex） */
-  default_avatar_color: string
-  /** 真假标识——`true` 表示后端尚未实装，前端只做占位展示、不可选 */
+  /** 后端未实装 → 占位展示 disabled */
   disabled?: boolean
+  /** 可选：mock 数据 id（早期遗留，CreateAgentDialog / RecruitDialog 还在用） */
+  id?: string
+  /** 可选：Lucide 图标名（CreateAgentDialog / TemplateCard 用） */
+  icon?: string
 }
 
+// ============ AgentConfig（对齐后端 schemas/agent/config_schema.py） ============
+
 /**
- * Agent 配置（后端 jsonb，宽松形状）。
+ * 模型槽位调用参数（chat / tts / stt 各槽位独立）。
  *
- * 约定字段（v1，可逐步细化）：
- *   - `model_id`           当前使用的 AIModel id
- *   - `system_prompt`      系统提示词
- *   - `knowledge_ids`      挂载的知识库 id 列表
- *   - `tool_ids`           挂载的内置工具 id 列表
- *   - `mcp_ids`            挂载的 MCP 工具 id 列表
- *   - `avatar_color`       头像底色（hex）
- *   - `params`             调用参数（temperature/top_p/max_tokens 等）
- *
- * 未列出的字段也可写入（jsonb 不校验），便于演进。
+ * 后端 ModelParams extra="allow" —— 透传 reasoning_effort / response_format / stop /
+ * seed 等扩展参数给 LangChain init_chat_model。前端 index signature 兜底类型。
  */
-export interface AgentConfig {
-  model_id?: string | null
-  system_prompt?: string | null
-  knowledge_ids?: string[]
-  tool_ids?: string[]
-  mcp_ids?: string[]
-  avatar_color?: string
-  params?: {
-    temperature?: number
-    top_p?: number
-    max_tokens?: number
-  }
+export interface ModelParams {
+  temperature?: number | null
+  top_p?: number | null
+  max_tokens?: number | null
   [key: string]: unknown
 }
 
-/** Agent（后端 `AgentOut` 直映射） */
+/** 一个能力槽位的模型引用 + 调用参数。 */
+export interface ModelSlot {
+  id: string
+  params: ModelParams
+}
+
+/**
+ * 按能力的模型组合 —— 单模型多模态（chat 槽位）+ 多模型组合（stt/tts/vision/...）。
+ *
+ * P0 只用 chat；其他槽位等 voice / vision 那片实装时启用。
+ */
+export interface AgentModels {
+  chat?: ModelSlot | null
+  stt?: ModelSlot | null
+  tts?: ModelSlot | null
+  vision?: ModelSlot | null
+  image_gen?: ModelSlot | null
+  video?: ModelSlot | null
+}
+
+/** 产品层行为配置（voice agent VAD / 打断阈值 / turn detection 等，P0 空）。 */
+export interface AgentBehavior {
+  // 留口，后端 extra="forbid" 严格
+}
+
+/** UI 元数据（跟运行解耦，前端展示用）。 */
+export interface AgentUI {
+  /** 用户上传的头像 URL；P0 不暴露上传 UI、前端 fallback 到默认 png */
+  avatar_url?: string | null
+}
+
+export interface AgentConfig {
+  models?: AgentModels
+  system_prompt?: string | null
+  capabilities?: string[]
+  knowledge?: string[]
+  tools?: string[]
+  skills?: string[]
+  behavior?: AgentBehavior
+  ui?: AgentUI
+}
+
+/** Agent 主体（后端 AgentOut 1:1）。 */
 export interface Agent {
   id: string
   name: string
@@ -72,7 +98,10 @@ export interface Agent {
   updated_at: string
 }
 
-/** 详情页右栏对话消息（v0 mock，本地 state） */
+/**
+ * 旧版 Playground 用过的对话消息形态（已迁移到 chat-store 的 ChatMessage）。
+ * 保留兼容，types/index.ts 仍 re-export，避免下游引用断链。
+ */
 export interface Message {
   id: string
   role: 'user' | 'assistant'

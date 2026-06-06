@@ -4,6 +4,7 @@ import { Bot, Plus } from 'lucide-react'
 import { ring } from 'ldrs'
 
 import { listAgents } from '@/api/agent'
+import { listAllModels } from '@/api/model'
 import { Button } from '@/components/ui/button'
 import { useHorizontalWheelScroll } from '@/hooks/use-horizontal-wheel-scroll'
 import type { Agent, Template } from '@/types'
@@ -21,6 +22,10 @@ export default function AgentsPage() {
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [defaultTemplate, setDefaultTemplate] = useState<Template | null>(null)
+  /** model id → display_name 反查表，让卡片显示真实模型名（不用 N+1 各自拉） */
+  const [modelNameMap, setModelNameMap] = useState<Map<string, string>>(
+    () => new Map(),
+  )
   const templateScrollRef = useHorizontalWheelScroll<HTMLDivElement>()
 
   const refetch = useCallback(async () => {
@@ -38,6 +43,13 @@ export default function AgentsPage() {
   useEffect(() => {
     refetch()
   }, [refetch])
+
+  // 一次性拉 chat 模型反查表（mount 时拉，创建/删除 agent 不重拉）
+  useEffect(() => {
+    listAllModels({ modelType: 'chat', enabledOnly: true })
+      .then((ms) => setModelNameMap(new Map(ms.map((m) => [m.id, m.display_name]))))
+      .catch(() => {})
+  }, [])
 
   function handleCreateClick() {
     setDefaultTemplate(null)
@@ -105,7 +117,12 @@ export default function AgentsPage() {
         ) : (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {agents.map((agent) => (
-              <AgentCard key={agent.id} agent={agent} onDeleted={refetch} />
+              <AgentCard
+                key={agent.id}
+                agent={agent}
+                modelNameMap={modelNameMap}
+                onDeleted={refetch}
+              />
             ))}
           </div>
         )}

@@ -4,6 +4,7 @@
 /* Instrument Serif 字体改为 self-host，在 main.ts 里 import '@fontsource/instrument-serif' */
 @import 'tailwindcss';
 @import 'tw-animate-css';
+@plugin '@tailwindcss/typography';
 
 /* 自定义 dark 变体：祖先含 .dark 类时激活 */
 @custom-variant dark (&:is(.dark *));
@@ -244,3 +245,4 @@ body {
     0 0 10px var(--color-brand),
     0 0 5px var(--color-brand);
 }
+

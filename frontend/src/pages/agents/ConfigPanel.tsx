@@ -4,6 +4,8 @@ import { Check, ChevronsUpDown, Info } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { updateAgent, type AgentUpdatePayload } from '@/api/agent'
+import { listKnowledgeBases } from '@/api/knowledge'
+import { listAllModels } from '@/api/model'
 import {
   Accordion,
   AccordionContent,
@@ -35,9 +37,9 @@ import { Slider } from '@/components/ui/slider'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import type { Agent, AgentConfig } from '@/types'
+import type { Agent, AgentConfig, AIModel, KnowledgeBase } from '@/types'
 import { KindBadge } from './KindBadge'
-import { mockChatModels, mockKnowledge, mockTemplates, mockTools } from './mock'
+import { mockTemplates, mockTools } from './mock'
 
 interface ConfigPanelProps {
   agent: Agent
@@ -49,12 +51,14 @@ interface ConfigPanelProps {
 interface FormState {
   name: string
   description: string
+  /** 摊平字段：编辑时方便、save 时打包成 config.models.chat.id */
   model_id: string | null
   system_prompt: string
   knowledge_ids: string[]
   tool_ids: string[]
-  mcp_ids: string[]
-  avatar_color: string
+  /** 旧版 mcp_ids 改名 —— 对齐后端 schema 的 skills 字段（mock 期 MCP = skill） */
+  skill_ids: string[]
+  /** 摊平字段：save 时打包成 config.models.chat.params */
   temperature: number
   top_p: number
   max_tokens: number
@@ -62,18 +66,18 @@ interface FormState {
 
 function agentToForm(agent: Agent): FormState {
   const c = agent.config
+  const chat = c.models?.chat
   return {
     name: agent.name,
     description: agent.description,
-    model_id: c.model_id ?? null,
+    model_id: chat?.id ?? null,
     system_prompt: c.system_prompt ?? '',
-    knowledge_ids: c.knowledge_ids ?? [],
-    tool_ids: c.tool_ids ?? [],
-    mcp_ids: c.mcp_ids ?? [],
-    avatar_color: c.avatar_color ?? '#2f6b53',
-    temperature: c.params?.temperature ?? 1,
-    top_p: c.params?.top_p ?? 1,
-    max_tokens: c.params?.max_tokens ?? 1024,
+    knowledge_ids: c.knowledge ?? [],
+    tool_ids: c.tools ?? [],
+    skill_ids: c.skills ?? [],
+    temperature: (chat?.params?.temperature as number | undefined) ?? 1,
+    top_p: (chat?.params?.top_p as number | undefined) ?? 1,
+    max_tokens: (chat?.params?.max_tokens as number | undefined) ?? 1024,
   }
 }
 
@@ -86,11 +90,23 @@ function agentToForm(agent: Agent): FormState {
 export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
   const [form, setForm] = useState<FormState>(() => agentToForm(agent))
   const [saving, setSaving] = useState(false)
+  const [chatModels, setChatModels] = useState<AIModel[]>([])
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([])
 
   // 切换 agent / 外部 setAgent 时（保存成功覆盖）同步本地 form
   useEffect(() => {
     setForm(agentToForm(agent))
   }, [agent])
+
+  // 一次性拉资源池（chat 模型 + 知识库）
+  useEffect(() => {
+    listAllModels({ modelType: 'chat', enabledOnly: true })
+      .then(setChatModels)
+      .catch(() => {})
+    listKnowledgeBases()
+      .then(setKnowledgeBases)
+      .catch(() => {})
+  }, [])
 
   const dirty = useMemo(() => {
     const fresh = agentToForm(agent)
@@ -103,13 +119,14 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
 
   function setToolSelection(ids: string[]) {
     // mock 的 ToolMock 区分 builtin / mcp，按 type 落到对应字段
+    // builtin → tools 字段（spec §7 资源 tools）/ mcp → skills 字段（mock 期 MCP = skill）
     const tool_ids = ids.filter(
       (id) => mockTools.find((t) => t.id === id)?.type === 'builtin',
     )
-    const mcp_ids = ids.filter(
+    const skill_ids = ids.filter(
       (id) => mockTools.find((t) => t.id === id)?.type === 'mcp',
     )
-    setForm((prev) => ({ ...prev, tool_ids, mcp_ids }))
+    setForm((prev) => ({ ...prev, tool_ids, skill_ids }))
   }
 
   async function save() {
@@ -119,19 +136,27 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
       return
     }
     setSaving(true)
+    // 显式构造嵌套 config（不 spread 旧 agent.config 防带入旧 schema 残留字段）
     const config: AgentConfig = {
-      ...agent.config,
-      model_id: form.model_id,
-      system_prompt: form.system_prompt.trim() || null,
-      knowledge_ids: form.knowledge_ids,
-      tool_ids: form.tool_ids,
-      mcp_ids: form.mcp_ids,
-      avatar_color: form.avatar_color,
-      params: {
-        temperature: form.temperature,
-        top_p: form.top_p,
-        max_tokens: form.max_tokens,
+      models: {
+        chat: form.model_id
+          ? {
+              id: form.model_id,
+              params: {
+                temperature: form.temperature,
+                top_p: form.top_p,
+                max_tokens: form.max_tokens,
+              },
+            }
+          : null,
       },
+      system_prompt: form.system_prompt.trim() || null,
+      capabilities: agent.config.capabilities ?? [],
+      knowledge: form.knowledge_ids,
+      tools: form.tool_ids,
+      skills: form.skill_ids,
+      behavior: agent.config.behavior ?? {},
+      ui: agent.config.ui ?? {},
     }
     const payload: AgentUpdatePayload = {
       name,
@@ -154,7 +179,8 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
   // 模板元数据反查（kind badge 展示）
   const template = mockTemplates.find((t) => t.key === agent.template)
   const templateKind = template?.kind ?? 'loop'
-  const selectedToolIds = [...form.tool_ids, ...form.mcp_ids]
+  const selectedToolIds = [...form.tool_ids, ...form.skill_ids]
+  const avatarUrl = agent.config.ui?.avatar_url ?? '/gopher-fcb-glass.png'
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -180,12 +206,11 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
           {/* Header：头像 + 名字 + kind badge + 描述 */}
           <div className="space-y-3 pb-5">
             <div className="flex items-center gap-3">
-              <div
-                className="flex size-14 shrink-0 items-center justify-center rounded-full text-lg font-medium text-white"
-                style={{ backgroundColor: form.avatar_color }}
-              >
-                {form.name.slice(0, 1) || '?'}
-              </div>
+              <img
+                src={avatarUrl}
+                alt={form.name}
+                className="size-14 shrink-0 rounded-full object-cover"
+              />
               <div className="flex min-w-0 flex-1 items-center gap-2">
                 <Input
                   value={form.name}
@@ -222,11 +247,17 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
                 <SelectValue placeholder="选择对话模型" />
               </SelectTrigger>
               <SelectContent>
-                {mockChatModels.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>
-                    {m.display_name}
-                  </SelectItem>
-                ))}
+                {chatModels.length === 0 ? (
+                  <div className="text-muted-foreground px-2 py-1.5 text-xs">
+                    无可用的 chat 模型
+                  </div>
+                ) : (
+                  chatModels.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.display_name}
+                    </SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
           </Field>
@@ -288,7 +319,7 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
           {/* 知识库 */}
           <Field label="知识库">
             <MultiSelectPopover
-              items={mockKnowledge.map((k) => ({ id: k.id, name: k.name }))}
+              items={knowledgeBases.map((k) => ({ id: k.id, name: k.name }))}
               value={form.knowledge_ids}
               onChange={(ids) => patch('knowledge_ids', ids)}
               placeholder="搜索知识库..."

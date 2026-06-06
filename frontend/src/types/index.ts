@@ -41,3 +41,32 @@ export type {
   BatchProcessResult,
 } from './knowledge'
 export type { WorkspaceMember, Conversation, Workspace } from './workspace'
+export type {
+  // 协议层
+  ApiTextBlock,
+  ApiContentBlock,
+  ApiHistoryMessage,
+  ChatStreamRequest,
+  // SSE event payload
+  MessageStartPayload,
+  MessageStopPayload,
+  Usage,
+  MessageDeltaPayload,
+  ContentBlockStartPayload,
+  ContentBlockDeltaPayload,
+  ContentBlockStopPayload,
+  ToolUseStartPayload,
+  ToolUseDeltaPayload,
+  ToolUseStopPayload,
+  ToolResultPayload,
+  ErrorPayload,
+  // 渲染层
+  TextBlock,
+  ThinkingBlock,
+  ToolUseBlock,
+  RenderBlock,
+  // Message union
+  UserMessage,
+  AssistantMessage,
+  ChatMessage,
+} from './chat'
