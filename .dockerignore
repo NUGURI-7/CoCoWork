@@ -1,0 +1,41 @@
+# Git / VCS
+.git
+.gitignore
+.gitattributes
+
+# Editor / OS
+.DS_Store
+.idea
+.vscode
+*.swp
+
+# Python
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.venv
+backend/data
+backend/tests
+
+# Node
+**/node_modules
+frontend/dist
+
+# Docs / notes（不进镜像，省体积）
+docs/
+notes/
+
+# Claude / project meta
+.claude
+.mcp.json
+CLAUDE.md
+README.md
+LICENSE
+
+# Env files（运行时由 compose 注入，不烤进镜像）
+**/.env
+**/.env.*
+!**/.env.example

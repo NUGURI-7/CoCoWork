@@ -1,7 +1,12 @@
 import logging
 from contextlib import asynccontextmanager
 
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from tortoise.contrib.fastapi import RegisterTortoise
 from tortoise.contrib.fastapi import RegisterTortoise
 
 from app.api import api_router
@@ -42,6 +47,23 @@ app = FastAPI(
 register_middlewares(app)
 register_exception_handlers(app)
 app.include_router(api_router, prefix=settings.API_PREFIX)
+
+# ── 前端静态资源（生产环境：frontend/dist 存在时挂载；开发环境自动跳过）──────
+_FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+if _FRONTEND_DIST.is_dir():
+    app.mount(
+        "/assets",
+        StaticFiles(directory=_FRONTEND_DIST / "assets"),
+        name="assets",
+    )
+
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str) -> FileResponse:
+        candidate = _FRONTEND_DIST / full_path
+        if candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(_FRONTEND_DIST / "index.html")
 
 
 if __name__ == "__main__":

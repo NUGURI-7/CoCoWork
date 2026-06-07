@@ -1,0 +1,11 @@
+services:
+  app:
+    image: crpi-cwyvl6vckkv4k4p7.cn-hangzhou.personal.cr.aliyuncs.com/nuguri_ddd/cocowork:latest
+    ports:
+      - "8000:8000"
+    env_file: .env
+    volumes:
+      - ./data:/app/backend/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
