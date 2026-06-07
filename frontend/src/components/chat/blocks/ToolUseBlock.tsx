@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, Loader2, Wrench, XCircle } from 'lucide-react'
+import { ChevronDown, Wrench, XCircle } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import type { ToolUseBlock as ToolUseBlockType } from '@/types'
@@ -19,7 +19,6 @@ interface ToolUseBlockProps {
  */
 export function ToolUseBlock({ block }: ToolUseBlockProps) {
   const [collapsed, setCollapsed] = useState(block.collapsed)
-  const isRunning = block.status === 'building' || block.status === 'calling'
 
   useEffect(() => {
     if (block.status === 'success' || block.status === 'error') {
@@ -50,24 +49,33 @@ export function ToolUseBlock({ block }: ToolUseBlockProps) {
 
   const hasResult = block.resultData !== null && block.resultData !== undefined
 
+  // 状态色：success 品牌绿、error 红、running 走 muted（同色一行，扳手 + 工具名整体）
+  const statusColor =
+    block.status === 'success'
+      ? 'text-brand'
+      : block.status === 'error'
+        ? 'text-destructive'
+        : 'text-muted-foreground'
+
   return (
     <div className="max-w-full self-start">
       <button
         type="button"
         onClick={() => setCollapsed((c) => !c)}
-        className="text-muted-foreground hover:text-foreground -mx-1 inline-flex max-w-full cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm transition-colors"
+        className={cn(
+          '-mx-1 inline-flex max-w-full cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm transition-colors',
+          statusColor,
+        )}
       >
         <span className="flex shrink-0 items-center">
-          {isRunning ? (
-            <Loader2 size={14} className="animate-spin" />
-          ) : block.status === 'success' ? (
-            <Wrench size={14} className="text-brand" />
+          {block.status === 'error' ? (
+            <XCircle size={14} />
           ) : (
-            <XCircle size={14} className="text-destructive" />
+            <Wrench size={14} />
           )}
         </span>
 
-        <span className="text-foreground/80 shrink-0 font-medium">{block.name}</span>
+        <span className="shrink-0 font-medium">{block.name}</span>
 
         <ChevronDown
           size={12}

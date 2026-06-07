@@ -14,6 +14,7 @@ from collections.abc import AsyncIterator
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.tools import BaseTool
 from langgraph.graph.state import CompiledStateGraph
 from uuid_utils import uuid7
 
@@ -28,6 +29,7 @@ from app.schemas.agent.chat_schema import ChatStreamRequest
 from app.schemas.agent.chat_schema import ContentBlock, HistoryMessage
 from app.schemas.agent.config_schema import AgentConfig
 from app.schemas.agent.config_schema import ModelSlot
+from app.tools import resolve_tools
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +141,17 @@ def _to_lc_messages(
     return msgs
 
 
+async def _assemble_tools(cfg: AgentConfig) -> list[BaseTool]:
+    """聚合 agent 各来源工具 → list[BaseTool]，喂给 template.build。
+
+    装配点：prepare_stream 只认这一个入口，新增来源（MCP / custom）在此扩、
+    不动调用方。async 为未来 MCP/custom 的 IO 加载预留；当前仅内置一脉。
+    """
+    tools: list[BaseTool] = []
+    tools.extend(resolve_tools(cfg.builtin_tools))
+    return tools
+
+
 async def prepare_stream(
         agent: Agent,
         request: ChatStreamRequest,
@@ -165,7 +178,7 @@ async def prepare_stream(
     graph = template.build(
         chat_model=chat_model,
         system_prompt=cfg.system_prompt,
-        tools=[]
+        tools=await _assemble_tools(cfg),
     )
 
     messages = _to_lc_messages(request.history, request.content)

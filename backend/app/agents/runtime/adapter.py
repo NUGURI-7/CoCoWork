@@ -84,12 +84,16 @@ class ToolRegistry:
         self.block_to_id[block_idx] = tool_id
 
     def release(self, chunk_index: int) -> tuple[int, str] | None:
-        """关闭某 chunk_index 对应的活块：清空三表项，返回 (block_idx, tool_id)。"""
+        """关闭某 chunk_index 对应的活块：清流式收发映射，返回 (block_idx, tool_id)。
+
+        只清 `chunk_to_block`；`id_to_block` / `block_to_id` 留给 `on_tool_end`
+        反查（它在 chat_model_end 之后才触发）。本 State 跟 SSE 流同生共死，
+        流结束 GC 自动清，不会泄漏。
+        """
         block_idx = self.chunk_to_block.pop(chunk_index, None)
         if block_idx is None:
             return None
-        tool_id = self.block_to_id.pop(block_idx, "")
-        self.id_to_block.pop(tool_id, None)
+        tool_id = self.block_to_id.get(block_idx, "")
         return block_idx, tool_id
 
 

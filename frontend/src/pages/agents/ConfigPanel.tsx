@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { updateAgent, type AgentUpdatePayload } from '@/api/agent'
 import { listKnowledgeBases } from '@/api/knowledge'
 import { listAllModels } from '@/api/model'
+import { listTools } from '@/api/tool'
 import {
   Accordion,
   AccordionContent,
@@ -36,9 +37,9 @@ import { Slider } from '@/components/ui/slider'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import type { Agent, AgentConfig, AIModel, KnowledgeBase } from '@/types'
+import type { Agent, AgentConfig, AIModel, KnowledgeBase, Tool } from '@/types'
 import { KindBadge } from './KindBadge'
-import { mockTemplates, mockTools } from './mock'
+import { mockTemplates } from './mock'
 
 interface ConfigPanelProps {
   agent: Agent
@@ -89,6 +90,7 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
   const [saving, setSaving] = useState(false)
   const [chatModels, setChatModels] = useState<AIModel[]>([])
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([])
+  const [tools, setTools] = useState<Tool[]>([])
 
   // 切换 agent / 外部 setAgent 时（保存成功覆盖）同步本地 form
   useEffect(() => {
@@ -103,6 +105,9 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
     listKnowledgeBases()
       .then(setKnowledgeBases)
       .catch(() => {})
+    listTools()
+      .then(setTools)
+      .catch(() => {})
   }, [])
 
   const dirty = useMemo(() => {
@@ -114,16 +119,13 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
-  function setToolSelection(ids: string[]) {
-    // mock 的 ToolMock 区分 builtin / mcp，按 type 落到对应字段
-    // builtin → builtin_tools 字段（registry name）/ mcp → skills 字段（mock 期 MCP = skill）
-    const tool_ids = ids.filter(
-      (id) => mockTools.find((t) => t.id === id)?.type === 'builtin',
+  function setToolSelection(names: string[]) {
+    // 工具选择器只管内置工具，选中的 name 写进 config.builtin_tools。
+    // MCP / custom 那天进来时，再按 source_type 分流到各自字段。
+    const builtinNames = names.filter(
+      (n) => tools.find((t) => t.name === n)?.source_type === 'builtin',
     )
-    const skill_ids = ids.filter(
-      (id) => mockTools.find((t) => t.id === id)?.type === 'mcp',
-    )
-    setForm((prev) => ({ ...prev, tool_ids, skill_ids }))
+    setForm((prev) => ({ ...prev, tool_ids: builtinNames }))
   }
 
   async function save() {
@@ -175,7 +177,7 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
   // 模板元数据反查（kind badge 展示）
   const template = mockTemplates.find((t) => t.key === agent.template)
   const templateKind = template?.kind ?? 'loop'
-  const selectedToolIds = [...form.tool_ids, ...form.skill_ids]
+  const selectedToolIds = form.tool_ids
   const avatarUrl = agent.config.ui?.avatar_url ?? '/gopher-fcb-glass.png'
 
   return (
@@ -311,12 +313,12 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
                 />
               </Field>
 
-              <Field label="工具 / MCP">
+              <Field label="工具">
                 <MultiSelectPopover
-                  items={mockTools.map((t) => ({
-                    id: t.id,
-                    name: t.name,
-                    meta: t.type === 'mcp' ? 'MCP' : '内置',
+                  items={tools.map((t) => ({
+                    id: t.name,
+                    name: t.display_name,
+                    meta: t.source_type === 'mcp' ? 'MCP' : '内置',
                   }))}
                   value={selectedToolIds}
                   onChange={setToolSelection}

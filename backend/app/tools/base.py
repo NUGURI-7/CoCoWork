@@ -1,0 +1,75 @@
+"""工具层基类：CoCoTool —— 在 LangChain BaseTool 上统一加项目级元信息 + 横切行为。
+
+为什么自己包一层而非直接用 BaseTool / @tool 装饰器：
+- BaseTool 只有 name/description/args_schema，缺业务元信息（中文名 / 来源 / 危险标记）。
+- output 截断 / 超时 / 异常兜底 这类「每个工具都该有」的横切逻辑，必须收口到基类，
+  不能散在每个工具各写一遍 —— 否则迟早漏（web_search 忘了 cap → context 直接爆）。
+
+模板方法模式：
+- 子类只实现 `_execute()` —— 纯业务逻辑，入参由 args_schema 解析后按名注入，返回字符串。
+- 基类的 `_arun()` 统一包：超时 → 业务 → 异常兜底 → 输出截断，子类绕不过。
+- 同步入口 `_run()` 封死 —— 工具一律异步，上层永远 await，无需区分 CPU / IO。
+
+name vs display_name：
+- `name` 给 LLM，受 OpenAI/Anthropic 正则约束（`^[a-zA-Z0-9_-]{1,64/128}$`，不能中文）。
+- `display_name` 给人看（前端工具选择器 / 审计日志），可中文。
+"""
+
+import asyncio
+import logging
+from abc import abstractmethod
+from typing import Any, Literal
+
+from langchain_core.tools import BaseTool
+
+logger = logging.getLogger(__name__)
+
+
+class CoCoTool(BaseTool):
+    """项目所有工具的统一基类。子类只实现 `_execute`，横切逻辑由本类兜底。"""
+
+    # ---- 项目级元信息（LangChain BaseTool 没有的）----
+    display_name: str  # 中文展示名；name 给 LLM（英文受正则约束）、本字段给人看
+    source_type: Literal["builtin", "mcp"] = "builtin"
+    dangerous: bool = False  # 有副作用（删文件 / 发请求 / 花钱）的工具标 True，未来接人工确认
+
+    # ---- 横切行为参数 ----
+    max_output_chars: int = 4000  # 输出上限，超长截断（L1 上下文防爆）；返回极短的工具可调小
+    timeout_seconds: float = 30.0  # 单次执行超时
+
+    @abstractmethod
+    async def _execute(self, **kwargs: Any) -> str:
+        """子类实现：纯业务逻辑。入参由 args_schema 解析后按名注入，返回给 LLM 的字符串。"""
+        ...
+
+    async def _arun(self, *args: Any, run_manager: Any = None, **kwargs: Any) -> str:
+        """统一执行管线：超时 → 业务 → 异常兜底 → 输出截断。子类不重写本方法。
+
+        run_manager 是 LangChain 注入的回调管理器，此处接住但不透传给 `_execute`。
+        """
+        try:
+            result = await asyncio.wait_for(
+                self._execute(**kwargs), timeout=self.timeout_seconds
+            )
+        except asyncio.TimeoutError:
+            logger.warning("tool %r timeout after %ss", self.name, self.timeout_seconds)
+            return f"工具「{self.display_name}」执行超时（超过 {self.timeout_seconds:g} 秒）"
+        except Exception as exc:
+            # 异常不外抛、不让 traceback 进 LLM context —— 翻成一句话，由 LLM 自行决定换法
+            logger.exception("tool %r failed", self.name)
+            return f"工具「{self.display_name}」执行出错：{exc}"
+
+        return self._cap_output(result)
+
+    def _cap_output(self, text: str) -> str:
+        """超长输出截断 —— 防单个工具返回把 context 撑爆（上下文管理 L1）。"""
+        if len(text) <= self.max_output_chars:
+            return text
+        kept = text[: self.max_output_chars]
+        return f"{kept}\n\n[输出过长已截断，原始共 {len(text)} 字符，仅显示前 {self.max_output_chars}]"
+
+    def _run(self, *args: Any, **kwargs: Any) -> str:
+        """同步入口封死 —— 工具一律走异步。LangGraph 默认调 `_arun`，本方法只防误用。"""
+        raise NotImplementedError(
+            f"{type(self).__name__} 只支持异步执行，请通过 ainvoke / _arun 调用"
+        )

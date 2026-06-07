@@ -80,7 +80,7 @@ export interface AgentConfig {
   system_prompt?: string | null
   capabilities?: string[]
   knowledge?: string[]
-  tools?: string[]
+  builtin_tools?: string[]
   skills?: string[]
   behavior?: AgentBehavior
   ui?: AgentUI

@@ -65,7 +65,7 @@ export function AgentCard({ agent, modelNameMap, onDeleted }: AgentCardProps) {
   const modelName = modelId ? modelNameMap?.get(modelId) : null
   const knowledgeCount = agent.config.knowledge?.length ?? 0
   const toolCount =
-    (agent.config.tools?.length ?? 0) + (agent.config.skills?.length ?? 0)
+    (agent.config.builtin_tools?.length ?? 0) + (agent.config.skills?.length ?? 0)
   // P0 不暴露上传 UI：所有 Agent 头像统一用默认 gopher；未来加上传后这里 fallback
   const avatarUrl = agent.config.ui?.avatar_url ?? '/gopher-fcb-glass.png'
 

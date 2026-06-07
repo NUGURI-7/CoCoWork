@@ -41,6 +41,7 @@ export type {
   BatchProcessResult,
 } from './knowledge'
 export type { WorkspaceMember, Conversation, Workspace } from './workspace'
+export type { ToolSource, Tool } from './tool'
 export type {
   // 协议层
   ApiTextBlock,
