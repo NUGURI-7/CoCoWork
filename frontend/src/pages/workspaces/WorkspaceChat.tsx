@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Crown, Send } from 'lucide-react'
+import { v4 as uuidv4 } from 'uuid'
 
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -98,7 +99,7 @@ export function WorkspaceChat({ members }: WorkspaceChatProps) {
     const now = new Date().toISOString()
     setMessages((prev) => [
       ...prev,
-      { id: crypto.randomUUID(), role: 'user', content, created_at: now },
+      { id: uuidv4(), role: 'user', content, created_at: now },
     ])
     setInput('')
     setMentionQuery(null)
@@ -117,7 +118,7 @@ export function WorkspaceChat({ members }: WorkspaceChatProps) {
       setMessages((prev) => [
         ...prev,
         {
-          id: crypto.randomUUID(),
+          id: uuidv4(),
           role: 'assistant',
           content: replyContent,
           senderId: target!.id,

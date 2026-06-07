@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useParams } from '@tanstack/react-router'
 import { ChevronLeft, PanelLeft, PanelRight } from 'lucide-react'
 import { toast } from 'sonner'
+import { v4 as uuidv4 } from 'uuid'
 
 import {
   Breadcrumb,
@@ -72,7 +73,7 @@ export default function WorkspaceDetailPage() {
   function handleNewConversation() {
     const now = new Date().toISOString()
     const newConv: Conversation = {
-      id: crypto.randomUUID(),
+      id: uuidv4(),
       title: '新对话',
       created_at: now,
       updated_at: now,

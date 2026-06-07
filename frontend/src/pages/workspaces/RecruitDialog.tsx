@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { v4 as uuidv4 } from 'uuid'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -67,7 +68,7 @@ export function RecruitDialog({ open, onOpenChange, onRecruit }: RecruitDialogPr
       const t = mockTemplates.find((x) => x.id === selectedTemplateId)
       if (!t) return
       onRecruit({
-        id: crypto.randomUUID(),
+        id: uuidv4(),
         name: t.name,
         avatar_color: t.default_avatar_color,
         role: 'agent',
@@ -79,7 +80,7 @@ export function RecruitDialog({ open, onOpenChange, onRecruit }: RecruitDialogPr
       const a = mockAgents.find((x) => x.id === selectedAgentId)
       if (!a) return
       onRecruit({
-        id: crypto.randomUUID(),
+        id: uuidv4(),
         name: a.name,
         avatar_color: a.avatar_color,
         role: 'agent',

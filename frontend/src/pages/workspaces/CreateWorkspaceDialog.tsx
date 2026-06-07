@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { v4 as uuidv4 } from 'uuid'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -41,13 +42,13 @@ export function CreateWorkspaceDialog({
     if (!name.trim()) return
     const now = new Date().toISOString()
     const newWorkspace: Workspace = {
-      id: crypto.randomUUID(),
+      id: uuidv4(),
       name: name.trim(),
       description: description.trim(),
       // 新空间默认带一个管家
       members: [
         {
-          id: crypto.randomUUID(),
+          id: uuidv4(),
           name: '管家',
           avatar_color: '#2f6b53',
           role: 'supervisor',
@@ -59,7 +60,7 @@ export function CreateWorkspaceDialog({
       // 新空间默认带一条空对话
       conversations: [
         {
-          id: crypto.randomUUID(),
+          id: uuidv4(),
           title: '新对话',
           created_at: now,
           updated_at: now,

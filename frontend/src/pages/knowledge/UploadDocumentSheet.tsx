@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { CheckCircle2, FileText, Upload, UploadCloud, X, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
+import { v4 as uuidv4 } from 'uuid'
 import {
   confirmDocumentUpload,
   initDocumentUpload,
@@ -81,7 +82,7 @@ export function UploadDocumentSheet({
         continue
       }
       next.push({
-        id: crypto.randomUUID(),
+        id: uuidv4(),
         file,
         ext: ext as AllowedExt,
         progress: 0,

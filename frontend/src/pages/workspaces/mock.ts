@@ -1,11 +1,13 @@
 /** Mock 数据 — 后端切片 4+ 就绪后删除（v0 纯前端 local state，仅为画 UI） */
 
+import { v4 as uuidv4 } from 'uuid'
+
 import type { Workspace, WorkspaceMember } from '@/types'
 
 /** 每个空间固定的管家成员（supervisor） */
 function supervisor(): WorkspaceMember {
   return {
-    id: crypto.randomUUID(),
+    id: uuidv4(),
     name: '管家',
     avatar_color: '#2f6b53',
     role: 'supervisor',
