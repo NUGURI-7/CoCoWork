@@ -101,7 +101,7 @@ export function MessageList() {
       onTouchMove={handleUserIntent}
       onScroll={handleScroll}
     >
-      <div ref={innerRef} className="mx-auto max-w-3xl space-y-6 pb-4">
+      <div ref={innerRef} className="mx-auto max-w-3xl space-y-6 px-4 pb-4">
         {messages.map((msg) =>
           msg.role === 'user' ? (
             <UserMessageRow key={msg.id} message={msg} />
