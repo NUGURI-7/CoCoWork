@@ -224,3 +224,11 @@ __marimo__/
 
 # 个人学习笔记（不入仓库）
 /notes/
+
+# 本地 issue notes
+/issues/
+
+# 防止根目录误装 Node 依赖（前端在 frontend/、根目录不该有这些）
+/node_modules/
+/package.json
+/package-lock.json
