@@ -32,7 +32,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Separator } from '@/components/ui/separator'
 import { Slider } from '@/components/ui/slider'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -60,7 +59,6 @@ interface FormState {
   skill_ids: string[]
   /** 摊平字段：save 时打包成 config.models.chat.params */
   temperature: number
-  top_p: number
   max_tokens: number
 }
 
@@ -73,10 +71,9 @@ function agentToForm(agent: Agent): FormState {
     model_id: chat?.id ?? null,
     system_prompt: c.system_prompt ?? '',
     knowledge_ids: c.knowledge ?? [],
-    tool_ids: c.tools ?? [],
+    tool_ids: c.builtin_tools ?? [],
     skill_ids: c.skills ?? [],
     temperature: (chat?.params?.temperature as number | undefined) ?? 1,
-    top_p: (chat?.params?.top_p as number | undefined) ?? 1,
     max_tokens: (chat?.params?.max_tokens as number | undefined) ?? 1024,
   }
 }
@@ -119,7 +116,7 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
 
   function setToolSelection(ids: string[]) {
     // mock 的 ToolMock 区分 builtin / mcp，按 type 落到对应字段
-    // builtin → tools 字段（spec §7 资源 tools）/ mcp → skills 字段（mock 期 MCP = skill）
+    // builtin → builtin_tools 字段（registry name）/ mcp → skills 字段（mock 期 MCP = skill）
     const tool_ids = ids.filter(
       (id) => mockTools.find((t) => t.id === id)?.type === 'builtin',
     )
@@ -144,7 +141,6 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
               id: form.model_id,
               params: {
                 temperature: form.temperature,
-                top_p: form.top_p,
                 max_tokens: form.max_tokens,
               },
             }
@@ -153,7 +149,7 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
       system_prompt: form.system_prompt.trim() || null,
       capabilities: agent.config.capabilities ?? [],
       knowledge: form.knowledge_ids,
-      tools: form.tool_ids,
+      builtin_tools: form.tool_ids,
       skills: form.skill_ids,
       behavior: agent.config.behavior ?? {},
       ui: agent.config.ui ?? {},
@@ -202,153 +198,159 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        <div className="px-1 py-3">
-          {/* Header：头像 + 名字 + kind badge + 描述 */}
-          <div className="space-y-3 pb-5">
-            <div className="flex items-center gap-3">
-              <img
-                src={avatarUrl}
-                alt={form.name}
-                className="size-14 shrink-0 rounded-full object-cover"
-              />
-              <div className="flex min-w-0 flex-1 items-center gap-2">
-                <Input
-                  value={form.name}
-                  onChange={(e) => patch('name', e.target.value)}
-                  className="h-9 border-none px-0 text-base font-semibold shadow-none focus-visible:ring-0"
+        <div className="space-y-6 px-1 py-5">
+          {/* 身份 */}
+          <Section label="身份">
+            <div className="bg-muted/40 space-y-3 rounded-lg border p-4">
+              <div className="flex items-center gap-3">
+                <img
+                  src={avatarUrl}
+                  alt={form.name}
+                  className="size-14 shrink-0 rounded-full object-cover"
                 />
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="shrink-0">
-                      <KindBadge kind={templateKind} className="cursor-help" />
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>模板创建时选定，不可更改</TooltipContent>
-                </Tooltip>
-              </div>
-            </div>
-            <Textarea
-              value={form.description}
-              placeholder="一句话告诉别人这个 Agent 擅长什么"
-              onChange={(e) => patch('description', e.target.value)}
-              className="text-muted-foreground min-h-12 resize-none border-none px-0 text-sm shadow-none focus-visible:ring-0"
-            />
-          </div>
-
-          <Separator />
-
-          {/* 模型 */}
-          <Field label="模型" hint="必填——不配模型沙盒没法跑">
-            <Select
-              value={form.model_id ?? undefined}
-              onValueChange={(v) => patch('model_id', v)}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="选择对话模型" />
-              </SelectTrigger>
-              <SelectContent>
-                {chatModels.length === 0 ? (
-                  <div className="text-muted-foreground px-2 py-1.5 text-xs">
-                    无可用的 chat 模型
-                  </div>
-                ) : (
-                  chatModels.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>
-                      {m.display_name}
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
-          </Field>
-
-          <Separator />
-
-          {/* 调用参数（默认折叠） */}
-          <Accordion type="single" collapsible className="py-2">
-            <AccordionItem value="params" className="border-none">
-              <AccordionTrigger className="py-1 text-sm font-medium hover:no-underline">
-                调用参数
-              </AccordionTrigger>
-              <AccordionContent className="space-y-5 pt-3">
-                <SliderField
-                  label="temperature"
-                  value={form.temperature}
-                  min={0}
-                  max={2}
-                  step={0.1}
-                  onChange={(v) => patch('temperature', v)}
-                />
-                <SliderField
-                  label="top_p"
-                  value={form.top_p}
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  onChange={(v) => patch('top_p', v)}
-                />
-                <div className="space-y-2">
-                  <Label className="text-muted-foreground text-xs">max_tokens</Label>
+                <div className="flex min-w-0 flex-1 items-center gap-2">
                   <Input
-                    type="number"
-                    value={form.max_tokens}
-                    onChange={(e) =>
-                      patch('max_tokens', Number(e.target.value) || 0)
-                    }
-                    className="h-8"
+                    value={form.name}
+                    onChange={(e) => patch('name', e.target.value)}
+                    placeholder="给 Agent 起个名字"
+                    className="hover:bg-background h-9 rounded border-none px-2 text-base font-semibold shadow-none transition-colors focus-visible:ring-0 focus-visible:bg-background"
                   />
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="shrink-0">
+                        <KindBadge kind={templateKind} className="cursor-help" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>模板创建时选定，不可更改</TooltipContent>
+                  </Tooltip>
                 </div>
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
+              </div>
+              <Textarea
+                value={form.description}
+                placeholder="一句话告诉别人这个 Agent 擅长什么"
+                onChange={(e) => patch('description', e.target.value)}
+                className="text-muted-foreground hover:bg-background focus-visible:bg-background min-h-12 resize-none rounded border-none px-2 text-sm shadow-none transition-colors focus-visible:ring-0"
+              />
+            </div>
+          </Section>
 
-          <Separator />
+          {/* 行为 */}
+          <Section label="行为">
+            <div className="space-y-5">
+              <Field label="模型" hint="必填——不配模型沙盒没法跑">
+                <Select
+                  value={form.model_id ?? undefined}
+                  onValueChange={(v) => patch('model_id', v)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="选择对话模型" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {chatModels.length === 0 ? (
+                      <div className="text-muted-foreground px-2 py-1.5 text-xs">
+                        无可用的 chat 模型
+                      </div>
+                    ) : (
+                      chatModels.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.display_name}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </Field>
 
-          {/* System Prompt */}
-          <Field label="System Prompt">
-            <Textarea
-              value={form.system_prompt}
-              placeholder="留空 = 使用模板默认行为"
-              onChange={(e) => patch('system_prompt', e.target.value)}
-              className="min-h-32 resize-y font-mono text-xs leading-relaxed"
-            />
-          </Field>
+              <Accordion type="single" collapsible>
+                <AccordionItem value="params" className="border-none">
+                  <AccordionTrigger className="py-1 text-sm font-medium hover:no-underline">
+                    调用参数
+                  </AccordionTrigger>
+                  <AccordionContent className="space-y-5 pt-3">
+                    <SliderField
+                      label="temperature"
+                      value={form.temperature}
+                      min={0}
+                      max={2}
+                      step={0.1}
+                      onChange={(v) => patch('temperature', v)}
+                    />
+                    <SliderField
+                      label="max_tokens"
+                      value={form.max_tokens}
+                      min={256}
+                      max={8192}
+                      step={256}
+                      onChange={(v) => patch('max_tokens', v)}
+                    />
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
 
-          <Separator />
+              <Field label="System Prompt">
+                <Textarea
+                  value={form.system_prompt}
+                  placeholder="留空 = 使用模板默认行为"
+                  onChange={(e) => patch('system_prompt', e.target.value)}
+                  className="min-h-32 resize-y font-mono text-xs leading-relaxed"
+                />
+              </Field>
+            </div>
+          </Section>
 
-          {/* 知识库 */}
-          <Field label="知识库">
-            <MultiSelectPopover
-              items={knowledgeBases.map((k) => ({ id: k.id, name: k.name }))}
-              value={form.knowledge_ids}
-              onChange={(ids) => patch('knowledge_ids', ids)}
-              placeholder="搜索知识库..."
-              emptyLabel="未挂载任何知识库"
-            />
-          </Field>
+          {/* 资源 */}
+          <Section label="资源">
+            <div className="space-y-5">
+              <Field label="知识库">
+                <MultiSelectPopover
+                  items={knowledgeBases.map((k) => ({ id: k.id, name: k.name }))}
+                  value={form.knowledge_ids}
+                  onChange={(ids) => patch('knowledge_ids', ids)}
+                  placeholder="搜索知识库..."
+                  emptyLabel="未挂载任何知识库"
+                />
+              </Field>
 
-          <Separator />
+              <Field label="工具 / MCP">
+                <MultiSelectPopover
+                  items={mockTools.map((t) => ({
+                    id: t.id,
+                    name: t.name,
+                    meta: t.type === 'mcp' ? 'MCP' : '内置',
+                  }))}
+                  value={selectedToolIds}
+                  onChange={setToolSelection}
+                  placeholder="搜索工具..."
+                  emptyLabel="未挂载任何工具"
+                />
+              </Field>
+            </div>
+          </Section>
 
-          {/* 工具 / MCP */}
-          <Field label="工具 / MCP">
-            <MultiSelectPopover
-              items={mockTools.map((t) => ({
-                id: t.id,
-                name: t.name,
-                meta: t.type === 'mcp' ? 'MCP' : '内置',
-              }))}
-              value={selectedToolIds}
-              onChange={setToolSelection}
-              placeholder="搜索工具..."
-              emptyLabel="未挂载任何工具"
-            />
-          </Field>
-
-          <p className="text-muted-foreground/60 pt-6 text-center text-[10px]">
+          <p className="text-muted-foreground/60 pt-4 text-center text-[10px]">
             点击右上「保存」提交本次改动
           </p>
         </div>
       </div>
+    </div>
+  )
+}
+
+/** 语义分组小标题：身份 / 行为 / 资源 */
+function Section({
+  label,
+  children,
+}: {
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <div>
+      <div className="mb-3 flex items-center gap-2 px-1">
+        <span className="bg-brand h-4 w-1 rounded-full" />
+        <span className="text-foreground text-sm font-semibold">{label}</span>
+      </div>
+      {children}
     </div>
   )
 }
@@ -364,7 +366,7 @@ function Field({
   children: React.ReactNode
 }) {
   return (
-    <div className="space-y-2 py-4">
+    <div className="space-y-2">
       <div className="flex items-center gap-1.5">
         <Label className="text-sm font-medium">{label}</Label>
         {hint && (
@@ -397,12 +399,14 @@ function SliderField({
   step: number
   onChange: (v: number) => void
 }) {
+  // step >= 1 → 整数；step < 0.1 → 两位小数；其它 → 一位小数
+  const decimals = step >= 1 ? 0 : step < 0.1 ? 2 : 1
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <Label className="text-xs">{label}</Label>
         <span className="text-muted-foreground font-mono text-xs tabular-nums">
-          {value.toFixed(step < 0.1 ? 2 : 1)}
+          {value.toFixed(decimals)}
         </span>
       </div>
       <Slider

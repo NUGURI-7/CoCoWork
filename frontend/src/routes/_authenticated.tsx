@@ -13,6 +13,10 @@ import { AppShell } from '@/components/layout/AppShell'
 export const Route = createFileRoute('/_authenticated')({
   beforeLoad: async ({ location }) => {
     const auth = useAuthStore.getState()
+    // token 已过期：清状态再走未登录分支跳登录页（防系统休眠睡过头 / 改系统时间）
+    if (auth.isLoggedIn() && auth.isExpired()) {
+      auth.logout()
+    }
     if (!auth.isLoggedIn()) {
       throw redirect({ to: '/login', search: { redirect: location.href } })
     }

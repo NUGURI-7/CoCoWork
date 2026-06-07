@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import dayjs from 'dayjs'
-import { Download, FileText, Inbox, MoreHorizontal, Sparkles, Trash2, X } from 'lucide-react'
+import { Download, Eye, FileText, Inbox, MoreHorizontal, Sparkles, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 import {
@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import type { Document } from '@/types'
+import { DocumentPreviewSheet } from './DocumentPreviewSheet'
 import { docStatusMeta, getDocDisplayStatus } from './mock'
 
 interface DocumentListProps {
@@ -47,6 +48,8 @@ export function DocumentList({ kbId, docs, onDeleted, onProcessed }: DocumentLis
   const [batchConfirmOpen, setBatchConfirmOpen] = useState(false)
   const [batchProcessing, setBatchProcessing] = useState(false)
   const [batchDeleting, setBatchDeleting] = useState(false)
+  // 预览态：单实例 Sheet 共享，按 doc 切换
+  const [previewDoc, setPreviewDoc] = useState<Document | null>(null)
 
   const allSelected = docs.length > 0 && selected.size === docs.length
   const someSelected = selected.size > 0 && !allSelected
@@ -158,9 +161,20 @@ export function DocumentList({ kbId, docs, onDeleted, onProcessed }: DocumentLis
             onToggle={() => toggleOne(d.id)}
             onDeleted={onDeleted}
             onProcessed={onProcessed}
+            onPreview={() => setPreviewDoc(d)}
           />
         ))}
       </div>
+
+      {/* 文档预览抽屉（单实例共享） */}
+      <DocumentPreviewSheet
+        open={previewDoc !== null}
+        onOpenChange={(o) => {
+          if (!o) setPreviewDoc(null)
+        }}
+        kbId={kbId}
+        doc={previewDoc}
+      />
 
       {/* 批量删除确认 */}
       <AlertDialog open={batchConfirmOpen} onOpenChange={setBatchConfirmOpen}>
@@ -197,6 +211,7 @@ function DocumentRow({
   onToggle,
   onDeleted,
   onProcessed,
+  onPreview,
 }: {
   kbId: string
   doc: Document
@@ -204,6 +219,7 @@ function DocumentRow({
   onToggle: () => void
   onDeleted?: () => void
   onProcessed?: (docId: string) => void
+  onPreview: () => void
 }) {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -213,6 +229,7 @@ function DocumentRow({
   const display = getDocDisplayStatus(doc)
   const s = docStatusMeta[display]
   const canProcess = display === 'uploaded' || display === 'failed'
+  const canPreview = isPreviewable(doc.name)
 
   async function handleProcess() {
     if (triggering) return
@@ -294,6 +311,12 @@ function DocumentRow({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            {canPreview && (
+              <DropdownMenuItem onSelect={onPreview}>
+                <Eye className="size-4" />
+                预览
+              </DropdownMenuItem>
+            )}
             {canProcess && (
               <DropdownMenuItem onSelect={handleProcess} disabled={triggering}>
                 <Sparkles className="size-4" />
@@ -346,6 +369,12 @@ function DocumentRow({
 }
 
 // ---------- helpers ----------
+
+/** 文本类文件才暴露「预览」入口；PDF / docx 等二进制等 v2 多格式预览片做。 */
+function isPreviewable(name: string): boolean {
+  const lower = name.toLowerCase()
+  return lower.endsWith('.md') || lower.endsWith('.txt')
+}
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`
