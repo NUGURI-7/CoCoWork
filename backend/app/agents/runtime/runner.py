@@ -23,13 +23,14 @@ from app.agents.runtime.events import EventType, sse_event
 from app.agents.templates import get_template
 from app.core.encryption import decrypt
 from app.core.exceptions import ValidationException
-from app.models import Agent
+from app.models import Agent, KnowledgeBase, User
 from app.models.model import AIModel
 from app.schemas.agent.chat_schema import ChatStreamRequest
 from app.schemas.agent.chat_schema import ContentBlock, HistoryMessage
 from app.schemas.agent.config_schema import AgentConfig
 from app.schemas.agent.config_schema import ModelSlot
 from app.tools import resolve_tools
+from app.tools.knowledge_retrieval import KnowledgeRetrievalTool
 
 logger = logging.getLogger(__name__)
 
@@ -141,20 +142,58 @@ def _to_lc_messages(
     return msgs
 
 
-async def _assemble_tools(cfg: AgentConfig) -> list[BaseTool]:
+async def _assemble_tools(cfg: AgentConfig, user: User) -> list[BaseTool]:
     """聚合 agent 各来源工具 → list[BaseTool]，喂给 template.build。
 
     装配点：prepare_stream 只认这一个入口，新增来源（MCP / custom）在此扩、
-    不动调用方。async 为未来 MCP/custom 的 IO 加载预留；当前仅内置一脉。
+    不动调用方。async 为未来 MCP/custom 的 IO 加载预留。
+
+    来源：
+    - builtin：registry 单例（无状态）
+    - knowledge：per-KB bound 实例（运行时按 cfg.knowledge 实例化）
     """
     tools: list[BaseTool] = []
     tools.extend(resolve_tools(cfg.builtin_tools))
+
+    if cfg.knowledge:
+        # 一次性 prefetch 所有挂载的 KB；filter created_by 顺便归属校验，
+        # 用户配错 / KB 已删的 id 自动被过滤（容错，不让残留配置炸整个 agent）
+        kbs = await KnowledgeBase.filter(
+            id__in=cfg.knowledge,
+            created_by=user
+        ).all()
+
+        for kb in kbs:
+            tools.append(
+                KnowledgeRetrievalTool(
+                    name=f"knowledge_{kb.id.hex[:8]}",
+                    description=_build_kb_tool_description(kb),
+                    display_name=f"知识库《{kb.name}》",
+                    kb_id=kb.id,
+                    user=user,
+                )
+            )
+
     return tools
+
+
+def _build_kb_tool_description(kb: KnowledgeBase) -> str:
+    """KB tool description —— LLM 选库就靠它。
+
+    塞 KB 的人类语义（name + 用户填的 description），让 LLM 在多 KB
+    场景下按主题正确路由。
+    """
+    desc = kb.description or "（暂无描述）"
+    return (
+        f"检索知识库《{kb.name}》：{desc}。"
+        f"当你需要查询与此主题相关的信息时使用，输入一个自然语言查询。"
+    )
 
 
 async def prepare_stream(
         agent: Agent,
         request: ChatStreamRequest,
+        user: User,
 ) -> tuple[CompiledStateGraph, list[BaseMessage]]:
     """SSE 流开起来前的同步装配 —— 配置校验 / 取模板 / 装 chat model / 装 graph。
 
@@ -178,7 +217,7 @@ async def prepare_stream(
     graph = template.build(
         chat_model=chat_model,
         system_prompt=cfg.system_prompt,
-        tools=await _assemble_tools(cfg),
+        tools=await _assemble_tools(cfg, user),
     )
 
     messages = _to_lc_messages(request.history, request.content)

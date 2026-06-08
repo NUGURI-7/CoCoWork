@@ -43,7 +43,7 @@ async def playground_stream(
     if agent is None:
         raise NotFound404("Agent 不存在")
 
-    graph, messages = await prepare_stream(agent, body)
+    graph, messages = await prepare_stream(agent, body, current_user)
 
     return StreamingResponse(
         run_chat_stream(graph, messages),

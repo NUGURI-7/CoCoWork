@@ -58,13 +58,14 @@
 - **全局：路由→tab 自动同步机制**。路由 `staticData` + `useTabSync`（router onResolved 事件驱动），调用方只 `navigate`、tab 自动跟随；详情页 `useTabTitle` 覆盖动态名。工作台 + admin 两套 tab 都接入。
 - **Agent 模块后端整片打通**：`agents` 表（Hybrid Schema：核心列 + `config` jsonb，迁移 0009）+ CRUD（schema/service/route，5 端点 `/api/v1/agents`，归属隔离 + `get_template` 校验 + template 创建后锁死）+ **模板层 `app/agents/templates/`**（三层基类 `AgentTemplate/LoopTemplate/GraphTemplate` + 装饰器注册表 + `builtin/general`）。**结构 1+N**：1 个可配置 loop 引擎（能力靠 `config.capabilities` + 注册表 + 装配器组合，占位待接 LLM）+ N 个 graph 模板（首批 0）。前端 mock 待接真接口。
 - **工具模块第一刀（builtin 一脉）整片打通**：后端 `app/tools/`（CoCoTool 基类——模板方法模式统一兜 cap / timeout / 异常 + 项目元信息 display_name/source_type/dangerous + registry 启动期 name 正则 fail-fast + builtin/calculator 用 AST 白名单求值零依赖防注入防 CPU 炸弹）+ `AgentConfig.tools: list[UUID]` → **`builtin_tools: list[str]`**（按来源分字段，未来 mcp/custom 各加字段不破坏 jsonb 存量数据，对齐 OpenAI Assistants 分字段形态）+ `runner.prepare_stream` 经 **`_assemble_tools` 单装配点** 喂 `template.build(tools=...)`（新来源在此扩、调用方一行不动）+ `GET /api/v1/tools` 工具列表接口（`ToolOut`：name/display_name/description/source_type/dangerous，所有来源同结构）；前端 `types/tool.ts` + `api/tool.ts` + ConfigPanel 工具选择器接真接口（mock 全删，存 name 字符串而非 UUID）；ToolUseBlock 视觉收尾：去 Loader2 转圈、统一静态 Wrench、状态色 success=brand/error=destructive/running=muted。**LLM 真能调 calculator 给出精确结果**。**RAG 维度确认**：Agentic RAG = LangChain/LangGraph 官方推荐架构，KB 未来走 tool 同入口（装配器 wrap 成 bound retriever tools）、不塞 system prompt。**上下文管理路线**：L1（每工具 output cap，CoCoTool 已收口）+ L4（Anthropic SDK `clear_tool_results` 一行配置）；L5 summary 索引外置 = Devin 级重武器、独立开发者不碰。
+- **KB-as-tool 后端整片打通**：检索层 `app/services/knowledge/retrieval/` 子包重构成策略模式（base/vector/service + `RetrievalMode` StrEnum + `RetrievalParams` Pydantic + `RetrievalResult` dataclass + dispatch 入口）；老 `retrieval_service.py` 退场、`retrieval-test` 端点切到 `svc.retrieve(mode='vector', ...)` 老前端零改动同结果同字段。`KnowledgeRetrievalTool`（`app/tools/knowledge_retrieval.py`）per-KB bound 实例 + 不进 registry + `source_type="knowledge"` 字面量；只暴露 `query` 给 LLM（业界 LangChain `create_retriever_tool` 同款）+ `default_top_k=3` 装配阶段绑定。`_assemble_tools(cfg, user)` 单装配点扩 knowledge 来源（一次性 prefetch + filter `created_by` 归属校验，残留 id 自动跳过容错）；`prepare_stream(agent, request, user)` + playground route 联动加 user 形参。tool name = `knowledge_<kb.id.hex[:8]>`，description 拼 KB name + description 让 LLM 选库（Agentic RAG 业界范式）。**Playground 实测 LLM 主动调 KB tool 返 markdown 段落 + 相关度**。
 
 ## 下一步
 - **知识库 / RAG 模块 v1 整片完工（片1-6 收官）+ 收尾增强**：数据层 + KB CRUD + 存储抽象 + 文档上传/下载 + 处理管线 + 检索/命中测试全栈打通；**增强**：文档批量向量化/删除（部分成功语义）、命中测试检索耗时展示、文档列表段数展示、触发同步置 processing 修「刷新后轮询丢失」。
   - **方案见** `docs/design/knowledge-rag-v1.md`（spec + §13 切片清单全部勾掉）+ `knowledge-rag-decisions.md`（决策/权衡）。六片：VectorField + pgvector + 4 表迁移 0005 + AIModel.meta 0006 + KB CRUD + 存储抽象 R2/Local + Document 上传 CRUD 下载 8 端点 + Splitter 抽象层 + `process_document()` + 触发端点 + enum 化迁移 0007/0008 + 检索 service + 命中测试端点。详见最近迭代。
   - **v2 方向**：混合检索 / FTS / RRF / rerank / 多向量；切块优化（heading 感知——命中测试已暴露双换行段切分对 list-heavy md 失效，留作自研切块器 A/B 对照案例）；评估体系（Recall@k/MRR + LLM 自动造测试集）。
   - 既有决策：embedding 每库锁一个模型、rerank 先阿里、全文检索先 Postgres 原生 FTS（不够再上 ParadeDB pg_search，不上 ES）、切块默认（递归~512token+50overlap）+ 可配；混合检索/FTS/RRF/rerank/多向量 = v2；文档编辑用自封装 tiptap（后做）。
-- **Agent 模块（CRUD + Playground + 工具装配 全打通）**：架构地基见 `docs/architecture.md`（11 节战略 + 附录 A），产品形态（双入口 / 三层资源 / L1-L3 记忆 / @直连 vs 管家）保留为待迭代区。Hybrid Schema（核心列 + jsonb 扩展，AgentConfig 嵌套 schema 强类型契约 Pydantic + `extra="forbid"`）+ 模板层 1+N（1 个可配置 loop 引擎 `general` + N 个 graph 模板首批 0）。**已完成**：后端 5 端点 + 模板层 + LoopTemplate.build() 真实装配（共享 create_agent 工厂 + base_prompt 追加 system_prompt 不覆盖）+ Playground 对话流整片（runtime/runner + route + 前端通用对话层）+ 字段对齐（types/agent.ts + ConfigPanel + AgentCard 嵌套 schema）+ 头像统一默认 gopher 不暴露上传 UI + **工具装配链路全栈（见最近迭代「工具模块第一刀」）**。**接下来候选**：(a) MCP 工具接入（`mcp_tools` 字段 + `langchain-mcp-adapters` 运行时拉远端工具）/ (b) **KB-as-tool**（把现有 retriever service wrap 成 LangChain tool，按 `config.knowledge` 装 bound tools，Agentic RAG 落地）/ (c) 有 key 内置工具的凭据层（抄 Model Provider 那套，Fernet 加密 + 运行时工厂装配）/ (d) workspace 真对话片（chat 层全复用零工作量，仅后端 Conversation + Redis cache-aside）。详情页砍「正式对话」——归 workspace。
+- **Agent 模块（CRUD + Playground + 工具装配 全打通）**：架构地基见 `docs/architecture.md`（11 节战略 + 附录 A），产品形态（双入口 / 三层资源 / L1-L3 记忆 / @直连 vs 管家）保留为待迭代区。Hybrid Schema（核心列 + jsonb 扩展，AgentConfig 嵌套 schema 强类型契约 Pydantic + `extra="forbid"`）+ 模板层 1+N（1 个可配置 loop 引擎 `general` + N 个 graph 模板首批 0）。**已完成**：后端 5 端点 + 模板层 + LoopTemplate.build() 真实装配（共享 create_agent 工厂 + base_prompt 追加 system_prompt 不覆盖）+ Playground 对话流整片（runtime/runner + route + 前端通用对话层）+ 字段对齐（types/agent.ts + ConfigPanel + AgentCard 嵌套 schema）+ 头像统一默认 gopher 不暴露上传 UI + **工具装配链路全栈（见最近迭代「工具模块第一刀」）**。**接下来候选**：(a) MCP 工具接入（`mcp_tools` 字段 + `langchain-mcp-adapters` 运行时拉远端工具）/ ~~(b) KB-as-tool~~（已完成，见 2026-06-08 迭代）/ (c) 有 key 内置工具的凭据层（抄 Model Provider 那套，Fernet 加密 + 运行时工厂装配）/ (d) workspace 真对话片（chat 层全复用零工作量，仅后端 Conversation + Redis cache-aside）/ (e) **KB-as-tool v2 增强**（hybrid/keyword 模式实装 + KB slug 字段 + 多 KB rerank + 命中测试 UI 加 mode 选择器 + LangChain `create_retriever_tool` 工厂收口）。详情页砍「正式对话」——归 workspace。
 - **Workspace 模块（前端骨架完成，等后端起）**：列表 + 详情三栏 + 招募 + Conversation 切换 + @mention 双轨路由 mock 全画完（最近迭代）；后端待做：Workspace 模型 + CRUD（切片4）→ 实例注入引擎（切片5）→ supervisor LangGraph 调度（切片7+），跟 Agent 模块切片大纲走。
 - **前端 App Shell**：批次1骨架 ✅、批次2 头像菜单 ✅、批次3 admin 独立壳 ✅、批次4 Home 卡片式 dashboard ✅（静态占位版，数字待各模块接口就绪后灌真数）。
 - 后端可选生产功能（RBAC / Email 校验 / 密码重置 / 限流）随需推进。
@@ -85,6 +86,38 @@
 - 如果某次改动不足以影响项目理解，就不要把噪音写进来。
 
 ## 最近迭代
+
+### 2026-06-08 — KB-as-tool 后端整片打通：检索层策略重构 + per-KB tool 装配链路
+
+**检索层重构（`app/services/knowledge/retrieval/` 子包）**
+
+- 策略模式 + dispatch：`RetrievalMode` StrEnum（v1 仅 vector）+ `Retriever` ABC + `RetrievalParams` Pydantic（跨 mode 共用 query/top_k/similarity_threshold/mode）+ `RetrievalResult` dataclass（hits + timings dict，timings key 由具体 retriever 决定）。**新增 mode = 新建文件 + enum 加值 + dispatch 表加行，调用方零改动**。
+- `VectorRetriever`：现有 SQL 原封迁过来（pgvector 余弦距离 + DISTINCT ON 按段去重），timings 给 `{embed_ms, search_ms}`。
+- `RetrievalService.retrieve(user, kb_id, params)`：调度入口；归属校验 + KB 取 + dispatch + 外圈 `total_ms` 上移调度层统一收口。命中测试 / KB tool / 未来场景共用此入口。`_RETRIEVERS` 类属性 dict + retriever 模块级单例（无状态可共享）。
+- 老 `retrieval_service.py` 删；schema `RetrievalTestIn` 也删（跟 `RetrievalParams` 完全等价）；`retrieval-test` 端点 body 切到 `RetrievalParams`、内部走 `svc.retrieve()`、timings dict 解包重组 `RetrievalTestOut`——**老前端零改动同结果同字段**（mode 默认 vector）。
+
+**Tool 层（`app/tools/knowledge_retrieval.py`）**
+
+- `KnowledgeRetrievalTool`：per-KB bound 实例，绑 `kb_id` + `user`，**不进静态 registry**（registry 是 name → 单例 map，KB tool 跨用户跨 KB 多实例无法启动期注册）。`source_type` Literal 父类加 `"knowledge"` 字面量（Pydantic 子类不能扩 Literal，必须父类先加）。
+- 实例字段：`kb_id` / `user` / `default_top_k=3`；`model_config = arbitrary_types_allowed=True`（User 是 ORM 实例非 Pydantic 原生类型）。`name` / `description` / `display_name` 故意不给类级默认值——按 KB 动态拼装、构造时必传（docstring 明示，避免读者疑惑"少字段"）。
+- `KnowledgeRetrievalInput` 只暴露 `query` 给 LLM，**不暴露 top_k / mode / threshold**——业界标杆（LangChain `create_retriever_tool` / Anthropic / OpenAI Assistants）同款。理由：检索策略是开发者决策不是 LLM 决策，LLM 拍 K 实测比固定值更差。
+- `_format_hits`：命中段拼 markdown 给 LLM，`## [N] doc_name(相关度 0.xx)\n\n段全文`，段间 `---`；只返父级段、不返 chunk_text / id（噪音）。
+
+**装配集成（`runner.py` + `playground.py`）**
+
+- `_assemble_tools(cfg, user)` 加 user 形参 + knowledge 来源：`KnowledgeBase.filter(id__in=cfg.knowledge, created_by=user).all()` 一次性 prefetch + filter 顺便归属校验，残留 id 自动过滤（容错，不让残留配置炸 agent）。
+- `prepare_stream(agent, request, user)` 加 user 形参往下传；playground route 调时把 `current_user` 传下去（三处耦合一起改，分开做中间状态炸）。
+- tool name 规则：`knowledge_<kb.id.hex[:8]>`（满足 `^[a-zA-Z0-9_-]{1,64}$` 正则）；description 拼 `f"检索知识库《{kb.name}》：{desc}。当你需要..."`——LLM 选库就靠这个。
+
+**关键设计决策**
+
+- **每 KB 一 tool vs 单 tool 多入参**：选每 KB 一 tool（业界共识 LangChain / Anthropic / LlamaIndex 全这套）。理由：LLM 吐 UUID 不靠谱、跨库 score 归一化是大坑、LLM 主动选库可串可并、多 tool 噪音靠 `default_top_k=3` 缓解。OpenAI Assistants `file_search` 是单 tool 但靠闭源后端做归一化工程，独立开发者不复现。
+- **per-request 实例化是生产级**：tool 是轻量 Pydantic 对象不是 IO 资源；跟"每请求新建 LangChain ChatModel"一个逻辑（runner.py 现有注释明示廉价）；HTTP middleware chain / SQLAlchemy session 同款 per-request 模型。
+- **并发隔离三层**：Python coroutine 栈隔离 + service 单例无可变 self 状态 + Postgres MVCC；同 KB 多用户并发 0 问题。但**现有归属模型只允许 KB 创建者用**（filter `created_by=user`），跨用户共享 KB 是 RBAC / sharing 产品决策，不是检索层问题。
+- **不加 KB slug 字段**：name 用 `hex[:8]` + description 承担语义路由，YAGNI。真痛触发条件 = KB > 20 + LLM 频繁选错 + 运维要稳定可读 key。
+- **timings dict 形态**：用 dict[str, float] 而非强类型 Pydantic——不同 mode timings key 不同（vector 给 `{embed_ms, search_ms}`，将来 hybrid 给 `{embed_ms, vector_ms, keyword_ms, fusion_ms}`），dict + 端点 `.get(key, 0.0)` 兜底最干净。
+
+**端到端验证**：Playground 实测——LLM 主动调 `knowledge_<hex8>` tool、返 markdown 段落 + 相关度，UI ToolUseBlock 正常渲染。
 
 ### 2026-06-07 — Playground 整片端到端打通 + 字段对齐 + immer/Zustand 工厂踩坑
 
@@ -253,46 +286,8 @@
 
 - raw SQL 组织：内联参数化 vs 外置 `.sql` 文件 vs query-builder 编译注入（MaxKB）三档，**按规模匹配**——单条短查询内联最干净；规模涨先升「命名常量」再升「.sql 文件」；动态结构才上 query builder（SQLAlchemy Core/PyPika），不学 MaxKB 土法注入。我们 v2 三模式是「3 条固定 SQL + mode 选 + blend 走 Python RRF」，不需注入机器。
 
-### 2026-05-29 — 知识库片5 全栈：处理管线 + 触发端点 + enum 改造 + 前端入口轮询乐观更新
-
-**后端 5.1 Splitter 抽象层**
-
-- `app/services/knowledge/splitter/`：`Splitter` ABC（`split(text, config) -> list[str]`）+ `LangChainSplitter` 包 langchain `RecursiveCharacterTextSplitter`（v1 baseline）+ 模块级单例 `splitter`。v2 自研对照见 decisions §13，swap 装配一行、业务零改动。
-- 装 `langchain-text-splitters` 子包（不引全套 langchain）；chunk_size/overlap 用库级 `ChunkConfig`，默认 separators 走 `["\n\n", "\n", " ", ""]`。
-
-**后端 5.2 `process_document` 管线主函数**
-
-- 入口 `Document.get_or_none(id=doc_id).prefetch_related("knowledge_base__embedding_model__provider")`——**踩坑**：原本三层 `select_related` 嵌套触发 Tortoise 1.x `_fk_setter` 把 UUID 当 model 实例（`AttributeError: 'UUID' object has no attribute 'id'`），换 prefetch_related 走分多条 SQL 独立 _init_from_db 即稳。代价多几条 SQL，pipeline 场景可忽略。
-- 状态机：入口 `status=processing/stage=parsing` → 切段 `stage=splitting`（按双换行切段朴素版，v2 加 md heading）→ 切块 + 批量 embed `stage=embedding` → 收尾 `status=completed/stage=NONE`；任一步异常 → `status=failed` + `error_message`，stage 留在出错那步。
-- **重入策略**：开头 `Paragraph.filter(document_id=doc.id).delete()` 清旧（FK CASCADE 自动连带清 embeddings），允许 failed 重试 / 完成后重切。
-- **不开事务**：每步分阶段 save 让前端轮询能看到 stage 推进；BackgroundTasks 拿不到异常，try/except 整体包 + 失败落库 + log。
-- **分批 100 调 embedding**：汇总所有段子块 `[(paragraph_id, position, text), ...]` → 切片 batch 100 → 1 次 `ModelClient.create_embedding` + 1 次 `Embedding.bulk_create`；避撞 OpenAI/阿里单请求 input 上限。
-- **UUID7 Python 侧生成**：bulk_create 后 in-place 对象 id 已有、可直接复用挂 FK。
-
-**后端 5.3 触发端点**
-
-- `POST /knowledge-bases/{kb_id}/documents/{doc_id}/process`：`DocumentService.trigger_process` 状态校验（`stage=uploaded` 首次 / `status=failed` 重试可触发，processing/completed/pending 字节未传一律拒绝）+ `BackgroundTasks.add_task(process_document, doc.id)` 异步入队 + 立即返回。
-
-**模型层 enum 改造（顺手收口）**
-
-- `app/models/knowledge.py` 顶部加 4 个 StrEnum：`KBStatus` / `DocStatus` / `DocStage`（含 `NONE=""` 占位）/ `SourceType`（content/question/title v2 多向量留口子）。
-- 4 个字段（KB.status / Document.status,stage / Embedding.source_type）`CharField` → `CharEnumField`，max_length 不变 DB 列定义等价；service 6 处字符串赋值换 enum 引用。
-- 迁移 0007（knowledge_enum_status）+ 0008（embedding_enum_source_type），SQL 几乎 no-op（仅 schema 元数据更新、default 字面量相同）；StrEnum 继承 str 向后兼容、老字符串赋值仍可写入。
-- 收益：IDE 补全、防拼错；DB 读取自动转 enum 实例。
-- 决策：MaxKB 那种位运算多任务状态字符串 v1 不学（参考 decisions §11）；将来真要多任务（rerank / 生成假设问题）走 JSONB / 子表，不走位运算。
-
-**前端 trigger + 轮询 + 乐观更新**
-
-- `api/knowledge.ts` 加 `triggerProcessDocument`；`DocumentList` 三点菜单加「向量化 / 重试向量化」入口（仅 `display=uploaded/failed` 显示）。
-- `KnowledgeDetailPage` 加轮询 useEffect：`docs.some(d => d.status === 'processing')` 时 `setTimeout(refetchDocs, 1500)`，单次触发 + cleanup 自动续；全部脱离 processing 自动停。
-- **乐观更新解 race**：原本 trigger 后立即 refetch 太快、BackgroundTasks 还没设 status=processing → 轮询条件不成立、永远不轮。改 `onProcessed(docId)` 父级 `setDocs` 立即本地标 `processing/parsing`，UI 即时反馈 + 轮询条件立即成立、后端真实状态轮询回填。
-- 端到端：上传 → 待向量化 → 点向量化 → 处理中 pulse → 就绪。
-
-**收口**
-
-- §13 片5 勾掉；只剩**片6 检索 + 命中测试**（前端 RetrievalTest 组件已 mock 就位、后端接入只换函数实现）。
-
 ## 历史摘要
+- **2026-05-29 — 知识库片5 全栈：处理管线 + 触发端点 + enum 改造 + 前端入口轮询乐观更新**：Splitter 抽象层（`Splitter` ABC + `LangChainSplitter` 包 RecursiveCharacterTextSplitter，v2 自研对照 swap 装配一行）+ `process_document(doc_id)` 入口（解析→双换行切段→切块→批量 embed 100 一批，状态机 status/stage 推进 + try/except 兜底 + 开头清旧 Paragraph FK CASCADE 连带清 embeddings 支持重入）+ 触发端点 `POST .../process`（状态校验 + BackgroundTasks 异步入队）。**踩坑**：三层 `select_related` 嵌套触发 Tortoise 1.x `_fk_setter` 把 UUID 当 model 实例（`AttributeError`），换 prefetch_related 走多条 SQL 独立 _init_from_db 即稳。模型层 enum 化（4 个 StrEnum `KBStatus/DocStatus/DocStage/SourceType` + `CharEnumField`，迁移 0007/0008 几乎 no-op）。前端三点菜单加触发入口 + 轮询 useEffect + 乐观更新解 race（trigger 后父级立即标 processing 修「BackgroundTasks 还没设 status → 轮询条件不成立永不轮」）。**不开事务**：分阶段 save 让前端看到 stage 推进。决策：位运算多任务状态字符串 v1 不学，真要多任务走 JSONB / 子表。
 - **2026-05-28 — 知识库片4 全栈：上传 / CRUD / 下载 8 端点 + 前端文档真接通 + R2 download filename RFC 6266**：上传 3 端点（init / passthrough / complete）按 strategy 分流（R2 走 presign 3 步 / Local 走 passthrough 2 步）+ CRUD/download 4 端点 + raw 端点；Storage 扩 `stat_size` 复校真实大小（前端 init 声明的 size 可能撒谎）；MIME 后端定 + R2 presign 钉 Content-Type、前端 PUT 必须带相同 header。前端 `Document` types + 7 api 函数 + **裸 XHR 真上传进度**（R2，避开 axios 拦截器对 R2 空响应误解包、fetch 不支持 upload progress 标准缺口）+ axios `onUploadProgress`（Local）+ Promise.allSettled 并发 + 单文件失败隔离 + 50MB 上限；R2 CORS + Object R&W token 配妥（PUT 成功 body 空是 S3 协议设计）。R2 download filename：`ResponseContentDisposition=attachment; filename*=UTF-8''<encoded>` 塞 presigned URL + sanitize 去引号/换行防 header 注入，RFC 6266 中文不乱码、GitHub/Drive/Dropbox 同款。
 - **2026-05-28 — Workspace 模块前端完整骨架（纯 mock）+ KB 检索测试 mock + 卡片三点统一**：types/workspace.ts + workspace-mock-store + 列表页（成员头像堆叠 + 管家皇冠 + 三点删除）+ 详情页三栏（通讯录 240 / 主对话 / 产出物 320，两侧可独立收起，统一容器 `border + overflow-hidden + rounded-lg`）+ 主对话区核心 = `@mention 自动补全 popover`（textarea selectionStart 正则检测 + 候选浮层 + setSelectionRange）+ mock 双轨路由（@某成员 → 那成员答 / 否则管家答） + 招募弹窗两 tab（模板/Agent）+ Conversation 切换条（popover + 新对话）。KB 检索测试 tab 接 mock（query / topK Select / Cmd+Enter 触发 / 6 段递减相似度 mock，后端片6 接入只换函数实现组件不动）。卡片三点位置统一右上角（5 张卡片对齐）+ KnowledgeCard 状态点挪 embedding badge 行 + AIModelCard 启用图标挪类型 badge 旁，删 4 处 translate-y-3 hack 统一 -mt-1 微调。
 - **2026-05-28 — Agent 模块前端切片 0 + 路由→tab 自动同步 + 砍正式对话**：types/mock 重写（8 模板 + 5 Agent）+ AgentsPage 三带式 + AgentCard/TemplateCard/CreateAgentDialog + AgentDetailPage 左 ConfigPanel 40 / 右 Playground 60 + agent-mock-store（zustand）；全局机制 `router.subscribe('onResolved')` + `useTabSync` + `useTabTitle` 解决 tab 串台 / 时序竞争（删了 7 处 openTab 双调用）；砍 agent 详情页正式对话改沙盒、正式对话归 workspace。App Shell 高度链 `SidebarProvider h-svh + min-h-0` 锁定。**注意**：本片产物在 2026-06-04 已被「前端接真」彻底重写——Agent 形状对齐 jsonb / ConfigPanel 改保存按钮 / agent-mock-store 删除 / 模板池砍到 2 张。

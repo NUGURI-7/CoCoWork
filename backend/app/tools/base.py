@@ -30,7 +30,7 @@ class CoCoTool(BaseTool):
 
     # ---- 项目级元信息（LangChain BaseTool 没有的）----
     display_name: str  # 中文展示名；name 给 LLM（英文受正则约束）、本字段给人看
-    source_type: Literal["builtin", "mcp"] = "builtin"
+    source_type: Literal["builtin", "mcp", "knowledge"] = "builtin"
     dangerous: bool = False  # 有副作用（删文件 / 发请求 / 花钱）的工具标 True，未来接人工确认
 
     # ---- 横切行为参数 ----
