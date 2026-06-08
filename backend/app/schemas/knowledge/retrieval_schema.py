@@ -9,14 +9,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-class RetrievalTestIn(BaseModel):
-    """命中测试请求体。top_k / similarity_threshold 是查询时旋钮，不进表。"""
-    query: str = Field(min_length=1, max_length=2000, description="查询文本")
-    top_k: int = Field(default=5, ge=1, le=50, description="返回命中段数")
-    similarity_threshold: float = Field(
-        default=0.0, ge=0.0, le=1.0,
-        description="相似度阈值，低于此分的命中不返回；默认 0 = 不过滤",
-    )
 
 class RetrievalHit(BaseModel):
     """单条命中结果：命中子块所属的整段 + 来源 + 分数。

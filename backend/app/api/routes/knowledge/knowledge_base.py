@@ -10,7 +10,6 @@ from app.schemas.knowledge import (
     KnowledgeBaseCreate,
     KnowledgeBaseOut,
     KnowledgeBaseUpdate,
-    RetrievalTestIn,
     RetrievalTestOut,
 )
 from app.services.knowledge import (
@@ -19,6 +18,7 @@ from app.services.knowledge import (
     get_knowledge_base_service,
     get_retrieval_service,
 )
+from app.services.knowledge.retrieval import RetrievalParams
 
 router = APIRouter(prefix="/knowledge-bases", tags=["knowledge-bases"])
 
@@ -33,9 +33,9 @@ RetrievalServiceDep = Annotated[
 
 @router.post("", summary="创建知识库")
 async def create_knowledge_base(
-    data: KnowledgeBaseCreate,
-    current_user: CurrentUserDep,
-    svc: KnowledgeBaseServiceDep,
+        data: KnowledgeBaseCreate,
+        current_user: CurrentUserDep,
+        svc: KnowledgeBaseServiceDep,
 ) -> ResponseModel[KnowledgeBaseOut]:
     kb = await svc.create(current_user, data)
     return success(data=kb, message="创建成功")
@@ -43,8 +43,8 @@ async def create_knowledge_base(
 
 @router.get("", summary="列出自己的知识库")
 async def list_knowledge_bases(
-    current_user: CurrentUserDep,
-    svc: KnowledgeBaseServiceDep,
+        current_user: CurrentUserDep,
+        svc: KnowledgeBaseServiceDep,
 ) -> ResponseModel[list[KnowledgeBaseOut]]:
     kbs = await svc.list_own(current_user)
     return success(data=kbs)
@@ -52,9 +52,9 @@ async def list_knowledge_bases(
 
 @router.get("/{kb_id}", summary="知识库详情")
 async def get_knowledge_base(
-    kb_id: UUID,
-    current_user: CurrentUserDep,
-    svc: KnowledgeBaseServiceDep,
+        kb_id: UUID,
+        current_user: CurrentUserDep,
+        svc: KnowledgeBaseServiceDep,
 ) -> ResponseModel[KnowledgeBaseOut]:
     kb = await svc.get_by_id(current_user, kb_id)
     return success(data=kb)
@@ -62,10 +62,10 @@ async def get_knowledge_base(
 
 @router.put("/{kb_id}", summary="更新知识库")
 async def update_knowledge_base(
-    kb_id: UUID,
-    data: KnowledgeBaseUpdate,
-    current_user: CurrentUserDep,
-    svc: KnowledgeBaseServiceDep,
+        kb_id: UUID,
+        data: KnowledgeBaseUpdate,
+        current_user: CurrentUserDep,
+        svc: KnowledgeBaseServiceDep,
 ) -> ResponseModel[KnowledgeBaseOut]:
     kb = await svc.update(current_user, kb_id, data)
     return success(data=kb, message="更新成功")
@@ -73,9 +73,9 @@ async def update_knowledge_base(
 
 @router.delete("/{kb_id}", summary="删除知识库")
 async def delete_knowledge_base(
-    kb_id: UUID,
-    current_user: CurrentUserDep,
-    svc: KnowledgeBaseServiceDep,
+        kb_id: UUID,
+        current_user: CurrentUserDep,
+        svc: KnowledgeBaseServiceDep,
 ) -> ResponseModel[None]:
     await svc.delete(current_user, kb_id)
     return success(message="删除成功")
@@ -84,11 +84,14 @@ async def delete_knowledge_base(
 @router.post("/{kb_id}/retrieval-test", summary="命中测试（语义检索）")
 async def retrieval_test(
     kb_id: UUID,
-    data: RetrievalTestIn,
+    params: RetrievalParams,
     current_user: CurrentUserDep,
     svc: RetrievalServiceDep,
 ) -> ResponseModel[RetrievalTestOut]:
-    result = await svc.retrieval_test(
-        current_user, kb_id, data.query, data.top_k, data.similarity_threshold,
-    )
-    return success(data=result)
+    result = await svc.retrieve(current_user, kb_id, params)
+    return success(data=RetrievalTestOut(
+        hits=result.hits,
+        embed_ms=result.timings.get("embed_ms", 0.0),
+        search_ms=result.timings.get("search_ms", 0.0),
+        total_ms=result.timings.get("total_ms", 0.0),
+    ))

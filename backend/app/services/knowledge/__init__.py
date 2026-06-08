@@ -6,7 +6,7 @@ from app.services.knowledge.knowledge_base_service import (
     KnowledgeBaseService,
     get_knowledge_base_service,
 )
-from app.services.knowledge.retrieval_service import (
+from app.services.knowledge.retrieval import (
     RetrievalService,
     get_retrieval_service,
 )

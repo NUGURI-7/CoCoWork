@@ -1,20 +1,21 @@
-"""命中测试 / 语义检索 service。
+"""向量检索（v1 默认 mode）。
 
-v1 纯向量检索：query 向量化 → pgvector 余弦距离排序 → 按段去重（DISTINCT ON）
+query 向量化 → pgvector 余弦距离排序 → 按段去重（DISTINCT ON）
 → 阈值过滤 → top_k。Tortoise 不支持 pgvector 算子，核心查询走原生 SQL。
-不落库（即时查询），不依赖 LLM / Agent。
 """
 import time
-import logging
-from uuid import UUID
+
 from tortoise import connections
 
-from app.core.exceptions import NotFound404
-from app.models import User, KnowledgeBase
-from app.schemas.knowledge import RetrievalHit, RetrievalTestOut
+from app.models import KnowledgeBase
+from app.schemas.knowledge import RetrievalHit
+from app.services.knowledge.retrieval.base import (
+    RetrievalMode,
+    RetrievalParams,
+    RetrievalResult,
+    Retriever,
+)
 from app.services.model import ModelClient
-
-logger = logging.getLogger(__name__)
 
 
 def _to_vector_literal(vec: list[float]) -> str:
@@ -22,36 +23,32 @@ def _to_vector_literal(vec: list[float]) -> str:
     return "[" + ",".join(str(float(x)) for x in vec) + "]"
 
 
-class RetrievalService:
-    """语义检索（命中测试）。可见性：用户只能检索自己创建的库。"""
+class VectorRetriever(Retriever):
+    """纯向量检索。
 
-    async def retrieval_test(
-            self, user: User, kb_id: UUID, query: str,
-            top_k: int, similarity_threshold: float
-    ) -> RetrievalTestOut:
-        # 1. 校验归属 + 拿到 embedding 模型（带 provider 用于解析凭证）
-        kb = (
-            await KnowledgeBase.filter(id=kb_id, created_by=user).prefetch_related("embedding_model__provider").first()
-        )
-        if kb is None:
-            raise NotFound404("知识库不存在")
+    timings:
+        embed_ms：query 向量化耗时（调 embedding 模型，网络请求，通常占大头）
+        search_ms：pgvector 检索 SQL 耗时（本地 DB，通常很快）
+    """
+
+    mode = RetrievalMode.VECTOR
+
+    async def retrieve(self, kb: KnowledgeBase, params: RetrievalParams) -> RetrievalResult:
         t0 = time.perf_counter()
 
-        # 2. query 向量化（一条文本 → 一条向量）
+        # 1. query 向量化（一条文本 → 一条向量）
         #    注：BGE/E5 等模型需 query 前缀（query: ...）才最优，v1 暂未加（known gap）。
-        vectors = await ModelClient.create_embedding(kb.embedding_model, [query.strip()])
+        vectors = await ModelClient.create_embedding(kb.embedding_model, [params.query.strip()])
         query_literal = _to_vector_literal(vectors[0])
         t1 = time.perf_counter()
 
-        # 3. 原生 SQL 检索：
+        # 2. 原生 SQL 检索：
         #    - 内层 DISTINCT ON (paragraph_id) 按段去重，每段取最近子块
         #    - 外层按距离重排、阈值过滤、取 top_k
         #    - {dim} 是类型修饰符（不能参数化），用本库锁定维度 f-string 拼入；
         #      其余 query 向量 / kb_id / 阈值 / top_k 全走 $ 参数（防注入）。
-        #      cast 写法须与将来按库建的 H N S W 部分索引表达式一致才命中索引。
-
+        #      cast 写法须与将来按库建的 HNSW 部分索引表达式一致才命中索引。
         dim = kb.embedding_dim
-
         sql = f"""
             SELECT sub.paragraph_id, sub.document_id, sub.doc_name,
                 sub.content, sub.chunk_text, sub.distance
@@ -69,16 +66,15 @@ class RetrievalService:
             WHERE (1 - sub.distance) >= $3
             ORDER BY sub.distance
             LIMIT $4
-"""
+        """
 
         conn = connections.get("default")
-
         rows = await conn.execute_query_dict(
-            sql, [query_literal, kb_id, similarity_threshold, top_k],
+            sql, [query_literal, kb.id, params.similarity_threshold, params.top_k],
         )
         t2 = time.perf_counter()
 
-        # 4. 组装：score = 1 - 余弦距离
+        # 3. 组装：score = 1 - 余弦距离
         hits = [
             RetrievalHit(
                 paragraph_id=row["paragraph_id"],
@@ -90,13 +86,10 @@ class RetrievalService:
             )
             for row in rows
         ]
-        return RetrievalTestOut(
+        return RetrievalResult(
             hits=hits,
-            embed_ms=round((t1 - t0) * 1000, 1),  # perf_counter 返秒，*1000 转毫秒
-            search_ms=round((t2 - t1) * 1000, 1),
-            total_ms=round((t2 - t0) * 1000, 1),
+            timings={
+                "embed_ms": round((t1 - t0) * 1000, 1),
+                "search_ms": round((t2 - t1) * 1000, 1),
+            },
         )
-
-
-async def get_retrieval_service() -> RetrievalService:
-    return RetrievalService()
