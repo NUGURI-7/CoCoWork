@@ -12,8 +12,8 @@ export interface WorkspaceMember {
   id: string
   /** 实例在该空间的显示名 */
   name: string
-  /** 头像底色（hex），从源模板/Agent 继承 */
-  avatar_color: string
+  /** 头像 URL（缺省 fallback 到默认地鼠图），跟 AgentConfig.ui.avatar_url 对齐 */
+  avatar_url?: string | null
   /** 管家固定一个，其余都是 agent */
   role: 'supervisor' | 'agent'
   /** 来源：招毛坯模板 or 招用户已建的 Agent */

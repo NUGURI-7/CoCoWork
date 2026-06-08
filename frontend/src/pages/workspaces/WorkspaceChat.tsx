@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Crown, Send } from 'lucide-react'
+import { Send } from 'lucide-react'
 import { v4 as uuidv4 } from 'uuid'
 
 import { Button } from '@/components/ui/button'
@@ -18,8 +18,7 @@ interface WSMessage {
   /** 仅 assistant 有：发言成员快照 */
   senderId?: string
   senderName?: string
-  senderColor?: string
-  isSupervisor?: boolean
+  senderAvatarUrl?: string | null
   created_at: string
 }
 
@@ -123,8 +122,7 @@ export function WorkspaceChat({ members }: WorkspaceChatProps) {
           content: replyContent,
           senderId: target!.id,
           senderName: target!.name,
-          senderColor: target!.avatar_color,
-          isSupervisor: target!.role === 'supervisor',
+          senderAvatarUrl: target!.avatar_url,
           created_at: new Date().toISOString(),
         },
       ])
@@ -174,12 +172,11 @@ export function WorkspaceChat({ members }: WorkspaceChatProps) {
                   onClick={() => insertMention(mb)}
                   className="hover:bg-muted flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left"
                 >
-                  <div
-                    className="flex size-6 shrink-0 items-center justify-center rounded-full text-[10px] font-medium text-white"
-                    style={{ backgroundColor: mb.avatar_color }}
-                  >
-                    {mb.name.slice(0, 1)}
-                  </div>
+                  <img
+                    src={mb.avatar_url ?? '/gopher-fcb-glass.png'}
+                    alt={mb.name}
+                    className="size-6 shrink-0 rounded-full object-cover"
+                  />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm">{mb.name}</div>
                     <div className="text-muted-foreground truncate text-[11px]">
@@ -237,12 +234,11 @@ function MessageBubble({ msg }: { msg: WSMessage }) {
   }
   return (
     <div className="flex items-start gap-2.5">
-      <div
-        className="flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-medium text-white"
-        style={{ backgroundColor: msg.senderColor ?? '#888' }}
-      >
-        {msg.isSupervisor ? <Crown className="size-3.5" /> : msg.senderName?.slice(0, 1)}
-      </div>
+      <img
+        src={msg.senderAvatarUrl ?? '/gopher-fcb-glass.png'}
+        alt={msg.senderName ?? ''}
+        className="size-7 shrink-0 rounded-full object-cover"
+      />
       <div className="min-w-0 flex-1 space-y-1">
         <div className="text-brand text-xs font-medium">{msg.senderName}</div>
         <div className="bg-background max-w-[75%] rounded-2xl rounded-tl-sm border px-3.5 py-2 text-sm">

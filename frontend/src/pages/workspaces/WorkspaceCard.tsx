@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { Crown, MoreHorizontal, Trash2, Users } from 'lucide-react'
+import { MoreHorizontal, Trash2, Users } from 'lucide-react'
 import { toast } from 'sonner'
 
 import {
@@ -47,18 +47,13 @@ function MemberStack({ workspace }: { workspace: Workspace }) {
   return (
     <div className="flex items-center -space-x-2">
       {shown.map((m) => (
-        <div
+        <img
           key={m.id}
-          className="bg-background ring-background flex size-7 items-center justify-center rounded-full text-[11px] font-medium text-white ring-2"
-          style={{ backgroundColor: m.avatar_color }}
+          src={m.avatar_url ?? '/gopher-fcb-glass.png'}
+          alt={m.name}
           title={m.name}
-        >
-          {m.role === 'supervisor' ? (
-            <Crown className="size-3.5" />
-          ) : (
-            m.name.slice(0, 1)
-          )}
-        </div>
+          className="bg-background ring-background size-7 rounded-full object-cover ring-2"
+        />
       ))}
       {rest > 0 && (
         <div className="bg-muted text-muted-foreground ring-background flex size-7 items-center justify-center rounded-full text-[11px] font-medium ring-2">

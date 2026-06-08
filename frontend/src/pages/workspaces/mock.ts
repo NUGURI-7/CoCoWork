@@ -9,7 +9,6 @@ function supervisor(): WorkspaceMember {
   return {
     id: uuidv4(),
     name: '管家',
-    avatar_color: '#2f6b53',
     role: 'supervisor',
     source: 'template',
     source_name: '调度',
@@ -27,7 +26,6 @@ export const mockWorkspaces: Workspace[] = [
       {
         id: 'wm-researcher',
         name: '研究员',
-        avatar_color: '#2f6b53',
         role: 'agent',
         source: 'template',
         source_name: '研究员',
@@ -36,7 +34,6 @@ export const mockWorkspaces: Workspace[] = [
       {
         id: 'wm-writer',
         name: '学术写手',
-        avatar_color: '#7c5cff',
         role: 'agent',
         source: 'agent',
         source_name: '营销文案手',
@@ -45,7 +42,6 @@ export const mockWorkspaces: Workspace[] = [
       {
         id: 'wm-proofreader',
         name: '校对',
-        avatar_color: '#0ea5e9',
         role: 'agent',
         source: 'template',
         source_name: '校对',
@@ -78,7 +74,6 @@ export const mockWorkspaces: Workspace[] = [
       {
         id: 'wm-marketing',
         name: '文案手',
-        avatar_color: '#7c5cff',
         role: 'agent',
         source: 'agent',
         source_name: '营销文案手',
@@ -87,7 +82,6 @@ export const mockWorkspaces: Workspace[] = [
       {
         id: 'wm-analyst',
         name: '数据分析师',
-        avatar_color: '#3b82f6',
         role: 'agent',
         source: 'template',
         source_name: '数据分析师',

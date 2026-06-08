@@ -22,7 +22,7 @@ interface TemplateCardProps {
 }
 
 export function TemplateCard({ template, onClick }: TemplateCardProps) {
-  const Icon = iconMap[template.icon] ?? Sparkles
+  const Icon = iconMap[template.icon ?? ''] ?? Sparkles
   const disabled = template.disabled === true
 
   const card = (

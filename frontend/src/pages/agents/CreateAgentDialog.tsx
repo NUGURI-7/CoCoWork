@@ -72,9 +72,7 @@ export function CreateAgentDialog({
       name: name.trim(),
       description: '',
       template: selectedTemplate.key,
-      config: {
-        avatar_color: selectedTemplate.default_avatar_color,
-      },
+      config: {},
     }
     try {
       const created = await createAgent(payload)
@@ -106,7 +104,7 @@ export function CreateAgentDialog({
             </Label>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {mockTemplates.map((t) => {
-                const Icon = iconMap[t.icon] ?? Sparkles
+                const Icon = iconMap[t.icon ?? ''] ?? Sparkles
                 const isSelected = selectedId === t.id
                 const isDisabled = t.disabled === true
                 return (
@@ -114,7 +112,7 @@ export function CreateAgentDialog({
                     key={t.id}
                     type="button"
                     disabled={isDisabled}
-                    onClick={() => setSelectedId(t.id)}
+                    onClick={() => setSelectedId(t.id ?? null)}
                     className={cn(
                       'flex flex-col items-center gap-1.5 rounded-lg border p-3 text-center transition',
                       isDisabled

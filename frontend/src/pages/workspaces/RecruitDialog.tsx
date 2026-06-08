@@ -20,7 +20,7 @@ import type { BehaviorType, Template, WorkspaceMember } from '@/types'
 type AgentLite = {
   id: string
   name: string
-  avatar_color: string
+  avatar_url?: string | null
   behavior_type: BehaviorType
   template_name: string
 }
@@ -70,7 +70,6 @@ export function RecruitDialog({ open, onOpenChange, onRecruit }: RecruitDialogPr
       onRecruit({
         id: uuidv4(),
         name: t.name,
-        avatar_color: t.default_avatar_color,
         role: 'agent',
         source: 'template',
         source_name: t.name,
@@ -82,7 +81,7 @@ export function RecruitDialog({ open, onOpenChange, onRecruit }: RecruitDialogPr
       onRecruit({
         id: uuidv4(),
         name: a.name,
-        avatar_color: a.avatar_color,
+        avatar_url: a.avatar_url,
         role: 'agent',
         source: 'agent',
         source_name: a.name,
@@ -116,7 +115,7 @@ export function RecruitDialog({ open, onOpenChange, onRecruit }: RecruitDialogPr
                   <button
                     key={t.id}
                     type="button"
-                    onClick={() => setSelectedTemplateId(t.id)}
+                    onClick={() => setSelectedTemplateId(t.id ?? null)}
                     className={cn(
                       'flex items-center gap-3 rounded-lg border p-3 text-left transition',
                       sel
@@ -124,12 +123,11 @@ export function RecruitDialog({ open, onOpenChange, onRecruit }: RecruitDialogPr
                         : 'hover:bg-muted',
                     )}
                   >
-                    <div
-                      className="flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-medium text-white"
-                      style={{ backgroundColor: t.default_avatar_color }}
-                    >
-                      {t.name.slice(0, 1)}
-                    </div>
+                    <img
+                      src="/gopher-fcb-glass.png"
+                      alt={t.name}
+                      className="size-8 shrink-0 rounded-full object-cover"
+                    />
                     <div className="min-w-0">
                       <div className={cn('truncate text-sm font-medium', sel && 'text-brand')}>
                         {t.name}
@@ -165,12 +163,11 @@ export function RecruitDialog({ open, onOpenChange, onRecruit }: RecruitDialogPr
                           : 'hover:bg-muted',
                       )}
                     >
-                      <div
-                        className="flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-medium text-white"
-                        style={{ backgroundColor: a.avatar_color }}
-                      >
-                        {a.name.slice(0, 1)}
-                      </div>
+                      <img
+                        src={a.avatar_url ?? '/gopher-fcb-glass.png'}
+                        alt={a.name}
+                        className="size-8 shrink-0 rounded-full object-cover"
+                      />
                       <div className="min-w-0">
                         <div className={cn('truncate text-sm font-medium', sel && 'text-brand')}>
                           {a.name}

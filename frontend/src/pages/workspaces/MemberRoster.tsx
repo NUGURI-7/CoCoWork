@@ -1,4 +1,4 @@
-import { Crown, UserPlus, X } from 'lucide-react'
+import { UserPlus, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -76,12 +76,11 @@ function MemberRow({ member }: { member: WorkspaceMember }) {
         'flex items-center gap-2.5 rounded-md px-2 py-1.5 transition hover:bg-background',
       )}
     >
-      <div
-        className="flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-medium text-white"
-        style={{ backgroundColor: member.avatar_color }}
-      >
-        {isSupervisor ? <Crown className="size-3.5" /> : member.name.slice(0, 1)}
-      </div>
+      <img
+        src={member.avatar_url ?? '/gopher-fcb-glass.png'}
+        alt={member.name}
+        className="size-7 shrink-0 rounded-full object-cover"
+      />
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">{member.name}</div>
         <div className="text-muted-foreground truncate text-[11px]">

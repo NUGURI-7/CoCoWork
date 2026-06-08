@@ -50,7 +50,6 @@ export function CreateWorkspaceDialog({
         {
           id: uuidv4(),
           name: '管家',
-          avatar_color: '#2f6b53',
           role: 'supervisor',
           source: 'template',
           source_name: '调度',
