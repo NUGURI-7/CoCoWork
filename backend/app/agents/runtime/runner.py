@@ -20,10 +20,11 @@ from uuid_utils import uuid7
 
 from app.agents.runtime.adapter import adapt_chat_stream
 from app.agents.runtime.events import EventType, sse_event
+from app.agents.runtime.spec import AgentSpec
 from app.agents.templates import get_template
 from app.core.encryption import decrypt
 from app.core.exceptions import ValidationException
-from app.models import Agent, KnowledgeBase, User
+from app.models import KnowledgeBase, User
 from app.models.model import AIModel
 from app.schemas.agent.chat_schema import ChatStreamRequest
 from app.schemas.agent.chat_schema import ContentBlock, HistoryMessage
@@ -191,7 +192,7 @@ def _build_kb_tool_description(kb: KnowledgeBase) -> str:
 
 
 async def prepare_stream(
-        agent: Agent,
+        spec: AgentSpec,
         request: ChatStreamRequest,
         user: User,
 ) -> tuple[CompiledStateGraph, list[BaseMessage]]:
@@ -201,16 +202,16 @@ async def prepare_stream(
     一旦返回 (graph, messages)，调用方就可以放心交给 StreamingResponse（不再有 raise 风险）。
 
     Raises:
-        ValidationException: agent.config 形态错 / 模板不在册 / chat 模型未配 / 槽位类型错
+        ValidationException: 模板不在册 / chat 模型未配 / 槽位类型错
     """
-    cfg = AgentConfig.model_validate(agent.config)
+    cfg = spec.config
 
     if cfg.models.chat is None:
         raise ValidationException("Agent 未配置 chat 模型")
 
-    template = get_template(agent.template)
+    template = get_template(spec.template)
     if template is None:
-        raise ValidationException(f"模板不在册：{agent.template}")
+        raise ValidationException(f"模板不在册：{spec.template}")
 
     chat_model = await build_chat_model(cfg.models.chat)
 

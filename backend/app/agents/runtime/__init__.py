@@ -1,3 +1,4 @@
 from app.agents.runtime.runner import prepare_stream, run_chat_stream
+from app.agents.runtime.spec import AgentSpec
 
-__all__ = ["prepare_stream", "run_chat_stream"]
+__all__ = ["AgentSpec", "prepare_stream", "run_chat_stream"]
