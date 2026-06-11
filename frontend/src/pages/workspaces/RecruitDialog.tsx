@@ -13,7 +13,9 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { mockTemplates } from '@/pages/agents/mock'
-import type { BehaviorType, Template, WorkspaceMember } from '@/types'
+import type { BehaviorType, Template } from '@/types'
+
+import type { WorkspaceMember } from './mock'
 
 /** mockAgents 已下线（agents 列表接真后端）；workspace 切片本身也未接真接口，
  *  「从我的 Agent」tab 暂以空数组占位，下一口跟 workspace 切片一起接 `listAgents()`。 */

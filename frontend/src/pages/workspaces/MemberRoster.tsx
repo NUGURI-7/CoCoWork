@@ -2,7 +2,7 @@ import { UserPlus, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import type { WorkspaceMember } from '@/types'
+import type { WorkspaceMember } from './mock'
 
 interface MemberRosterProps {
   members: WorkspaceMember[]

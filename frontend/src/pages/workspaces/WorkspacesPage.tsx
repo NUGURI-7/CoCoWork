@@ -1,32 +1,56 @@
-import { useState } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { useCallback, useEffect, useState } from 'react'
+import { ring } from 'ldrs'
 import { Layers, Plus } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { deleteWorkspace, listWorkspaces } from '@/api/workspace'
 import { Button } from '@/components/ui/button'
 import { useWorkspaceTabsStore } from '@/stores/tab-store'
 import type { Workspace } from '@/types'
 import { CreateWorkspaceDialog } from './CreateWorkspaceDialog'
 import { WorkspaceCard } from './WorkspaceCard'
-import { useWorkspaceMockStore } from './workspace-mock-store'
+
+ring.register()
 
 /** /workspaces — 工作空间列表页（Header + 卡片网格） */
 export default function WorkspacesPage() {
-  const navigate = useNavigate()
-  const workspaces = useWorkspaceMockStore((s) => s.workspaces)
-  const addWorkspace = useWorkspaceMockStore((s) => s.add)
-  const removeWorkspace = useWorkspaceMockStore((s) => s.remove)
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
 
+  const refetch = useCallback(async () => {
+    setLoading(true)
+    try {
+      const data = await listWorkspaces()
+      setWorkspaces(data)
+    } catch {
+      // 全局拦截器已 toast；保持空列表
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    refetch()
+  }, [refetch])
+
   function handleCreate(ws: Workspace) {
-    addWorkspace(ws)
+    // 创建接口返完整 WorkspaceOut，直接头插（列表按活跃倒序）不重拉。
+    // 暂不跳详情 —— 详情页 3c 接真后恢复「创建即进入」。
+    setWorkspaces((prev) => [ws, ...prev])
     toast.success(`工作空间「${ws.name}」已创建`)
-    navigate({ to: '/workspaces/$workspaceId', params: { workspaceId: ws.id } })
   }
 
-  function handleDelete(id: string) {
-    removeWorkspace(id)
-    useWorkspaceTabsStore.getState().close(`/workspaces/${id}`)
+  async function handleDelete(id: string) {
+    const target = workspaces.find((w) => w.id === id)
+    try {
+      await deleteWorkspace(id)
+      setWorkspaces((prev) => prev.filter((w) => w.id !== id))
+      useWorkspaceTabsStore.getState().close(`/workspaces/${id}`)
+      toast.success(`工作空间「${target?.name ?? ''}」已删除`)
+    } catch {
+      // 全局拦截器已 toast 失败原因；列表保持原样
+    }
   }
 
   return (
@@ -52,7 +76,11 @@ export default function WorkspacesPage() {
       />
 
       {/* 卡片网格 */}
-      {workspaces.length === 0 ? (
+      {loading ? (
+        <div className="flex min-h-[40vh] items-center justify-center">
+          <l-ring size="36" stroke="3" speed="2" color="#2f6b53" />
+        </div>
+      ) : workspaces.length === 0 ? (
         <EmptyState onCreate={() => setDialogOpen(true)} />
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

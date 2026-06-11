@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { v4 as uuidv4 } from 'uuid'
+import { toast } from 'sonner'
 
+import { createWorkspace } from '@/api/workspace'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -18,7 +19,7 @@ import type { Workspace } from '@/types'
 interface CreateWorkspaceDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** 创建后回调，父级负责 push 列表 + 跳详情 */
+  /** 创建成功后回调（真 WorkspaceOut），父级负责 push 列表 + 跳详情 */
   onCreate: (workspace: Workspace) => void
 }
 
@@ -29,6 +30,7 @@ export function CreateWorkspaceDialog({
 }: CreateWorkspaceDialogProps) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -36,40 +38,24 @@ export function CreateWorkspaceDialog({
     setDescription('')
   }, [open])
 
-  const canCreate = name.trim().length > 0
+  const canCreate = name.trim().length > 0 && !submitting
 
-  function handleCreate() {
-    if (!name.trim()) return
-    const now = new Date().toISOString()
-    const newWorkspace: Workspace = {
-      id: uuidv4(),
-      name: name.trim(),
-      description: description.trim(),
-      // 新空间默认带一个管家
-      members: [
-        {
-          id: uuidv4(),
-          name: '管家',
-          role: 'supervisor',
-          source: 'template',
-          source_name: '调度',
-          behavior_type: 'supervisor',
-        },
-      ],
-      // 新空间默认带一条空对话
-      conversations: [
-        {
-          id: uuidv4(),
-          title: '新对话',
-          created_at: now,
-          updated_at: now,
-        },
-      ],
-      created_at: now,
-      updated_at: now,
+  async function handleCreate() {
+    if (!name.trim() || submitting) return
+    setSubmitting(true)
+    try {
+      // supervisor / config 由后端给默认值，body 只送名字和描述
+      const created = await createWorkspace({
+        name: name.trim(),
+        description: description.trim(),
+      })
+      onCreate(created)
+      onOpenChange(false)
+    } catch (err) {
+      toast.error(err instanceof Error && err.message ? err.message : '创建失败')
+    } finally {
+      setSubmitting(false)
     }
-    onCreate(newWorkspace)
-    onOpenChange(false)
   }
 
   return (
@@ -112,7 +98,7 @@ export function CreateWorkspaceDialog({
             取消
           </Button>
           <Button disabled={!canCreate} onClick={handleCreate}>
-            创建
+            {submitting ? '创建中…' : '创建'}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { MoreHorizontal, Trash2, Users } from 'lucide-react'
-import { toast } from 'sonner'
+import { Crown, MoreHorizontal, Trash2 } from 'lucide-react'
 
 import {
   AlertDialog,
@@ -40,26 +39,19 @@ function timeAgo(dateStr: string): string {
   return `${days} 天前`
 }
 
-/** 成员头像堆叠（最多显示 4 个，多余折成 +N） */
-function MemberStack({ workspace }: { workspace: Workspace }) {
-  const shown = workspace.members.slice(0, 4)
-  const rest = workspace.members.length - shown.length
+/** 管家头像（d-1 后端只有 supervisor；d-2 member 接真后恢复成员头像堆叠 + N 计数） */
+function SupervisorBadge() {
   return (
-    <div className="flex items-center -space-x-2">
-      {shown.map((m) => (
-        <img
-          key={m.id}
-          src={m.avatar_url ?? '/gopher-fcb-glass.png'}
-          alt={m.name}
-          title={m.name}
-          className="bg-background ring-background size-7 rounded-full object-cover ring-2"
-        />
-      ))}
-      {rest > 0 && (
-        <div className="bg-muted text-muted-foreground ring-background flex size-7 items-center justify-center rounded-full text-[11px] font-medium ring-2">
-          +{rest}
-        </div>
-      )}
+    <div className="flex min-w-0 items-center gap-2">
+      <img
+        src="/gopher-fcb-glass.png"
+        alt="管家"
+        className="bg-background size-7 rounded-full object-cover"
+      />
+      <span className="text-muted-foreground inline-flex items-center gap-1 text-xs">
+        <Crown className="text-brand size-3.5" />
+        管家
+      </span>
     </div>
   )
 }
@@ -73,8 +65,8 @@ export function WorkspaceCard({ workspace, onDelete }: WorkspaceCardProps) {
   }
 
   function handleDelete() {
+    // 成功/失败的 toast 归父级（它才知道 API 结果）
     onDelete?.(workspace.id)
-    toast.success(`工作空间「${workspace.name}」已删除`)
     setConfirmOpen(false)
   }
 
@@ -125,15 +117,9 @@ export function WorkspaceCard({ workspace, onDelete }: WorkspaceCardProps) {
 
           <Separator />
 
-          {/* 数据区：成员头像堆叠 + 成员数 | 更新时间 */}
+          {/* 数据区：管家标识 | 更新时间 */}
           <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2.5">
-              <MemberStack workspace={workspace} />
-              <span className="text-muted-foreground inline-flex items-center gap-1 text-xs">
-                <Users className="size-3.5" />
-                {workspace.members.length} 成员
-              </span>
-            </div>
+            <SupervisorBadge />
             <span className="text-muted-foreground shrink-0 text-xs">
               {timeAgo(workspace.updated_at)}
             </span>

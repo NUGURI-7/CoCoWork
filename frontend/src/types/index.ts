@@ -40,7 +40,18 @@ export type {
   RetrievalTestResult,
   BatchProcessResult,
 } from './knowledge'
-export type { WorkspaceMember, Conversation, Workspace } from './workspace'
+export type {
+  Workspace,
+  WorkspaceCreatePayload,
+  WorkspaceUpdatePayload,
+  Conversation,
+  ConversationCreatePayload,
+  ConversationUpdatePayload,
+  MessageRole,
+  SenderKind,
+  MessageStatus,
+  WorkspaceMessage,
+} from './workspace'
 export type { ToolSource, Tool } from './tool'
 export type {
   // 协议层

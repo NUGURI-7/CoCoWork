@@ -27,6 +27,7 @@
 
 import { createStore, type StoreApi } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
+import { v4 as uuidv4 } from 'uuid'
 
 import { ChatStreamHttpError, streamChat } from '@/api/chat-stream'
 import type {
@@ -52,7 +53,7 @@ import type {
 
 /** 前端生成的消息临时 id（user 消息 / 错误兜底消息用） */
 function uuid(): string {
-  return crypto.randomUUID()
+  return uuidv4()
 }
 
 /**
@@ -75,8 +76,9 @@ function messagesToHistory(messages: ChatMessage[]): ApiHistoryMessage[] {
 /**
  * tool_use_stop 时解 partial_json 取首个 string 值作 inputPreview。
  * 失败保留后端 preview 原值。
+ * 导出共用：历史还原（DB 落库的 input_preview 是空串）同款解析。
  */
-function previewFromPartialJson(partial: string): string | null {
+export function previewFromPartialJson(partial: string): string | null {
   try {
     const obj = JSON.parse(partial)
     const v = Object.values(obj).find((x) => typeof x === 'string')
@@ -95,6 +97,9 @@ export interface ChatState {
   send: (content: ApiContentBlock[]) => Promise<void>
   stop: () => void
   reset: () => void
+  /** 用 DB 历史一次性灌入 messages（进对话回放）。流中不可调 —— 调用方靠
+   *  「历史加载完成前禁发」保证时序，store 不做条件合并。 */
+  hydrate: (messages: ChatMessage[]) => void
 }
 
 /**
@@ -107,8 +112,12 @@ export type ChatStore = StoreApi<ChatState>
 
 export function createChatStore({
   endpoint,
+  sendHistory = true,
 }: {
   endpoint: string
+  /** body 是否携带 history。沙盒（Playground）前端持历史须送 true；
+   *  workspace 历史真源在 DB、后端自己拼，传 false 不送。 */
+  sendHistory?: boolean
 }): ChatStore {
   // AbortController 内部维护 —— send 时新建、stop / reset / 完成时丢弃
   let abortCtrl: AbortController | null = null
@@ -342,7 +351,9 @@ export function createChatStore({
             s.messages.push({ role: 'user', id: uuid(), content })
             s.isLoading = true
           })
-          const history = messagesToHistory(get().messages.slice(0, -1))
+          const history = sendHistory
+            ? messagesToHistory(get().messages.slice(0, -1))
+            : []
 
           // 2) 新建 abort signal
           abortCtrl = new AbortController()
@@ -386,6 +397,13 @@ export function createChatStore({
           abortCtrl = null
           set((s) => {
             s.messages = []
+            s.isLoading = false
+          })
+        },
+
+        hydrate(messages) {
+          set((s) => {
+            s.messages = messages
             s.isLoading = false
           })
         },

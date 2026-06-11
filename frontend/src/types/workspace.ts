@@ -1,45 +1,97 @@
 /**
- * Workspace 模块类型 — 对齐 docs/design/agent-module-v1.md §5
+ * Workspace 模块类型 — 对齐后端 schemas/workspace/*（WorkspaceOut / ConversationOut / MessageOut）
  *
- * ⚠️ v0 画图占位形态，非正式 schema。后端切片 4+ 出真接口时照着重写。
- * 成员（实例）直接内嵌进 Workspace，画 UI 方便；正式版会拆 member 表 + 注入字段。
+ * API 字段 snake_case 透传（项目约定，与后端零映射）。
+ * UI 画图期的 mock 形态（内嵌 members/conversations）已迁往 pages/workspaces/mock.ts，
+ * d-2 招募 / 成员接真时随 mock 一起退役。
  */
 
-import type { BehaviorType } from './agent'
+// ============ Workspace ============
 
-/** 工作空间成员（= spec 里的 Agent 实例的前端简化形态） */
-export interface WorkspaceMember {
-  id: string
-  /** 实例在该空间的显示名 */
-  name: string
-  /** 头像 URL（缺省 fallback 到默认地鼠图），跟 AgentConfig.ui.avatar_url 对齐 */
-  avatar_url?: string | null
-  /** 管家固定一个，其余都是 agent */
-  role: 'supervisor' | 'agent'
-  /** 来源：招毛坯模板 or 招用户已建的 Agent */
-  source: 'template' | 'agent'
-  /** 来源名（"研究员" / "营销文案手"），UI 标注用 */
-  source_name: string
-  behavior_type: BehaviorType
-}
-
-/** 对话（v0 只存元数据，messages 仍走组件内存） */
-export interface Conversation {
-  id: string
-  title: string
-  created_at: string
-  updated_at: string
-}
-
-/** 工作空间 */
+/** 对齐后端 WorkspaceOut */
 export interface Workspace {
   id: string
   name: string
   description: string
-  /** 内嵌成员（含管家），画卡片头像堆叠 + 详情通讯录共用 */
-  members: WorkspaceMember[]
-  /** 该空间的对话历史（按 updated_at 倒序展示） */
-  conversations: Conversation[]
+  avatar_url: string
+  /** 内置管家完整配置（AgentConfig 形态 jsonb），d-1 前端只透传不编辑 */
+  supervisor: Record<string, unknown>
+  /** workspace 自身配置（路由策略 / 开场白 / 共享资源），v1 前端暂不消费 */
+  config: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+/** 对齐后端 WorkspaceCreate（supervisor / config 由后端给默认值） */
+export interface WorkspaceCreatePayload {
+  name: string
+  description?: string
+  avatar_url?: string
+}
+
+/** 对齐后端 WorkspaceUpdate（PATCH 风格，字段全可选） */
+export interface WorkspaceUpdatePayload {
+  name?: string
+  description?: string
+  avatar_url?: string
+  supervisor?: Record<string, unknown>
+  config?: Record<string, unknown>
+}
+
+// ============ Conversation ============
+
+/** 对齐后端 ConversationOut */
+export interface Conversation {
+  id: string
+  workspace_id: string
+  /** 空串 = 标题待生成（创建时不强求，首轮对话后系统补） */
+  title: string
+  /** 对话级临时覆盖（换模型 / 开 thinking），v1 前端暂不消费 */
+  config: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+/** 对齐后端 ConversationCreate */
+export interface ConversationCreatePayload {
+  title?: string
+}
+
+/** 对齐后端 ConversationUpdate */
+export interface ConversationUpdatePayload {
+  title?: string
+  config?: Record<string, unknown>
+}
+
+// ============ Message ============
+
+/** 协议层角色（对齐后端 MessageRole） */
+export type MessageRole = 'user' | 'assistant'
+
+/** 业务层发送方：真人 / 管家 / 普通成员（对齐后端 SenderKind） */
+export type SenderKind = 'user' | 'supervisor' | 'member'
+
+/** 落库终态（对齐后端 MessageStatus；流式中间态不入库） */
+export type MessageStatus = 'done' | 'error' | 'stopped'
+
+/**
+ * 对齐后端 MessageOut。
+ *
+ * content 块形态 = SSE 事件攒平（text / thinking / tool_use，snake_case），
+ * 与流式协议同构 —— 历史还原成 RenderBlock 时复用流式同款翻译逻辑。
+ * 命名带 Workspace 前缀以区分 chat.ts 的渲染层 Message union。
+ */
+export interface WorkspaceMessage {
+  id: string
+  conversation_id: string
+  role: MessageRole
+  sender_kind: SenderKind
+  /** 发送的成员 id（踢人后置 null 保历史）；user / supervisor 消息恒为 null */
+  sender_member_id: string | null
+  content: Record<string, unknown>[]
+  mentioned_member_ids: string[]
+  status: MessageStatus
+  error_message: string
   created_at: string
   updated_at: string
 }

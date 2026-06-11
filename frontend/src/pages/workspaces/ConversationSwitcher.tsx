@@ -63,7 +63,8 @@ export function ConversationSwitcher({
             className="hover:bg-muted flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-left transition"
           >
             <span className="truncate text-sm font-medium">
-              {current?.title ?? '无对话'}
+              {/* 空串 = 标题待生成（首轮对话后系统补） */}
+              {current ? current.title || '新对话' : '无对话'}
             </span>
             <ChevronDown className="text-muted-foreground size-3.5 shrink-0" />
           </button>
@@ -97,7 +98,7 @@ export function ConversationSwitcher({
                           isActive && 'text-brand font-medium',
                         )}
                       >
-                        {c.title}
+                        {c.title || '新对话'}
                       </div>
                       <div className="text-muted-foreground text-[11px]">
                         {timeAgo(c.updated_at)}

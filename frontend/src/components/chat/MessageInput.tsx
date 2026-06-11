@@ -3,6 +3,13 @@ import { SendHorizontal, Square } from 'lucide-react'
 
 import { useChat } from './ChatProvider'
 
+interface MessageInputProps {
+  /** 整体禁发（如前置配置未就绪）。textarea + 发送键一起禁。 */
+  disabled?: boolean
+  /** disabled 时 textarea 的占位提示（告诉用户为什么发不了 / 去哪解决）。 */
+  disabledHint?: string
+}
+
 /**
  * 消息输入框 —— textarea + 发送/停止按钮。
  *
@@ -12,10 +19,12 @@ import { useChat } from './ChatProvider'
  * - textarea auto-resize（scrollHeight 同步、上限 max-h-40）
  * - isLoading 时发送键变停止键 → 调 store.stop()
  * - 发送后清空 + 重置高度 + 重新 focus
+ * - disabled 时整体禁发，placeholder 显示 disabledHint（场景前置校验用，
+ *   如 workspace 管家未配模型）
  *
  * 不带模型选择器 —— CoCoWork 模型在 ConfigPanel 已选、不在输入框重复 UI。
  */
-export function MessageInput() {
+export function MessageInput({ disabled = false, disabledHint }: MessageInputProps) {
   const isLoading = useChat((s) => s.isLoading)
   const send = useChat((s) => s.send)
   const stop = useChat((s) => s.stop)
@@ -33,7 +42,7 @@ export function MessageInput() {
 
   const handleSend = useCallback(async () => {
     const text = input.trim()
-    if (!text || isLoading) return
+    if (!text || isLoading || disabled) return
     setInput('')
     // 下一帧重置高度（state 变更 → DOM 更新后再 measure）
     requestAnimationFrame(autoResize)
@@ -57,7 +66,14 @@ export function MessageInput() {
           <textarea
             ref={textareaRef}
             rows={1}
-            placeholder={isLoading ? 'AI 正在回答…' : '发送消息…'}
+            disabled={disabled}
+            placeholder={
+              disabled
+                ? (disabledHint ?? '暂不可发送')
+                : isLoading
+                  ? 'AI 正在回答…'
+                  : '发送消息…'
+            }
             value={input}
             onChange={(e) => {
               setInput(e.target.value)
@@ -83,7 +99,7 @@ export function MessageInput() {
               <button
                 type="button"
                 onClick={handleSend}
-                disabled={!input.trim()}
+                disabled={!input.trim() || disabled}
                 className="bg-primary text-primary-foreground hover:bg-primary/90 shrink-0 cursor-pointer rounded-lg p-2 transition disabled:cursor-not-allowed disabled:opacity-40"
                 title="发送"
               >
