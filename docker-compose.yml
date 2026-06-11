@@ -1,6 +1,7 @@
 services:
   app:
     image: crpi-cwyvl6vckkv4k4p7.cn-hangzhou.personal.cr.aliyuncs.com/nuguri_ddd/cocowork:latest
+    command: sh -c "tortoise migrate && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"
     ports:
       - "8000:8000"
     env_file: .env
