@@ -1,5 +1,6 @@
 import { memo, useEffect, useState } from 'react'
 import { helix } from 'ldrs'
+import { v4 as uuidv4 } from 'uuid'
 
 helix.register()
 
@@ -52,7 +53,7 @@ let renderQueue: Promise<unknown> = Promise.resolve()
 function renderSerialized(source: string): Promise<string> {
   const next = renderQueue.then(async () => {
     const mermaid = await loadMermaid()
-    const id = `mermaid-${crypto.randomUUID()}`
+    const id = `mermaid-${uuidv4()}`
     const { svg } = await mermaid.render(id, source)
     return svg
   })

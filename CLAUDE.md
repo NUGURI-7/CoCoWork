@@ -107,6 +107,16 @@ import { Plus, Pencil, Settings } from 'lucide-react'
 - 使用 Tailwind v4（CSS-based config，无 tailwind.config.js），支持 variant 叠加，如 `group-data-[collapsed]/sidebar:group-hover:opacity-100`
 - `overflow-x-clip`（非 `overflow-x-hidden`）：只裁剪水平方向，不影响垂直方向的 Popover / dropdown 弹出
 
+## UUID 生成约定
+
+**统一使用 `uuid` 库，禁止 `crypto.randomUUID()`。** 后者属于 Web Crypto API，仅在 secure context（HTTPS / localhost）下可用，HTTP 裸 IP 部署会直接抛 `TypeError: crypto.randomUUID is not a function`。
+
+```ts
+import { v4 as uuidv4 } from 'uuid'
+
+const id = uuidv4()
+```
+
 ## Git 提交规范
 
 ### Commit Message 格式
