@@ -50,6 +50,7 @@ class MessageService:
         """
 
         message = await Message.create(
+            id=data.id,
             conversation_id=conversation_id,
             role=data.role,
             sender_kind=data.sender_kind,

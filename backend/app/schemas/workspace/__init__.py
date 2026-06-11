@@ -3,7 +3,11 @@ from app.schemas.workspace.conversation_schema import (
     ConversationOut,
     ConversationUpdate,
 )
-from app.schemas.workspace.message_schema import MessageAppend, MessageOut
+from app.schemas.workspace.message_schema import (
+    ConversationStreamIn,
+    MessageAppend,
+    MessageOut,
+)
 from app.schemas.workspace.workspace_schema import (
     WorkspaceCreate,
     WorkspaceOut,
@@ -13,6 +17,7 @@ from app.schemas.workspace.workspace_schema import (
 __all__ = [
     "ConversationCreate",
     "ConversationOut",
+    "ConversationStreamIn",
     "ConversationUpdate",
     "MessageAppend",
     "MessageOut",
