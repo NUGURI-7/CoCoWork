@@ -7,13 +7,47 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
+from starlette.middleware.gzip import GZipMiddleware
 from uuid_utils import uuid4
 
 from app.core.request_context import request_id_var
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 REQUEST_ID_HEADER = "X-Request-ID"
+
+class ConditionalGZipMiddleware:
+    """条件 GZip 压缩 —— 匹配 exclude_prefixes 的路径直接放行。
+
+    设计：
+    - 静态资源（/assets, index.html）压缩，主战场，JS/CSS 1MB 级别能压到 1/3
+    - API 路径全部排除：
+        * SSE（text/event-stream）被 buffer 会破坏流式实时性 → 必跳
+        * 其他 JSON 接口压缩收益不大（响应通常 < 10K），统一跳过更简洁
+    - 未来加新 SSE 接口零改动，不需要再维护路径白名单
+    """
+
+    def __init__(
+        self,
+        app: ASGIApp,
+        exclude_prefixes: tuple[str, ...] = (),
+        minimum_size: int = 500,
+        compresslevel: int = 6,
+    ):
+        self._raw_app = app
+        self._gzip_app = GZipMiddleware(
+            app, minimum_size=minimum_size, compresslevel=compresslevel
+        )
+        self._exclude = exclude_prefixes
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http":
+            path = scope.get("path", "")
+            if any(path.startswith(p) for p in self._exclude):
+                await self._raw_app(scope, receive, send)
+                return
+        await self._gzip_app(scope, receive, send)
 
 
 class RequestIDMiddleware:
@@ -83,9 +117,17 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
 def register_middlewares(app: FastAPI) -> None:
     """注册顺序：后注册的在外层。
 
-    外 → 内 实际请求穿透顺序：RequestID → CORS → AccessLog → 路由。
+    外 → 内 实际请求穿透顺序：RequestID → CORS → AccessLog → GZip → 路由。
     RequestID 必须最外层，否则 AccessLog 日志和路由内代码都拿不到 request_id。
+    GZip 放最内层（紧贴路由）：response body 先压缩再向外冒泡，
+    AccessLog / CORS / RequestID 只动 header 不读 body，互不干扰。
     """
+    app.add_middleware(
+        ConditionalGZipMiddleware,
+        exclude_prefixes=(settings.API_PREFIX,),  # /api/v1 整个排除（含 SSE）
+        minimum_size=500,
+        compresslevel=6,
+    )
     app.add_middleware(AccessLogMiddleware)
     app.add_middleware(
         CORSMiddleware,
