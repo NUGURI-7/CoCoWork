@@ -1,4 +1,4 @@
-"""LangChain `astream_events(v2)` → SSE 事件协议翻译器。
+"""LangChain `astream_events(v2)` → 结构化事件翻译器（SSE 序列化由 runner 统一做）。
 
 设计原则：
 - 函数式 + 模块顶部常量集中（事件名 / payload key / 错误文案 / 截断长度）
@@ -20,7 +20,7 @@ from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.agents.runtime.events import EventType, sse_event
+from app.agents.runtime.events import EventType
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +114,11 @@ class StreamState:
 
 
 # ============ Dispatch 表 ============
-Handler = Callable[[StreamState, dict[str, Any]], AsyncIterator[str]]
+
+# adapter 对外吐的事件原料：(事件类型, payload dict)。粘成 SSE 字符串是 runner 的活。
+AdapterEvent = tuple[EventType, dict[str, Any]]
+
+Handler = Callable[[StreamState, dict[str, Any]], AsyncIterator[AdapterEvent]]
 _HANDLERS: dict[str, Handler] = {}
 
 
@@ -206,28 +210,28 @@ async def _emit_singleton_delta(
         delta_type: str,
         delta_key: str,
         content: str,
-) -> AsyncIterator[str]:
+) -> AsyncIterator[AdapterEvent]:
     """单例块"如果没开就开 + 发 delta"模式 —— text / thinking 共用，消除重复。"""
     if not content:
         return
 
     if slot.index is None:
         slot.index = state.allocate()
-        yield sse_event(EventType.CONTENT_BLOCK_START, {
+        yield EventType.CONTENT_BLOCK_START, {
             "index": slot.index,
             "type": type_name,
-        })
-    yield sse_event(EventType.CONTENT_BLOCK_DELTA, {
+        }
+    yield EventType.CONTENT_BLOCK_DELTA, {
         "index": slot.index,
         "type": delta_type,
         delta_key: content,
-    })
+    }
 
 
-async def _emit_singleton_stop(slot: SingletonSlot) -> AsyncIterator[str]:
+async def _emit_singleton_stop(slot: SingletonSlot) -> AsyncIterator[AdapterEvent]:
     """关闭单例块。开着就发 STOP + 清空 slot；没开就 noop。"""
     if slot.index is not None:
-        yield sse_event(EventType.CONTENT_BLOCK_STOP, {"index": slot.index})
+        yield EventType.CONTENT_BLOCK_STOP, {"index": slot.index}
         slot.index = None
 
 
@@ -235,7 +239,7 @@ async def _emit_singleton_stop(slot: SingletonSlot) -> AsyncIterator[str]:
 
 async def _emit_tool_call_chunk(
         state: StreamState, tc: Any,
-) -> AsyncIterator[str]:
+) -> AsyncIterator[AdapterEvent]:
     """处理单个 ToolCallChunk：首条带 name + id 时开块、后续 args 流式 delta。"""
     chunk_index = _tc_field(tc, "index")
     if chunk_index is None:
@@ -250,47 +254,47 @@ async def _emit_tool_call_chunk(
             return  # 等首条带齐 name + id
         block_idx = state.allocate()
         state.tools.register(chunk_index, block_idx, tc_id)
-        yield sse_event(EventType.TOOL_USE_START, {
+        yield EventType.TOOL_USE_START, {
             "index": block_idx,
             "id": tc_id,
             "name": tc_name,
             "input_preview": TOOL_INPUT_PREVIEW_DEFAULT,
-        })
+        }
 
     # args 流式 delta（partial JSON 串增量；前端自己累积解析）
     if tc_args:
         block_idx = state.tools.chunk_to_block[chunk_index]
         tool_id = state.tools.block_to_id.get(block_idx, "")
-        yield sse_event(EventType.TOOL_USE_DELTA, {
+        yield EventType.TOOL_USE_DELTA, {
             "index": block_idx,
             "id": tool_id,
             "type": DELTA_TYPE_INPUT_JSON,
             "partial_json": tc_args,
-        })
+        }
 
 
 # ============ 关块共用逻辑（不变式：唯一关块入口） ============
 
-async def _close_open_blocks(state: StreamState) -> AsyncIterator[str]:
+async def _close_open_blocks(state: StreamState) -> AsyncIterator[AdapterEvent]:
     """关掉所有还活着的块、发 *_STOP 事件。
 
     **唯一关块入口** —— 正常路径（_on_chat_model_end）和异常兜底共用，避免漂移。
     """
 
-    async for sse in _emit_singleton_stop(state.text):
-        yield sse
-    async for sse in _emit_singleton_stop(state.thinking):
-        yield sse
+    async for ev in _emit_singleton_stop(state.text):
+        yield ev
+    async for ev in _emit_singleton_stop(state.thinking):
+        yield ev
 
     for chunk_index in list(state.tools.chunk_to_block.keys()):
         released = state.tools.release(chunk_index)
         if released is None:
             continue
         block_idx, tool_id = released
-        yield sse_event(EventType.TOOL_USE_STOP, {
+        yield EventType.TOOL_USE_STOP, {
             "index": block_idx,
             "id": tool_id,
-        })
+        }
 
 
 # ============ Handler ============
@@ -298,49 +302,49 @@ async def _close_open_blocks(state: StreamState) -> AsyncIterator[str]:
 @_register("on_chat_model_stream")
 async def _on_chat_model_stream(
         state: StreamState, data: dict[str, Any],
-) -> AsyncIterator[str]:
+) -> AsyncIterator[AdapterEvent]:
     """一个 AIMessageChunk 可能同时带 text / reasoning / tool_call_chunks，各自分流。"""
     chunk = data.get("chunk")
     if chunk is None:
         return
 
-    async for sse in _emit_singleton_delta(
+    async for ev in _emit_singleton_delta(
             state, state.text, BLOCK_TEXT, DELTA_TYPE_TEXT, DELTA_KEY_TEXT, _extract_text(chunk),
     ):
-        yield sse
-    async for sse in _emit_singleton_delta(
+        yield ev
+    async for ev in _emit_singleton_delta(
             state, state.thinking, BLOCK_THINKING, DELTA_TYPE_THINKING, DELTA_KEY_THINKING, _extract_reasoning(chunk),
     ):
-        yield sse
+        yield ev
     for tc in getattr(chunk, "tool_call_chunks", None) or []:
-        async for sse in _emit_tool_call_chunk(state, tc):
-            yield sse
+        async for ev in _emit_tool_call_chunk(state, tc):
+            yield ev
 
 @_register("on_chat_model_end")
 async def _on_chat_model_end(
     state: StreamState, data: dict[str, Any],
-) -> AsyncIterator[str]:
+) -> AsyncIterator[AdapterEvent]:
     """模型一轮 chat 完事：关所有活块 + 发 message_delta(usage)。"""
-    async for sse in _close_open_blocks(state):
-        yield sse
+    async for ev in _close_open_blocks(state):
+        yield ev
 
     output = data.get("output")
     usage = getattr(output, "usage_metadata", None) if output else None
     input_tokens = usage.get("input_tokens", 0) if usage else 0
     output_tokens = usage.get("output_tokens", 0) if usage else 0
 
-    yield sse_event(EventType.MESSAGE_DELTA, {
+    yield EventType.MESSAGE_DELTA, {
         "stop_reason": DEFAULT_STOP_REASON,
         "usage": {
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
         },
-    })
+    }
 
 @_register("on_tool_end")
 async def _on_tool_end(
     state: StreamState, data: dict[str, Any],
-) -> AsyncIterator[str]:
+) -> AsyncIterator[AdapterEvent]:
     """工具执行完成：从 ToolMessage.tool_call_id 反查 block、发 tool_result。"""
     output = data.get("output")
     if output is None:
@@ -353,25 +357,25 @@ async def _on_tool_end(
         return
 
     content = getattr(output, "content", None)
-    yield sse_event(EventType.TOOL_RESULT, {
+    yield EventType.TOOL_RESULT, {
         "index": block_idx,
         "id": tool_call_id,
         "status": "success",
         "result_summary": _summarize_tool_result(content),
         "result_data": content,
-    })
+    }
 
 # ============ 主入口 ============
 
 async def adapt_chat_stream(
     events: AsyncIterator[dict[str, Any]],
-) -> AsyncIterator[str]:
-    """LangChain astream_events(v2) → 我们的 SSE 帧。
+) -> AsyncIterator[AdapterEvent]:
+    """LangChain astream_events(v2) → 我们的结构化事件流。
 
         Args:
             events: `graph.astream_events(input, version="v2")` 的产物
         Yields:
-            SSE 帧字符串（每帧已是 `event: ...\\ndata: ...\\n\\n` 完整格式）
+            (EventType, payload) 元组 —— SSE 序列化 / sink 分发由 runner 统一做
     """
 
     state = StreamState()
@@ -381,23 +385,22 @@ async def adapt_chat_stream(
             handler = _HANDLERS.get(ev.get("event", ""))
             if handler is None:
                 continue
-            async for sse in handler(state, ev.get("data", {})):
-                yield sse
+            async for out in handler(state, ev.get("data", {})):
+                yield out
     except Exception:
         # 内部异常完整 log 给后端；对前端只发通用文案，防细节外泄（栈 / 路径 / SQL）
         logger.exception("adapt_chat_stream failed; emitting cleanup + error event")
         # 兜底自包 try：清理 / 发错误事件各自再炸也不让 generator 二次失败
-        # 兜底自包 try：清理 / 发错误事件各自再炸也不让 generator 二次失败
         try:
-            async for sse in _close_open_blocks(state):
-                yield sse
+            async for out in _close_open_blocks(state):
+                yield out
         except Exception:
             logger.exception("failed to close open blocks during error cleanup")
         try:
-            yield sse_event(EventType.ERROR, {
+            yield EventType.ERROR, {
                 "code": ERROR_CODE_INTERNAL,
                 "message": ERROR_MESSAGE_GENERIC,
-            })
+            }
         except Exception:
             logger.exception("failed to emit error event")
 

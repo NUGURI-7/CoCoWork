@@ -9,7 +9,8 @@
 """
 
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
+from typing import Any
 
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
@@ -38,6 +39,21 @@ logger = logging.getLogger(__name__)
 # provider_type → LangChain model_provider
 # OpenAI 兼容 provider 全走 "openai"（靠 base_url 区分上游），只有 Anthropic 走官方协议。
 # 未知类型 fallback "openai" —— 最宽容 + log warning。
+
+# sink：事件旁路回调 —— runner 每产一个事件，先喂 sink 一份再序列化成 SSE。
+SinkFn = Callable[[EventType, dict[str, Any]], None]
+
+# SSE message_start 的 role —— 流式产出的消息恒为 assistant（协议固定值）
+_SSE_ROLE_ASSISTANT = "assistant"
+
+def _feed_sink(sink: SinkFn | None, event: EventType, payload: dict[str, Any]) -> None:
+    """把事件喂给 sink（装了才喂）。sink 自己炸了只 log —— 旁路故障不打断主流。"""
+    if sink is None:
+        return
+    try:
+        sink(event, payload)
+    except Exception:
+        logger.exception("stream sink failed on %s; stream continues", event)
 
 _PROVIDER_TYPE_TO_LC: dict[str, str] = {
     "openai": "openai",
@@ -228,31 +244,43 @@ async def prepare_stream(
 async def run_chat_stream(
         graph: CompiledStateGraph,
         messages: list[BaseMessage],
+        *,
+        sink: SinkFn | None = None
 ) -> AsyncIterator[str]:
     """SSE 流主编排 —— 包 message_start / 驱动 adapter / 兜底 message_stop。
+
+    sink：可选事件旁路。每个事件在粘成 SSE 字符串之前，原样 (EventType, payload)
+    先喂 sink 一份 —— 一份流前端、一份进桶（Unix tee 分叉）。Playground 不传、
+    行为不变；workspace 传 collector.feed 攒流式内容落库。
 
     异常分层：
     - 配置 / 模板 / 模型校验 → prepare_stream raise → FastAPI 400 JSON（SSE 还没起）
     - LLM 调用 / adapter 内部 → adapter 全部 try/except 翻成 error 帧（脱敏 + 关块）
+    - sink 内部 → _feed_sink 兜住只 log（旁路故障不打断对话主流）
     - message_stop → finally 兜底必发（前端靠它关活气泡，光标不卡）
     """
     message_id = str(uuid7())
 
-    yield sse_event(EventType.MESSAGE_START, {
-        "id": message_id,
-        "role": "assistant",
-    })
+    start_payload = {"id": message_id, "role": _SSE_ROLE_ASSISTANT}
+    _feed_sink(sink, EventType.MESSAGE_START, start_payload)
+    yield sse_event(EventType.MESSAGE_START, start_payload)
+
     try:
         events = graph.astream_events(
             {"messages": messages},
             version="v2",
         )
-        async for sse in adapt_chat_stream(events):
-            yield sse
+
+        async for event, payload in adapt_chat_stream(events):
+            _feed_sink(sink, event, payload)
+            yield sse_event(event,payload)
 
     finally:
         # generator finally 兜底：自身 yield 也包 try，二次失败只 log 不再 raise
         try:
-            yield sse_event(EventType.MESSAGE_STOP, {"id": message_id})
+            stop_payload = {"id": message_id}
+            _feed_sink(sink, EventType.MESSAGE_STOP, stop_payload)
+            yield sse_event(EventType.MESSAGE_STOP, stop_payload)
+
         except Exception:
             logger.exception("emit message_stop failed")

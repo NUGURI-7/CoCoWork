@@ -31,14 +31,16 @@ class AgentSpec:
 
     @classmethod
     def from_jsonb(
-            cls, data: dict[str, Any], default_template: str = "general",
+            cls, data: dict[str, Any], template: str = "general",
     ) -> "AgentSpec":
         """从 jsonb dict 构造(用于 workspace.supervisor 等 jsonb 存储)。
 
-        template 字段优先从 dict 里取, 没有则 fallback 到 default_template。
+        data 必须是纯 AgentConfig 形态。template 由调用方显式指定,
+        不从 data 里翻找 —— data 万一混入 template 键, AgentConfig
+        的 extra="forbid" 会当场拒绝, 脏数据 fail fast 正好。
         """
         return cls(
-            template=data.get("template", default_template),
+            template=template,
             config=AgentConfig.model_validate(data),
         )
 
