@@ -9,6 +9,8 @@ import logging
 from pathlib import PurePosixPath
 from uuid import UUID
 
+from tortoise.queryset import QuerySet
+
 from app.core.config import settings
 from app.core.exceptions.types import NotFound404, ValidationException
 from app.core.storage import storage
@@ -89,6 +91,14 @@ class DocumentService:
         """列出库下所有文档（按创建时间倒序）。"""
         await self._ensure_user_kb(user, kb_id)
         return await Document.filter(knowledge_base_id=kb_id).order_by("-created_at")
+
+    def query_by_kb(self, kb_id: UUID) -> QuerySet[Document]:
+        """构造列出库下文档的 QuerySet（按创建时间倒序，未执行）。
+
+        给分页接口用。权限校验暂缺位，等资源级 RBAC 上线后由统一中间件接管。
+        """
+        # TODO(rbac): 资源级授权上线后，由 RBAC 中间件过滤可见范围
+        return Document.filter(knowledge_base_id=kb_id).order_by("-created_at")
 
     async def get_by_id(
             self, user: User, kb_id: UUID, doc_id: UUID,

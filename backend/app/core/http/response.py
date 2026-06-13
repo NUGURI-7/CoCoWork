@@ -1,6 +1,6 @@
 from typing import Any, Generic, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 
 T = TypeVar("T")
 
@@ -20,6 +20,14 @@ class PageData(BaseModel, Generic[T]):
     records: list[T]
     current_page: int
     page_size: int
+
+    @computed_field
+    @property
+    def total_pages(self) -> int:
+        """总页数。total=0 或 page_size 非法时返回 0。"""
+        if self.page_size <= 0:
+            return 0
+        return (self.total + self.page_size - 1) // self.page_size
 
 
 def success(data: Any = None, message: str = "success") -> ResponseModel:

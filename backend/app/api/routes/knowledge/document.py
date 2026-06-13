@@ -13,12 +13,12 @@ from typing import Annotated
 from urllib.parse import quote
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, UploadFile,BackgroundTasks
+from fastapi import APIRouter, Depends, File, UploadFile, BackgroundTasks
 from fastapi.responses import StreamingResponse
 
 from app.core.depends import get_current_user
 from app.core.exceptions.types import ValidationException
-from app.core.http import ResponseModel, success
+from app.core.http import PageData, PaginationDep, ResponseModel, paginate, success
 from app.core.storage import storage
 from app.models.user import User
 from app.schemas.knowledge import (
@@ -135,11 +135,12 @@ async def upload_complete(
     await svc.mark_uploaded(current_user, kb_id, doc_id)
     return success(message="上传已确认")
 
+
 @router.post("/{doc_id}/process", summary="触发文档处理管线（向量化）")
 async def process(
-kb_id: UUID,
+        kb_id: UUID,
         doc_id: UUID,
-background_tasks: BackgroundTasks,
+        background_tasks: BackgroundTasks,
         current_user: CurrentUserDep,
         svc: DocumentServiceDep,
 ) -> ResponseModel[DocumentOut]:
@@ -147,9 +148,10 @@ background_tasks: BackgroundTasks,
 
         端点立即返回，处理在后台跑；前端轮询 `GET /{doc_id}` 看 status / stage 推进。
     """
-    doc = await svc.trigger_progress(current_user,kb_id, doc_id)
+    doc = await svc.trigger_progress(current_user, kb_id, doc_id)
     background_tasks.add_task(process_document, doc_id)
     return success(data=DocumentOut.model_validate(doc), message="已触发处理")
+
 
 @router.post("/batch-process", summary="批量触发文档处理（向量化）")
 async def batch_process(
@@ -196,6 +198,17 @@ async def list_documents(
 ) -> ResponseModel[list[DocumentOut]]:
     docs = await svc.list_by_kb(current_user, kb_id)
     return success(data=[DocumentOut.model_validate(d) for d in docs])
+
+
+@router.get("/page", summary="分页列出知识库下的文档")
+async def list_documents_paginated(
+        kb_id: UUID,
+        current_user: CurrentUserDep,
+        svc: DocumentServiceDep,
+        params: PaginationDep,
+) -> ResponseModel[PageData[DocumentOut]]:
+    qs = svc.query_by_kb(kb_id)
+    return success(data=await paginate(qs, params, out=DocumentOut))
 
 
 @router.get("/{doc_id}", summary="文档详情")
@@ -249,6 +262,7 @@ async def get_document_raw(
             ),
         },
     )
+
 
 @router.get("/{doc_id}/download-url", summary="获取下载链接")
 async def get_document_download_url(
