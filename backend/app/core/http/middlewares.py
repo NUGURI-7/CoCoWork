@@ -2,20 +2,18 @@ import logging
 import time
 
 from fastapi import FastAPI
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.middleware.cors import CORSMiddleware
-from starlette.requests import Request
-from starlette.responses import Response
-from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from starlette.middleware.gzip import GZipMiddleware
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from uuid_utils import uuid4
 
-from app.core.request_context import request_id_var
 from app.core.config import settings
+from app.core.request_context import request_id_var
 
 logger = logging.getLogger(__name__)
 
 REQUEST_ID_HEADER = "X-Request-ID"
+
 
 class ConditionalGZipMiddleware:
     """条件 GZip 压缩 —— 匹配 exclude_prefixes 的路径直接放行。
@@ -29,11 +27,11 @@ class ConditionalGZipMiddleware:
     """
 
     def __init__(
-        self,
-        app: ASGIApp,
-        exclude_prefixes: tuple[str, ...] = (),
-        minimum_size: int = 500,
-        compresslevel: int = 6,
+            self,
+            app: ASGIApp,
+            exclude_prefixes: tuple[str, ...] = (),
+            minimum_size: int = 500,
+            compresslevel: int = 6,
     ):
         self._raw_app = app
         self._gzip_app = GZipMiddleware(
@@ -91,27 +89,50 @@ class RequestIDMiddleware:
             request_id_var.reset(token)
 
 
-class AccessLogMiddleware(BaseHTTPMiddleware):
-    """请求日志：方法、路径、状态码、耗时、来源 IP。
+class AccessLogMiddleware:
+    """请求日志：方法、路径、状态码、耗时、来源 IP（纯 ASGI 实现）。
 
     替代 uvicorn 默认 access log（main.py 关了 `access_log=False`），
     与 RequestID 协同时日志会自动带上 [req-xxx] 前缀（由 logger formatter 注入）。
+
+    用纯 ASGI 而非 BaseHTTPMiddleware：后者会把下游响应包进 anyio task group
+    + 内存管道转交，客户端断连时整组任务被强杀，下游 generator 的 finally
+    跑不到 —— SSE 场景下 stream 端点 finally 里的落库会被吞掉，
+    必须等进程退出 uvicorn 统一清算 async generator 时才执行（= 长跑服务永不落库）。
+    纯 ASGI 形态只透传 scope/receive/send，不切断下游生命周期。
     """
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
         start = time.perf_counter()
-        ip = request.client.host if request.client else "unknown"
-        response = await call_next(request)
-        duration_ms = (time.perf_counter() - start) * 1000
-        logger.info(
-            "%s %s -> %d %.1fms from %s",
-            request.method,
-            request.url.path,
-            response.status_code,
-            duration_ms,
-            ip,
-        )
-        return response
+        method = scope["method"]
+        path = scope["path"]
+        client = scope.get("client")
+        ip = client[0] if client else "unknown"
+
+        # status 通过 send wrapper 截 http.response.start 拿；
+        # 下游连 start 都没发就异常时保持 0 表示"未发出响应"，比假装 500 诚实。
+        status_holder: dict[str, int] = {"status": 0}
+
+        async def send_wrapper(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                status_holder["status"] = message["status"]
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_wrapper)
+        finally:
+            duration_ms = (time.perf_counter() - start) * 1000
+            logger.info(
+                "%s %s -> %d %.1fms from %s",
+                method, path, status_holder["status"], duration_ms, ip,
+            )
 
 
 def register_middlewares(app: FastAPI) -> None:
