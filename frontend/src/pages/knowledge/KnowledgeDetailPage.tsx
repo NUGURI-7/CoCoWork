@@ -3,17 +3,29 @@ import { Link, useParams } from '@tanstack/react-router'
 import { BookOpen, ChevronLeft, Upload } from 'lucide-react'
 import { ring } from 'ldrs'
 
-import { getKnowledgeBase, listDocuments } from '@/api/knowledge'
+import { getKnowledgeBase, listDocumentsPaginated } from '@/api/knowledge'
 import { useTabTitle } from '@/stores/use-tab-sync'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { DataPagination } from '@/components/data-pagination'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import type { Document, KnowledgeBase } from '@/types'
+import type { Document, KnowledgeBase, PageData } from '@/types'
 import { DocumentList } from './DocumentList'
 import { KnowledgeSettings } from './KnowledgeSettings'
 import { RetrievalTest } from './RetrievalTest'
 import { UploadDocumentSheet } from './UploadDocumentSheet'
 import { kbStatusMeta } from './mock'
+
+const PAGE_SIZE = 10
+
+/** 空分页结果占位（初始 state / 错误 fallback） */
+const EMPTY_PAGE: PageData<Document> = {
+  total: 0,
+  records: [],
+  current_page: 1,
+  page_size: PAGE_SIZE,
+  total_pages: 0,
+}
 
 ring.register()
 
@@ -22,17 +34,18 @@ export default function KnowledgeDetailPage() {
   const { kbId } = useParams({ from: '/_authenticated/knowledge/$kbId' })
   const [kb, setKb] = useState<KnowledgeBase | null>(null)
   const [loading, setLoading] = useState(true)
-  const [docs, setDocs] = useState<Document[]>([])
+  const [page, setPage] = useState(1)
+  const [pageData, setPageData] = useState<PageData<Document>>(EMPTY_PAGE)
   const [uploadOpen, setUploadOpen] = useState(false)
 
   const refetchDocs = useCallback(async () => {
     try {
-      const data = await listDocuments(kbId)
-      setDocs(data)
+      const data = await listDocumentsPaginated(kbId, { page, page_size: PAGE_SIZE })
+      setPageData(data)
     } catch {
       // 拦截器已 toast
     }
-  }, [kbId])
+  }, [kbId, page])
 
   const refetch = useCallback(async () => {
     setLoading(true)
@@ -52,11 +65,11 @@ export default function KnowledgeDetailPage() {
 
   // 任一文档处于 processing → 1.5s 后再 refetch，循环直到全部脱离 processing
   useEffect(() => {
-    const hasProcessing = docs.some((d) => d.status === 'processing')
+    const hasProcessing = pageData.records.some((d) => d.status === 'processing')
     if (!hasProcessing) return
     const timer = setTimeout(refetchDocs, 1500)
     return () => clearTimeout(timer)
-  }, [docs, refetchDocs])
+  }, [pageData, refetchDocs])
 
   useTabTitle(`/knowledge/${kbId}`, kb?.name)
 
@@ -122,18 +135,25 @@ export default function KnowledgeDetailPage() {
           <TabsTrigger value="settings">设置</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="documents" className="mt-4">
+        <TabsContent value="documents" className="mt-4 space-y-4">
           <DocumentList
             kbId={kbId}
-            docs={docs}
+            docs={pageData.records}
             onDeleted={refetchDocs}
             onProcessed={(docId) =>
-              setDocs((prev) =>
-                prev.map((d) =>
+              setPageData((prev) => ({
+                ...prev,
+                records: prev.records.map((d) =>
                   d.id === docId ? { ...d, status: 'processing', stage: 'parsing' } : d,
                 ),
-              )
+              }))
             }
+          />
+          <DataPagination
+            page={pageData.current_page}
+            totalPages={pageData.total_pages}
+            total={pageData.total}
+            onPageChange={setPage}
           />
         </TabsContent>
 

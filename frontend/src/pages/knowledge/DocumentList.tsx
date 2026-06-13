@@ -20,6 +20,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -28,6 +29,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import type { Document } from '@/types'
 import { DocumentPreviewSheet } from './DocumentPreviewSheet'
@@ -116,6 +123,7 @@ export function DocumentList({ kbId, docs, onDeleted, onProcessed }: DocumentLis
   }
 
   return (
+    <TooltipProvider delayDuration={200}>
     <div className="space-y-2">
       {/* 批量操作栏：选中 ≥1 时浮出 */}
       {selected.size > 0 && (
@@ -201,6 +209,7 @@ export function DocumentList({ kbId, docs, onDeleted, onProcessed }: DocumentLis
         </AlertDialogContent>
       </AlertDialog>
     </div>
+    </TooltipProvider>
   )
 }
 
@@ -276,7 +285,7 @@ function DocumentRow({
     <>
       <div
         className={cn(
-          'flex items-center gap-3 px-4 py-3 transition-colors',
+          'group flex items-center gap-3 px-4 py-3 transition-colors',
           selected ? 'bg-brand-subtle' : 'hover:bg-muted/40',
         )}
       >
@@ -291,15 +300,73 @@ function DocumentRow({
           </div>
         </div>
 
-        <span className="text-muted-foreground hidden items-center gap-1.5 text-xs sm:flex">
-          <span className={cn('size-1.5 rounded-full', s.dot, s.pulse && 'animate-pulse')} />
+        {/* 状态 Badge —— processing/uploading 时附脉动 dot */}
+        <Badge variant="outline" className={cn('shrink-0 gap-1.5', s.badgeClass)}>
+          {s.pulse && (
+            <span className={cn('size-1.5 rounded-full', s.dot, 'animate-pulse')} />
+          )}
           {s.label}
-        </span>
+        </Badge>
 
         <span className="text-muted-foreground hidden w-16 text-right text-xs md:block">
           {dayjs(doc.created_at).fromNow()}
         </span>
 
+        {/* 快捷按钮组：hover/focus 时显示 */}
+        <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+          {canPreview && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-muted-foreground hover:text-foreground size-7"
+                  onClick={onPreview}
+                  aria-label="预览"
+                >
+                  <Eye className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>预览</TooltipContent>
+            </Tooltip>
+          )}
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-muted-foreground hover:text-foreground size-7"
+                onClick={handleDownload}
+                disabled={downloading}
+                aria-label="下载"
+              >
+                <Download className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>下载</TooltipContent>
+          </Tooltip>
+
+          {canProcess && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-brand hover:text-brand-hover size-7"
+                  onClick={handleProcess}
+                  disabled={triggering}
+                  aria-label={display === 'failed' ? '重试向量化' : '向量化'}
+                >
+                  <Sparkles className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{display === 'failed' ? '重试向量化' : '向量化'}</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+
+        {/* ⋯ 菜单：只剩破坏性操作（删除） */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -311,22 +378,6 @@ function DocumentRow({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            {canPreview && (
-              <DropdownMenuItem onSelect={onPreview}>
-                <Eye className="size-4" />
-                预览
-              </DropdownMenuItem>
-            )}
-            {canProcess && (
-              <DropdownMenuItem onSelect={handleProcess} disabled={triggering}>
-                <Sparkles className="size-4" />
-                {display === 'failed' ? '重试向量化' : '向量化'}
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuItem onSelect={handleDownload} disabled={downloading}>
-              <Download className="size-4" />
-              下载
-            </DropdownMenuItem>
             <DropdownMenuItem
               variant="destructive"
               onSelect={(e) => {

@@ -11,6 +11,7 @@ import type {
   KnowledgeBase,
   KnowledgeBaseCreatePayload,
   KnowledgeBaseUpdatePayload,
+  PageData,
   RetrievalTestResult,
   UploadInitOut,
 } from '@/types'
@@ -51,6 +52,14 @@ export function deleteKnowledgeBase(id: string) {
 /** 列出某知识库下的文档（按 created_at 倒序）。 */
 export function listDocuments(kbId: string) {
   return get<Document[]>(`/knowledge-bases/${kbId}/documents`)
+}
+
+/** 分页列出某知识库下的文档（按 created_at 倒序）。 */
+export function listDocumentsPaginated(
+  kbId: string,
+  params: { page?: number; page_size?: number } = {},
+) {
+  return get<PageData<Document>>(`/knowledge-bases/${kbId}/documents/page`, params)
 }
 
 /** 删除文档（后端联动清 storage 对象 + ORM 级联清段/向量）。 */

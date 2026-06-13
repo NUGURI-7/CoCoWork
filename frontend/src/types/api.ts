@@ -20,6 +20,8 @@ export interface PageData<T> {
   records: T[]
   current_page: number
   page_size: number
+  /** 总页数，由后端 computed_field 算好 */
+  total_pages: number
 }
 
 /** 分页响应的完整壳 */

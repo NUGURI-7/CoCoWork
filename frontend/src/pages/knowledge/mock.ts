@@ -13,6 +13,8 @@ interface StatusMeta {
   label: string
   dot: string
   pulse?: boolean
+  /** Badge 颜色覆盖类（在 outline 变体之上叠加 bg/text/border） */
+  badgeClass?: string
 }
 
 /** 文档显示状态：把后端 (status, stage) 二维组合映射成单一展示态。 */
@@ -34,11 +36,33 @@ export function getDocDisplayStatus(doc: Document): DocDisplayStatus {
 
 /** 文档状态徽标（DocumentList 用，按 DocDisplayStatus 索引） */
 export const docStatusMeta: Record<DocDisplayStatus, StatusMeta> = {
-  uploading: { label: '上传中', dot: 'bg-muted-foreground', pulse: true },
-  uploaded: { label: '待向量化', dot: 'bg-muted-foreground' },
-  processing: { label: '处理中', dot: 'bg-warning', pulse: true },
-  completed: { label: '就绪', dot: 'bg-success' },
-  failed: { label: '失败', dot: 'bg-destructive' },
+  uploading: {
+    label: '上传中',
+    dot: 'bg-muted-foreground',
+    pulse: true,
+    badgeClass: 'bg-muted text-muted-foreground border-border',
+  },
+  uploaded: {
+    label: '未向量化',
+    dot: 'bg-muted-foreground',
+    badgeClass: 'bg-muted text-muted-foreground border-border',
+  },
+  processing: {
+    label: '向量化中',
+    dot: 'bg-warning',
+    pulse: true,
+    badgeClass: 'bg-warning/15 text-warning-foreground border-warning/40',
+  },
+  completed: {
+    label: '已向量化',
+    dot: 'bg-success',
+    badgeClass: 'bg-success/15 text-success border-success/40',
+  },
+  failed: {
+    label: '失败',
+    dot: 'bg-destructive',
+    badgeClass: 'bg-destructive/15 text-destructive border-destructive/40',
+  },
 }
 
 /** 知识库状态徽标（KnowledgeCard / KnowledgeDetailPage header 用） */
