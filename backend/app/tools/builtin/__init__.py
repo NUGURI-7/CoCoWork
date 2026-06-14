@@ -4,3 +4,4 @@
 """
 
 from app.tools.builtin import calculator  # noqa: F401  触发注册
+from app.tools.builtin import sleep  # noqa: F401  触发注册
