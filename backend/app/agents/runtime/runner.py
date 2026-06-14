@@ -137,7 +137,7 @@ def _content_to_text(blocks: list[ContentBlock]) -> str:
     return "".join(b.text for b in blocks)
 
 
-def _to_lc_messages(
+def to_lc_messages(
         history: list[HistoryMessage],
         current: list[ContentBlock],
 ) -> list[BaseMessage]:
@@ -159,7 +159,7 @@ def _to_lc_messages(
     return msgs
 
 
-async def _assemble_tools(cfg: AgentConfig, user: User) -> list[BaseTool]:
+async def assemble_tools(cfg: AgentConfig, user: User) -> list[BaseTool]:
     """聚合 agent 各来源工具 → list[BaseTool]，喂给 template.build。
 
     装配点：prepare_stream 只认这一个入口，新增来源（MCP / custom）在此扩、

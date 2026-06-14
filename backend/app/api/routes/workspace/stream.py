@@ -17,9 +17,9 @@ from fastapi.responses import StreamingResponse
 from app.agents.runtime import (
     AgentSpec,
     MessageCollector,
-    prepare_stream,
     run_chat_stream,
 )
+from app.agents.workspace.workspace import build_workspace_graph
 from app.core.depends import get_current_user
 from app.core.exceptions import NotFound404
 from app.models import Conversation, Message, MessageStatus, SenderKind, MessageRole
@@ -37,6 +37,7 @@ CurrentUserDep = Annotated[User, Depends(get_current_user)]
 MessageServiceDep = Annotated[MessageService, Depends(get_message_service)]
 
 SSE_MEDIA_TYPE = "text/event-stream"
+
 
 def _db_messages_to_history(messages: list[Message]) -> list[HistoryMessage]:
     """DB 消息 → LLM 上下文 history，只回放 text 块（存而不喂）。
@@ -97,8 +98,10 @@ async def conversation_stream(
 
     # ④ supervisor jsonb → AgentSpec → 装配（可 raise → 400 JSON，SSE 还没起）
     spec = AgentSpec.from_jsonb(conversation.workspace.supervisor)
-    graph, lc_messages = await prepare_stream(
-        spec, ChatStreamRequest(content=body.content, history=history), current_user,
+    graph, lc_messages = await build_workspace_graph(
+        conversation.workspace,
+        ChatStreamRequest(content=body.content, history=history),
+        current_user,
     )
 
     collector = MessageCollector()
@@ -122,7 +125,6 @@ async def conversation_stream(
         )
         await conversation.save(update_fields=["updated_at"])
 
-
     async def stream():
         status = MessageStatus.STOPPED  # 悲观默认：没自然走完就是被掐
         try:
@@ -136,8 +138,3 @@ async def conversation_stream(
             await asyncio.shield(persist_assistant(status))
 
     return StreamingResponse(stream(), media_type=SSE_MEDIA_TYPE)
-
-
-
-
-
