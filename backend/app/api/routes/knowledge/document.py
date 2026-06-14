@@ -207,7 +207,7 @@ async def list_documents_paginated(
         svc: DocumentServiceDep,
         params: PaginationDep,
 ) -> ResponseModel[PageData[DocumentOut]]:
-    qs = svc.query_by_kb(kb_id)
+    qs = svc.query_by_kb(current_user, kb_id)
     return success(data=await paginate(qs, params, out=DocumentOut))
 
 
