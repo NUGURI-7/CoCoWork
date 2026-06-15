@@ -1,12 +1,8 @@
-import { useState } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { Check, ChevronDown, MessageSquarePlus } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover'
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import type { Conversation } from '@/types'
 
@@ -15,6 +11,8 @@ interface ConversationSwitcherProps {
   currentId: string | null
   onSelect: (id: string) => void
   onNew: () => void
+  /** 右侧「新对话」之后的尾槽（沉浸模式放退出按钮，平时不传） */
+  trailing?: ReactNode
 }
 
 function timeAgo(s: string): string {
@@ -37,13 +35,24 @@ export function ConversationSwitcher({
   currentId,
   onSelect,
   onNew,
+  trailing,
 }: ConversationSwitcherProps) {
   const [open, setOpen] = useState(false)
+  // hover-intent：离开后延迟关闭，给「从标题移到下拉」留缓冲，避免一移开就收
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // 按更新时间倒序
   const sorted = [...conversations].sort(
     (a, b) => +new Date(b.updated_at) - +new Date(a.updated_at),
   )
   const current = sorted.find((c) => c.id === currentId) ?? sorted[0]
+
+  function handleEnter() {
+    if (closeTimer.current) clearTimeout(closeTimer.current)
+    setOpen(true)
+  }
+  function handleLeave() {
+    closeTimer.current = setTimeout(() => setOpen(false), 120)
+  }
 
   function handleSelect(id: string) {
     onSelect(id)
@@ -57,9 +66,11 @@ export function ConversationSwitcher({
   return (
     <div className="flex shrink-0 items-center justify-between border-b px-3 py-2">
       <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
+        <PopoverAnchor asChild>
           <button
             type="button"
+            onMouseEnter={handleEnter}
+            onMouseLeave={handleLeave}
             className="hover:bg-muted flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-left transition"
           >
             <span className="truncate text-sm font-medium">
@@ -68,8 +79,14 @@ export function ConversationSwitcher({
             </span>
             <ChevronDown className="text-muted-foreground size-3.5 shrink-0" />
           </button>
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-72 p-1">
+        </PopoverAnchor>
+        <PopoverContent
+          align="start"
+          onMouseEnter={handleEnter}
+          onMouseLeave={handleLeave}
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          className="w-72 p-1"
+        >
           <div className="text-muted-foreground px-2 py-1.5 text-[11px] font-medium tracking-wide uppercase">
             历史对话
           </div>
@@ -112,15 +129,18 @@ export function ConversationSwitcher({
           </div>
         </PopoverContent>
       </Popover>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={handleNew}
-        className="text-muted-foreground hover:text-foreground"
-      >
-        <MessageSquarePlus className="size-4" />
-        新对话
-      </Button>
+      <div className="flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleNew}
+          className="text-muted-foreground hover:text-foreground"
+        >
+          <MessageSquarePlus className="size-4" />
+          新对话
+        </Button>
+        {trailing}
+      </div>
     </div>
   )
 }
