@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowDown } from 'lucide-react'
 import { bouncy } from 'ldrs'
 
@@ -127,7 +127,13 @@ export function MessageList() {
   )
 }
 
-function UserMessageRow({ message }: { message: UserMessageType }) {
+// memo：流式时每个 token 都重渲染 MessageList，靠 message 引用比对跳过没变的
+// 消息（immer 对未变消息保留同引用），只让正在长的那条重渲染。
+const UserMessageRow = memo(function UserMessageRow({
+  message,
+}: {
+  message: UserMessageType
+}) {
   return (
     <div className="flex flex-col items-end gap-1">
       <div className="bg-muted text-foreground max-w-[80%] rounded-2xl px-4 py-2.5">
@@ -135,9 +141,13 @@ function UserMessageRow({ message }: { message: UserMessageType }) {
       </div>
     </div>
   )
-}
+})
 
-function AssistantMessageRow({ message }: { message: AssistantMessageType }) {
+const AssistantMessageRow = memo(function AssistantMessageRow({
+  message,
+}: {
+  message: AssistantMessageType
+}) {
   const isStreaming = message.status === 'streaming'
 
   return (
@@ -171,5 +181,5 @@ function AssistantMessageRow({ message }: { message: AssistantMessageType }) {
       )}
     </div>
   )
-}
+})
 
