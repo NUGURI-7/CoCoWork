@@ -5,6 +5,7 @@ import { conversationStreamEndpoint, listMessages } from '@/api/workspace'
 import { ChatProvider, useChat } from '@/components/chat/ChatProvider'
 import { MessageInput } from '@/components/chat/MessageInput'
 import { MessageList } from '@/components/chat/MessageList'
+import { getOrCreateChatStore } from '@/stores/chat-registry'
 import { createChatStore } from '@/stores/chat-store'
 import { workspaceMessagesToChatMessages } from './chat-history'
 
@@ -23,8 +24,9 @@ interface WorkspaceChatProps {
  * 架构与 Playground 同款 mount，三点差异：
  * - sendHistory: false —— 历史真源在 DB，后端自己拼，body 只送当前一句
  * - 进对话先 listMessages + hydrate 回放历史；加载完成前不渲染输入框（天然禁发）
- * - 父级用 key={conversationId} 重挂：切对话 = 组件销毁重建，
- *   cleanup reset() 掐掉旧流（简单版；3c+ 升级 store 缓存做「切走继续跑」）
+ * - store 不随组件挂载，而是从 chat-registry 常驻架子按 conversationId 取：
+ *   切对话组件销毁，但桶留在架子上、流继续 →「切走不断流」。空桶才灌历史，
+ *   非空（灌过 / 后台在跑）直接复用。架子在离开工作空间时整体回收。
  *
  * mock 双轨路由 / @mention popover 已退役 —— d-3 @ 路由片按真设计重做
  * （mentioned_member_ids 要进请求 body，输入框届时扩展）。
@@ -36,12 +38,19 @@ export function WorkspaceChat({
 }: WorkspaceChatProps) {
   const endpoint = conversationStreamEndpoint(workspaceId, conversationId)
   const store = useMemo(
-    () => createChatStore({ endpoint, sendHistory: false }),
-    [endpoint],
+    () =>
+      getOrCreateChatStore(conversationId, () => createChatStore({ endpoint, sendHistory: false })),
+    [conversationId, endpoint],
   )
   const [historyLoading, setHistoryLoading] = useState(true)
 
   useEffect(() => {
+    // 桶已经有内容（之前灌过历史 / 正在后台跑）→ 不重灌，直接放行
+    if (store.getState().messages.length > 0) {
+      setHistoryLoading(false)
+      return
+    }
+
     let cancelled = false
     setHistoryLoading(true)
 
@@ -51,7 +60,7 @@ export function WorkspaceChat({
         store.getState().hydrate(workspaceMessagesToChatMessages(msgs))
       })
       .catch(() => {
-        // 拦截器已 toast；历史拉不到也放开输入（按空历史聊）
+        // 拦截器已 toast；历史拉不到也放开输入
       })
       .finally(() => {
         if (!cancelled) setHistoryLoading(false)
@@ -59,7 +68,7 @@ export function WorkspaceChat({
 
     return () => {
       cancelled = true
-      store.getState().reset()
+      // 不再 reset()：切走时桶留在架子上、流继续。组件拆了，不碰桶。
     }
   }, [store, workspaceId, conversationId])
 

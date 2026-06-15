@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/breadcrumb'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { disposeAllChatStores } from '@/stores/chat-registry'
 import { useImmersiveStore } from '@/stores/immersive'
 import { useTabTitle } from '@/stores/use-tab-sync'
 import type { Conversation, Workspace, WorkspaceMemberOut } from '@/types'
@@ -124,6 +125,12 @@ export default function WorkspaceDetailPage() {
     enterImmersive(workspaceId)
     return () => leaveImmersive()
   }, [workspaceId, enterImmersive, leaveImmersive])
+
+  // 离开本空间 / 切到别的空间 → 清空 chat-registry，回收所有对话桶（含中断在跑的
+  // 流）。桶只在「逛当前空间」期间常驻，给内存封顶。
+  useEffect(() => {
+    return () => disposeAllChatStores()
+  }, [workspaceId])
 
   useTabTitle(`/workspaces/${workspaceId}`, workspace?.name)
 

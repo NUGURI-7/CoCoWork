@@ -4,6 +4,10 @@ import { Check, ChevronDown, MessageSquarePlus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
+import {
+  useStreamStatusStore,
+  type ConversationStatus,
+} from '@/stores/stream-status'
 import type { Conversation } from '@/types'
 
 interface ConversationSwitcherProps {
@@ -13,6 +17,19 @@ interface ConversationSwitcherProps {
   onNew: () => void
   /** 右侧「新对话」之后的尾槽（沉浸模式放退出按钮，平时不传） */
   trailing?: ReactNode
+}
+
+/** 对话状态点：running 墨绿脉冲 / error 红；idle 不画（保持清爽）。 */
+function StatusDot({ status }: { status: ConversationStatus }) {
+  if (status === 'idle') return null
+  return (
+    <span
+      className={cn(
+        'size-2 shrink-0 rounded-full',
+        status === 'running' ? 'bg-brand animate-pulse' : 'bg-destructive',
+      )}
+    />
+  )
 }
 
 function timeAgo(s: string): string {
@@ -45,6 +62,8 @@ export function ConversationSwitcher({
     (a, b) => +new Date(b.updated_at) - +new Date(a.updated_at),
   )
   const current = sorted.find((c) => c.id === currentId) ?? sorted[0]
+  // 每条对话的实时状态（registry 写入）—— 画状态点
+  const statuses = useStreamStatusStore((s) => s.statuses)
 
   function handleEnter() {
     if (closeTimer.current) clearTimeout(closeTimer.current)
@@ -77,6 +96,7 @@ export function ConversationSwitcher({
               {/* 空串 = 标题待生成（首轮对话后系统补） */}
               {current ? current.title || '新对话' : '无对话'}
             </span>
+            {current && <StatusDot status={statuses[current.id] ?? 'idle'} />}
             <ChevronDown className="text-muted-foreground size-3.5 shrink-0" />
           </button>
         </PopoverAnchor>
@@ -121,6 +141,7 @@ export function ConversationSwitcher({
                         {timeAgo(c.updated_at)}
                       </div>
                     </div>
+                    <StatusDot status={statuses[c.id] ?? 'idle'} />
                     {isActive && <Check className="text-brand size-3.5 shrink-0" />}
                   </button>
                 )
