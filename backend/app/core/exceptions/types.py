@@ -39,3 +39,9 @@ class ValidationException(AppApiException):
 
     def __init__(self, message: str = "参数验证失败", code: int = 400, data: Any = None):
         super().__init__(code=code, message=message, data=data)
+
+class Conflict409(AppApiException):
+    """409 资源冲突（如唯一约束撞库：重复招募同一 agent）"""
+
+    def __init__(self, message: str = "资源冲突", code: int = 409, data: Any = None):
+        super().__init__(code=code, message=message, data=data)

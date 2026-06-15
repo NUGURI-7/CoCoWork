@@ -13,6 +13,9 @@ from app.schemas.workspace.workspace_schema import (
     WorkspaceOut,
     WorkspaceUpdate,
 )
+from app.schemas.workspace.member_schema import (
+    MemberOut, MemberRecruitIn
+)
 
 __all__ = [
     "ConversationCreate",
@@ -24,4 +27,6 @@ __all__ = [
     "WorkspaceCreate",
     "WorkspaceOut",
     "WorkspaceUpdate",
+    "MemberOut",
+    "MemberRecruitIn",
 ]

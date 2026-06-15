@@ -95,3 +95,33 @@ export interface WorkspaceMessage {
   created_at: string
   updated_at: string
 }
+
+// ============ Member（招募进来的 agent 引用） ============
+
+/** 对齐后端 MemberOut.agent —— 通讯录展示用的 agent 摘要。 */
+export interface MemberAgentInfo {
+  id: string
+  name: string
+  /** 引用的内置模板 registry key */
+  template: string
+}
+
+/**
+ * 对齐后端 MemberOut。
+ *
+ * 成员是对 agent 的不可变引用（workspace 侧无覆盖配置）；agent 内嵌摘要由后端
+ * prefetch 摊出，前端无需再 N+1 拉 agent 详情。管家（supervisor）不在此列 ——
+ * 它是 workspace.supervisor，不是 members 表的行。
+ */
+export interface WorkspaceMemberOut {
+  id: string
+  workspace_id: string
+  agent: MemberAgentInfo
+  created_at: string
+  updated_at: string
+}
+
+/** 对齐后端 MemberRecruitIn —— 招募一个现成 agent。 */
+export interface MemberRecruitPayload {
+  agent_id: string
+}

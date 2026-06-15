@@ -5,6 +5,7 @@ from app.core.exceptions.types import (
     AppApiException,
     AppAuthenticationFailed,
     AppUnauthorizedFailed,
+    Conflict409,
     NotFound404,
     ValidationException,
 )
@@ -16,4 +17,5 @@ __all__ = [
     "NotFound404",
     "ValidationException",
     "register_exception_handlers",
+    "Conflict409",
 ]

@@ -10,6 +10,10 @@ from app.services.workspace.workspace_service import (
     WorkspaceService,
     get_workspace_service,
 )
+from app.services.workspace.member_service import (
+    MemberService,
+    get_member_service,
+)
 
 __all__ = [
     "ConversationService",
@@ -18,4 +22,6 @@ __all__ = [
     "get_conversation_service",
     "get_message_service",
     "get_workspace_service",
+    "MemberService",
+    "get_member_service",
 ]

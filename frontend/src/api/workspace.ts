@@ -12,8 +12,10 @@ import type {
   Conversation,
   ConversationCreatePayload,
   ConversationUpdatePayload,
+  MemberRecruitPayload,
   Workspace,
   WorkspaceCreatePayload,
+  WorkspaceMemberOut,
   WorkspaceMessage,
   WorkspaceUpdatePayload,
 } from '@/types'
@@ -104,4 +106,24 @@ export function conversationStreamEndpoint(
   conversationId: string,
 ): string {
   return `/workspaces/${workspaceId}/conversations/${conversationId}/stream`
+}
+
+// ============ Member（nested: /workspaces/{wid}/members） ============
+
+/** 列出 workspace 成员（后端按招募时间正序，先来的在前）。 */
+export function listMembers(workspaceId: string) {
+  return get<WorkspaceMemberOut[]>(`/workspaces/${workspaceId}/members`)
+}
+
+/** 招募一个现成 agent 进 workspace（unique 撞库后端返 409）。 */
+export function recruitMember(
+  workspaceId: string,
+  payload: MemberRecruitPayload,
+) {
+  return post<WorkspaceMemberOut>(`/workspaces/${workspaceId}/members`, payload)
+}
+
+/** 踢人（移除成员，保历史消息）。 */
+export function removeMember(workspaceId: string, memberId: string) {
+  return del<null>(`/workspaces/${workspaceId}/members/${memberId}`)
 }

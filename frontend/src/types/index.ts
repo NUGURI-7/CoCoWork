@@ -51,6 +51,9 @@ export type {
   SenderKind,
   MessageStatus,
   WorkspaceMessage,
+  MemberAgentInfo,
+  WorkspaceMemberOut,
+  MemberRecruitPayload,
 } from './workspace'
 export type { ToolSource, Tool } from './tool'
 export type {
