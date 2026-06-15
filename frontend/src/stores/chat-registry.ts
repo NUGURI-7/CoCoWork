@@ -45,6 +45,22 @@ export function getOrCreateChatStore(conversationId: string, create: () => ChatS
 }
 
 /**
+ * 回收单个对话的桶 —— 删除对话时调用。
+ *
+ * reset() 中断在跑的流 + 清状态；退订防泄漏；从两个 Map 删 + 清该 id 的实时状态。
+ * 跟 disposeAllChatStores 同套清理、只作用一条；架子上没有该条（从没开过）= noop。
+ */
+export function disposeChatStore(conversationId: string) {
+  const store = registry.get(conversationId)
+  if (store) store.getState().reset()
+  const unsub = unsubs.get(conversationId)
+  if (unsub) unsub()
+  unsubs.delete(conversationId)
+  registry.delete(conversationId)
+  useStreamStatusStore.getState().remove(conversationId)
+}
+
+/**
  * 清空整个架子 —— 中断所有在跑的流并丢弃所有桶。
  *
  * 在「离开工作空间 / 切到另一个工作空间」时调用，给内存封顶：桶只在「逛当前

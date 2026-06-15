@@ -1,0 +1,163 @@
+import { Check, Trash2 } from 'lucide-react'
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { cn } from '@/lib/utils'
+import {
+  useStreamStatusStore,
+  type ConversationStatus,
+} from '@/stores/stream-status'
+import type { Conversation } from '@/types'
+
+/** 对话状态点：running 墨绿脉冲 / error 红；idle 不画（保持清爽）。 */
+export function StatusDot({ status }: { status: ConversationStatus }) {
+  if (status === 'idle') return null
+  return (
+    <span
+      className={cn(
+        'size-2 shrink-0 rounded-full',
+        status === 'running' ? 'bg-brand animate-pulse' : 'bg-destructive',
+      )}
+    />
+  )
+}
+
+function timeAgo(s: string): string {
+  const diff = Date.now() - new Date(s).getTime()
+  const m = Math.floor(diff / 60000)
+  if (m < 60) return `${Math.max(m, 1)} 分钟前`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h} 小时前`
+  return `${Math.floor(h / 24)} 天前`
+}
+
+interface ConversationListProps {
+  conversations: Conversation[]
+  currentId: string | null
+  onSelect: (id: string) => void
+  /** 删除只发起请求，确认弹窗归各容器持有（须挂 Popover 外避免 hover 收起连带卸载）。 */
+  onRequestDelete: (id: string) => void
+}
+
+/**
+ * 会话列表行（纯展示）
+ *
+ * 顶部 hover 浮窗（ConversationSwitcher）与沉浸左栏常驻面板（ConversationPanel）
+ * 共用同一份行渲染。不带自己的滚动容器与表头 —— 由各容器套外层，高度/留白自定。
+ */
+export function ConversationList({
+  conversations,
+  currentId,
+  onSelect,
+  onRequestDelete,
+}: ConversationListProps) {
+  const statuses = useStreamStatusStore((s) => s.statuses)
+  // 按更新时间倒序
+  const sorted = [...conversations].sort(
+    (a, b) => +new Date(b.updated_at) - +new Date(a.updated_at),
+  )
+
+  if (sorted.length === 0) {
+    return (
+      <div className="text-muted-foreground px-2 py-3 text-center text-xs">
+        还没有对话
+      </div>
+    )
+  }
+
+  return (
+    <>
+      {sorted.map((c) => {
+        const isActive = c.id === currentId
+        return (
+          <div
+            key={c.id}
+            className={cn(
+              'group flex items-center gap-1 rounded-md pr-1',
+              isActive ? 'bg-brand-subtle' : 'hover:bg-muted',
+            )}
+          >
+            <button
+              type="button"
+              onClick={() => onSelect(c.id)}
+              className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left"
+            >
+              <div className="min-w-0 flex-1">
+                <div
+                  className={cn(
+                    'truncate text-sm',
+                    isActive && 'text-brand font-medium',
+                  )}
+                >
+                  {/* 空串 = 标题待生成（首轮对话后系统补） */}
+                  {c.title || '新对话'}
+                </div>
+                <div className="text-muted-foreground text-[11px]">
+                  {timeAgo(c.updated_at)}
+                </div>
+              </div>
+              <StatusDot status={statuses[c.id] ?? 'idle'} />
+              {isActive && <Check className="text-brand size-3.5 shrink-0" />}
+            </button>
+            <button
+              type="button"
+              aria-label="删除对话"
+              onClick={() => onRequestDelete(c.id)}
+              className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0 rounded p-1 opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100"
+            >
+              <Trash2 className="size-3.5" />
+            </button>
+          </div>
+        )
+      })}
+    </>
+  )
+}
+
+interface DeleteConversationDialogProps {
+  conversation: Conversation | undefined
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onConfirm: () => void
+}
+
+/**
+ * 删除对话二次确认弹窗
+ *
+ * 由各容器自己持有并挂在 Popover 外 —— 浮窗 hover 收起会卸载其内部子树，
+ * 确认弹窗若挂在里面会被连带卸载，故下沉为独立组件供两处复用。
+ */
+export function DeleteConversationDialog({
+  conversation,
+  open,
+  onOpenChange,
+  onConfirm,
+}: DeleteConversationDialogProps) {
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>删除这条对话？</AlertDialogTitle>
+          <AlertDialogDescription>
+            「{conversation?.title || '新对话'}
+            」及其全部消息将被永久删除，无法恢复。
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>取消</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" onClick={onConfirm}>
+            删除
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+}

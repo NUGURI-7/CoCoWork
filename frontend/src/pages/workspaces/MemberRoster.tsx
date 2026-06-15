@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react'
-import { UserPlus, X } from 'lucide-react'
+import { useState } from 'react'
+import { ChevronDown, UserPlus, X } from 'lucide-react'
 
 import {
   AlertDialog,
@@ -12,7 +12,6 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import type { RosterMember } from './roster'
 
@@ -137,7 +136,7 @@ export function MemberRoster({
                 e.preventDefault()
                 handleConfirmRemove()
               }}
-              className="bg-destructive text-white hover:bg-destructive/90"
+              variant="destructive"
             >
               {removing ? '移除中...' : '移除'}
             </AlertDialogAction>
@@ -148,95 +147,58 @@ export function MemberRoster({
   )
 }
 
-// ============ 窄 dock（沉浸模式常驻）============
+// ============ 成员面板（沉浸模式左栏上段，纯展示）============
 
-interface MemberDockProps {
+interface MemberPanelProps {
   members: RosterMember[]
+  /** 折叠态：只留表头，body 收起 */
+  collapsed?: boolean
+  onToggleCollapsed?: () => void
 }
 
-/** hover 离开后延迟关闭，给「从 dock 移到浮卡」留缓冲，避免一移开就收 */
-const CLOSE_DELAY_MS = 120
-
 /**
- * 成员 dock（沉浸模式）
+ * 成员面板（沉浸模式）
  *
- * 贴左常驻窄竖条：头像竖排 + 运行时状态点；高度随成员数撑开、最高半屏。
- * hover 时向右浮出完整成员卡（Popover 走 portal，不被父级 overflow 裁切、
- * 也不挤会话布局）。
+ * 满宽常驻卡片：表头「成员 N」+ 成员行列表（头像 + 名字 + 副标题 + 运行时状态点），
+ * 与下方会话面板同宽、各自独立成卡。纵向占左栏上段（~2/5 高）。可折叠成单条表头。
  *
  * 纯展示：沉浸模式追求纯净，不带招募 / 踢人等管理动作（成员管理回非沉浸的宽 roster）。
  */
-export function MemberDock({ members }: MemberDockProps) {
-  const [open, setOpen] = useState(false)
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  function handleEnter() {
-    if (closeTimer.current) clearTimeout(closeTimer.current)
-    setOpen(true)
-  }
-  function handleLeave() {
-    closeTimer.current = setTimeout(() => setOpen(false), CLOSE_DELAY_MS)
-  }
-
+export function MemberPanel({
+  members,
+  collapsed = false,
+  onToggleCollapsed,
+}: MemberPanelProps) {
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverAnchor asChild>
-        <div
-          onMouseEnter={handleEnter}
-          onMouseLeave={handleLeave}
-          className="bg-background flex min-h-44 w-14 shrink-0 flex-col items-center justify-center gap-2 self-center rounded-lg border py-3 shadow-sm"
+    <div
+      className={cn(
+        'bg-background flex flex-col overflow-hidden rounded-lg border shadow-sm',
+        collapsed ? 'h-auto' : 'h-full min-h-0',
+      )}
+    >
+      <div className="flex shrink-0 items-center justify-between border-b px-4 py-3">
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          className="hover:text-foreground -ml-1 flex items-center gap-1.5 rounded px-1 text-sm font-medium"
         >
-          {/* pb-1：给状态点 absolute -bottom 的 2px 留地方，否则触发 overflow 滚动条 */}
-          <div className="flex max-h-[50vh] flex-col items-center gap-2.5 overflow-x-clip overflow-y-auto px-1 pb-1">
-            {members.map((m) => (
-              <DockAvatar key={m.id} member={m} />
-            ))}
-          </div>
+          <ChevronDown
+            className={cn(
+              'text-muted-foreground size-3.5 shrink-0 transition-transform',
+              collapsed && '-rotate-90',
+            )}
+          />
+          成员
+        </button>
+        <span className="text-muted-foreground text-xs">{members.length}</span>
+      </div>
+      {!collapsed && (
+        <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-2">
+          {members.map((m) => (
+            <MemberRow key={m.id} member={m} showStatus />
+          ))}
         </div>
-      </PopoverAnchor>
-
-      {/* hover 浮出完整卡：portal 渲染，向右展开盖在会话上，不挤布局 */}
-      <PopoverContent
-        side="right"
-        align="start"
-        sideOffset={8}
-        onMouseEnter={handleEnter}
-        onMouseLeave={handleLeave}
-        onOpenAutoFocus={(e) => e.preventDefault()}
-        className="w-64 overflow-hidden p-0"
-      >
-        <div className="flex max-h-[70vh] flex-col overflow-hidden">
-          <div className="flex shrink-0 items-center justify-between border-b px-4 py-3">
-            <h3 className="text-sm font-medium">成员</h3>
-            <span className="text-muted-foreground text-xs">{members.length}</span>
-          </div>
-          <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-2">
-            {members.map((m) => (
-              <MemberRow key={m.id} member={m} showStatus />
-            ))}
-          </div>
-        </div>
-      </PopoverContent>
-    </Popover>
-  )
-}
-
-/** 窄 dock 里的单个成员：头像 + 右下角状态点 */
-function DockAvatar({ member }: { member: RosterMember }) {
-  const status = memberStatus()
-  return (
-    <div className="relative shrink-0" title={member.name}>
-      <img
-        src={member.avatarUrl ?? '/gopher-fcb-glass.png'}
-        alt={member.name}
-        className="size-8 rounded-full object-cover"
-      />
-      <span
-        className={cn(
-          'ring-background absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2',
-          STATUS_DOT[status],
-        )}
-      />
+      )}
     </div>
   )
 }

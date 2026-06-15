@@ -7,6 +7,7 @@ interface StreamStatusState {
   /** conversationId → 状态。无条目 = 没开过本对话，按 idle 处理 */
   statuses: Record<string, ConversationStatus>
   set: (conversationId: string, status: ConversationStatus) => void
+  remove: (conversationId: string) => void
   clear: () => void
 }
 
@@ -21,5 +22,12 @@ export const useStreamStatusStore = create<StreamStatusState>((set) => ({
   statuses: {},
   set: (conversationId, status) =>
     set((s) => ({ statuses: { ...s.statuses, [conversationId]: status } })),
+  remove: (conversationId) =>
+    set((s) => {
+      if (!(conversationId in s.statuses)) return s
+      const rest = { ...s.statuses }
+      delete rest[conversationId]
+      return { statuses: rest }
+    }),
   clear: () => set({ statuses: {} }),
 }))

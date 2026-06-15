@@ -1,69 +1,74 @@
 import { useRef, useState, type ReactNode } from 'react'
-import { Check, ChevronDown, MessageSquarePlus } from 'lucide-react'
+import { ChevronDown, MessageSquarePlus } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
-import { cn } from '@/lib/utils'
-import {
-  useStreamStatusStore,
-  type ConversationStatus,
-} from '@/stores/stream-status'
+import { useStreamStatusStore } from '@/stores/stream-status'
 import type { Conversation } from '@/types'
+import {
+  ConversationList,
+  DeleteConversationDialog,
+  StatusDot,
+} from './ConversationList'
 
 interface ConversationSwitcherProps {
   conversations: Conversation[]
   currentId: string | null
   onSelect: (id: string) => void
   onNew: () => void
+  onDelete: (id: string) => void
   /** 右侧「新对话」之后的尾槽（沉浸模式放退出按钮，平时不传） */
   trailing?: ReactNode
-}
-
-/** 对话状态点：running 墨绿脉冲 / error 红；idle 不画（保持清爽）。 */
-function StatusDot({ status }: { status: ConversationStatus }) {
-  if (status === 'idle') return null
-  return (
-    <span
-      className={cn(
-        'size-2 shrink-0 rounded-full',
-        status === 'running' ? 'bg-brand animate-pulse' : 'bg-destructive',
-      )}
-    />
-  )
-}
-
-function timeAgo(s: string): string {
-  const diff = Date.now() - new Date(s).getTime()
-  const m = Math.floor(diff / 60000)
-  if (m < 60) return `${Math.max(m, 1)} 分钟前`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `${h} 小时前`
-  return `${Math.floor(h / 24)} 天前`
+  /** 沉浸模式：会话列表已常驻左栏 → 标题静态化、隐藏下拉与「新对话」，只留 trailing */
+  immersive?: boolean
+  /** 沉浸模式标题左侧的引导槽（放全局侧栏收起按钮），仅沉浸全宽顶栏用 */
+  leading?: ReactNode
 }
 
 /**
  * 主对话区顶部 conversation 切换条
  *
- * - 左：当前对话标题 + 下拉，展开历史列表
- * - 右：「新对话」按钮，push 一条新 conversation 到 store + 自动切换
+ * - 非沉浸：左侧当前标题 + 下拉展开历史列表，右侧「新对话」+ 尾槽
+ * - 沉浸：列表已搬到左栏常驻面板 → 顶栏只剩静态标题 + 尾槽（产物 / 退出）
  */
 export function ConversationSwitcher({
   conversations,
   currentId,
   onSelect,
   onNew,
+  onDelete,
   trailing,
+  immersive = false,
+  leading,
 }: ConversationSwitcherProps) {
   const [open, setOpen] = useState(false)
+  // 待确认删除的对话 id —— 单个受控 AlertDialog（放 Popover 外，portaled 不受 hover 收起影响）
+  const [confirmId, setConfirmId] = useState<string | null>(null)
   // hover-intent：离开后延迟关闭，给「从标题移到下拉」留缓冲，避免一移开就收
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // 按更新时间倒序
+  // 每条对话的实时状态（registry 写入）—— 画状态点
+  const statuses = useStreamStatusStore((s) => s.statuses)
+  // 按更新时间倒序，取当前/兜底首条
   const sorted = [...conversations].sort(
     (a, b) => +new Date(b.updated_at) - +new Date(a.updated_at),
   )
   const current = sorted.find((c) => c.id === currentId) ?? sorted[0]
-  // 每条对话的实时状态（registry 写入）—— 画状态点
-  const statuses = useStreamStatusStore((s) => s.statuses)
+
+  // 沉浸模式：会话列表已在左栏常驻 → 退化为全宽极简顶栏（leading 收起钮 + 静态标题 + 尾槽）
+  if (immersive) {
+    return (
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b px-2 py-2">
+        <div className="flex min-w-0 items-center gap-2">
+          {leading}
+          <span className="truncate text-sm font-medium">
+            {current ? current.title || '新对话' : '无对话'}
+          </span>
+          {current && <StatusDot status={statuses[current.id] ?? 'idle'} />}
+        </div>
+        <div className="flex items-center gap-1">{trailing}</div>
+      </div>
+    )
+  }
 
   function handleEnter() {
     if (closeTimer.current) clearTimeout(closeTimer.current)
@@ -72,7 +77,6 @@ export function ConversationSwitcher({
   function handleLeave() {
     closeTimer.current = setTimeout(() => setOpen(false), 120)
   }
-
   function handleSelect(id: string) {
     onSelect(id)
     setOpen(false)
@@ -111,42 +115,15 @@ export function ConversationSwitcher({
             历史对话
           </div>
           <div className="max-h-64 space-y-0.5 overflow-y-auto">
-            {sorted.length === 0 ? (
-              <div className="text-muted-foreground px-2 py-3 text-center text-xs">
-                还没有对话
-              </div>
-            ) : (
-              sorted.map((c) => {
-                const isActive = c.id === currentId
-                return (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => handleSelect(c.id)}
-                    className={cn(
-                      'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left',
-                      isActive ? 'bg-brand-subtle' : 'hover:bg-muted',
-                    )}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div
-                        className={cn(
-                          'truncate text-sm',
-                          isActive && 'text-brand font-medium',
-                        )}
-                      >
-                        {c.title || '新对话'}
-                      </div>
-                      <div className="text-muted-foreground text-[11px]">
-                        {timeAgo(c.updated_at)}
-                      </div>
-                    </div>
-                    <StatusDot status={statuses[c.id] ?? 'idle'} />
-                    {isActive && <Check className="text-brand size-3.5 shrink-0" />}
-                  </button>
-                )
-              })
-            )}
+            <ConversationList
+              conversations={conversations}
+              currentId={currentId}
+              onSelect={handleSelect}
+              onRequestDelete={(id) => {
+                setConfirmId(id)
+                setOpen(false)
+              }}
+            />
           </div>
         </PopoverContent>
       </Popover>
@@ -162,6 +139,16 @@ export function ConversationSwitcher({
         </Button>
         {trailing}
       </div>
+
+      <DeleteConversationDialog
+        conversation={conversations.find((c) => c.id === confirmId)}
+        open={confirmId !== null}
+        onOpenChange={(o) => !o && setConfirmId(null)}
+        onConfirm={() => {
+          if (confirmId) onDelete(confirmId)
+          setConfirmId(null)
+        }}
+      />
     </div>
   )
 }
