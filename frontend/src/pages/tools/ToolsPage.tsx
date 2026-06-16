@@ -1,9 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { ring } from 'ldrs'
 import { Wrench } from 'lucide-react'
 
+import { listTools } from '@/api/tool'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import type { Tool, ToolSource } from '@/types'
 import { ToolCard } from './ToolCard'
-import { mockTools, type Tool, type ToolSource } from './mock'
+
+ring.register()
 
 function Stat({ label, value }: { label: string; value: number | string }) {
   return (
@@ -14,13 +18,7 @@ function Stat({ label, value }: { label: string; value: number | string }) {
   )
 }
 
-function ToolGrid({
-  tools,
-  onToggle,
-}: {
-  tools: Tool[]
-  onToggle: (id: string, enabled: boolean) => void
-}) {
+function ToolGrid({ tools }: { tools: Tool[] }) {
   if (tools.length === 0) {
     return (
       <div className="text-muted-foreground flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed py-16 text-sm">
@@ -35,28 +33,47 @@ function ToolGrid({
       style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))' }}
     >
       {tools.map((t) => (
-        <ToolCard key={t.id} tool={t} onToggle={(v) => onToggle(t.id, v)} />
+        <ToolCard key={t.name} tool={t} />
       ))}
     </div>
   )
 }
 
-/** /tools — 工具列表页（三带式：Header / 统计带 / Tab + 卡片网格） */
+/** /tools — 工具目录（只读：三带式 Header / 统计带 / Tab + 卡片网格） */
 export default function ToolsPage() {
-  const [tools, setTools] = useState(mockTools)
+  const [tools, setTools] = useState<Tool[] | null>(null)
 
-  const builtin = tools.filter((t) => t.source === 'builtin')
-  const mcp = tools.filter((t) => t.source === 'mcp')
-  const enabledCount = tools.filter((t) => t.enabled).length
+  useEffect(() => {
+    let cancelled = false
+    listTools()
+      .then((data) => {
+        if (!cancelled) setTools(data)
+      })
+      .catch(() => {
+        // 拦截器已 toast；失败按空列表收场
+        if (!cancelled) setTools([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
-  function toggle(id: string, enabled: boolean) {
-    setTools((prev) => prev.map((t) => (t.id === id ? { ...t, enabled } : t)))
+  if (tools === null) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <l-ring size="36" stroke="3" speed="2" color="#2f6b53" />
+      </div>
+    )
   }
+
+  const builtin = tools.filter((t) => t.source_type === 'builtin')
+  const mcp = tools.filter((t) => t.source_type === 'mcp')
 
   const byTab: Record<'all' | ToolSource, Tool[]> = {
     all: tools,
     builtin,
     mcp,
+    custom: tools.filter((t) => t.source_type === 'custom'),
   }
 
   return (
@@ -71,7 +88,6 @@ export default function ToolsPage() {
         <Stat label="工具" value={tools.length} />
         <Stat label="内置" value={builtin.length} />
         <Stat label="MCP" value={mcp.length} />
-        <Stat label="已启用" value={enabledCount} />
       </div>
 
       {/* ③ Tab 按来源筛 + 卡片网格 */}
@@ -84,7 +100,7 @@ export default function ToolsPage() {
 
         {(['all', 'builtin', 'mcp'] as const).map((tab) => (
           <TabsContent key={tab} value={tab} className="mt-4">
-            <ToolGrid tools={byTab[tab]} onToggle={toggle} />
+            <ToolGrid tools={byTab[tab]} />
           </TabsContent>
         ))}
       </Tabs>
