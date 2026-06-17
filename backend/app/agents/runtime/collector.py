@@ -14,6 +14,7 @@ from typing import Any
 
 from app.agents.runtime.events import EventType
 
+
 class MessageCollector:
     """攒一条流式 assistant 消息。
 
@@ -69,9 +70,11 @@ class MessageCollector:
         block_type = payload.get("type", "")
         if index is None or not block_type:
             return
-        # 协议约定：内容键名 == 块类型名（text 块内容在 "text" 字段、
-        # thinking 块在 "thinking" 字段，Anthropic 同款），所以能这么拼。
-        self._blocks[index] = {"type": block_type, block_type: ""}
+        block: dict[str, Any] = {"type": block_type, block_type: ""}
+        subagent = payload.get("subagent")
+        if subagent:
+            block["subagent"] = subagent
+        self._blocks[index] = block
 
     def _append_delta(self, payload: dict[str, Any]) -> None:
         """content_block_delta → 按 index 找块、追加内容增量。"""
@@ -90,7 +93,7 @@ class MessageCollector:
         if index is None:
             return
 
-        self._blocks[index] = {
+        block: dict[str, Any] = {
             "type": "tool_use",
             "id": payload.get("id", ""),
             "name": payload.get("name", ""),
@@ -98,10 +101,12 @@ class MessageCollector:
             "partial_json": "",
             "result_summary": None,
             "result_data": None,
-            # None = 没等到结局（流中断时的最终形态）；tool_result 回填 success/error。
-            # 落库不存 "running" 这类进行时 —— DB 里只有事实，没有正在发生。
             "status": None,
         }
+        subagent = payload.get("subagent")
+        if subagent:
+            block["subagent"] = subagent
+        self._blocks[index] = block
 
     def _append_tool_json(self, payload: dict[str, Any]) -> None:
         """tool_use_delta → 追加 partial JSON 增量（攒齐即完整入参串）。"""
@@ -122,4 +127,3 @@ class MessageCollector:
         block["status"] = payload.get("status")
         block["result_summary"] = payload.get("result_summary")
         block["result_data"] = payload.get("result_data")
-

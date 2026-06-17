@@ -17,6 +17,10 @@ from langchain_core.messages import BaseMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
+from langchain_core.language_models import BaseChatModel
+from deepagents.middleware.subagents import CompiledSubAgent, DEFAULT_SUBAGENT_PROMPT
+from deepagents import SubAgentMiddleware
+from deepagents.backends import StateBackend
 
 from app.agents.runtime.runner import (
     assemble_tools,
@@ -24,10 +28,9 @@ from app.agents.runtime.runner import (
     to_lc_messages,
 )
 from app.core.exceptions import ValidationException
-from app.models import User, Workspace
+from app.models import User, Workspace, WorkspaceMember
 from app.schemas.agent.chat_schema import ChatStreamRequest
 from app.schemas.agent.config_schema import AgentConfig
-
 
 
 class WorkspaceState(TypedDict):
@@ -48,6 +51,46 @@ class WorkspaceContextMiddleware(AgentMiddleware):
     裁剪)将来在此接入，supervisor 的 create_agent 调用本身一字不动 —— 现在就挂上，
     是为了 workspace 阶段「填空即可」，而不是回头改装配主体。
     """
+
+
+async def _member_to_subagent(
+        member: WorkspaceMember,
+        user: User,
+        fallback_model: BaseChatModel,
+) -> CompiledSubAgent:
+    """把一个招募成员装配成 supervisor 可派活的子 agent。
+
+    成员没配 chat 模型时继承 supervisor 的模型（fallback_model）——
+    模型只决定「用哪个 LLM」，成员的身份（prompt / tools / 知识库）仍是它自己的；
+    这也是 deepagents 的默认语义（subagent 不配 model 则继承主 agent）。
+    """
+    agent = member.agent
+    member_cfg = AgentConfig.model_validate(agent.config)
+
+    model = (
+        await build_chat_model(member_cfg.models.chat)
+        if member_cfg.models.chat is not None
+        else fallback_model
+    )
+    tools = await assemble_tools(member_cfg, user)
+
+    base_prompt = member_cfg.system_prompt
+    system_prompt = (
+        f"{base_prompt}\n\n{DEFAULT_SUBAGENT_PROMPT}"  # ← \n\n 隔开
+        if base_prompt else DEFAULT_SUBAGENT_PROMPT
+    )
+
+    runnable = create_agent(
+        model=model,
+        tools=tools,
+        system_prompt=system_prompt,
+    )
+
+    return {
+        "name": f"member_{member.id.hex[:8]}",
+        "description": f"{agent.name}：{agent.description or '无描述'}",
+        "runnable": runnable,
+    }
 
 
 async def build_workspace_graph(
@@ -72,18 +115,39 @@ async def build_workspace_graph(
 
     cfg = AgentConfig.model_validate(workspace.supervisor)
 
+    # 拉本 workspace 招募的成员（select_related agent —— 正向 FK 走 JOIN，一次查询）
+    members = await WorkspaceMember.filter(
+        workspace_id=workspace.id
+    ).select_related("agent")
+
     if cfg.models.chat is None:
         raise ValidationException("Workspace 未配置 Supervisor 的 chat 模型")
 
     chat_model = await build_chat_model(cfg.models.chat)
     tools = await assemble_tools(cfg, user)
 
+    # 招募成员 → 可派活的子 agent（没配模型的成员继承 supervisor 的 chat_model 兜底）
+    subagents = [
+        await _member_to_subagent(member, user, chat_model)
+        for member in members
+    ]
+    # supervisor 的 middleware：上下文注入始终挂；派活仅在有成员时挂
+    # （SubAgentMiddleware 的 subagents 不能为空，空会 raise）
+    middleware: list[AgentMiddleware]= [WorkspaceContextMiddleware()]
+    if subagents:
+        middleware.append(
+            SubAgentMiddleware(
+                backend=StateBackend(),
+                subagents=subagents
+            )
+        )
+
     # supervisor = 工作空间自带的通用内置 loop，直接拼，不走模板装配链
     supervisor = create_agent(
         model=chat_model,
         tools=tools,
         system_prompt=cfg.system_prompt,
-        middleware=[WorkspaceContextMiddleware()],
+        middleware=middleware,
     )
 
     # 外层薄图：supervisor 作唯一节点，START → supervisor → END

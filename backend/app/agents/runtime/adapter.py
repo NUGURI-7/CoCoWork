@@ -385,8 +385,11 @@ async def adapt_chat_stream(
             handler = _HANDLERS.get(ev.get("event", ""))
             if handler is None:
                 continue
-            async for out in handler(state, ev.get("data", {})):
-                yield out
+            agent_name = (ev.get("metadata") or {}).get("lc_agent_name")
+            async for evt_type, payload in handler(state, ev.get("data", {})):
+                if agent_name is not None:
+                    payload = {**payload, "subagent": agent_name}
+                yield evt_type, payload
     except Exception:
         # 内部异常完整 log 给后端；对前端只发通用文案，防细节外泄（栈 / 路径 / SQL）
         logger.exception("adapt_chat_stream failed; emitting cleanup + error event")

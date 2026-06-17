@@ -38,6 +38,7 @@ import type {
   ContentBlockDeltaPayload,
   ContentBlockStartPayload,
   ContentBlockStopPayload,
+  DelegateBlock,
   ErrorPayload,
   MessageDeltaPayload,
   MessageStartPayload,
@@ -47,6 +48,7 @@ import type {
   ToolUseBlock,
   ToolUseDeltaPayload,
   ToolUseStartPayload,
+  ToolUseStopPayload,
 } from '@/types'
 
 // ============ 内部 helpers ============
@@ -86,6 +88,29 @@ export function previewFromPartialJson(partial: string): string | null {
   } catch {
     return null
   }
+}
+
+/**
+ * 事件落点容器 —— 带 subagent 戳的块进对应「还在 running 的派活块」内部 blocks，
+ * 否则进主流 blocks。从后往前找，匹配最近一个该成员的活跃派活块。
+ */
+function containerFor(
+  blocks: RenderBlock[],
+  subagent: string | undefined,
+): RenderBlock[] {
+  if (subagent) {
+    for (let i = blocks.length - 1; i >= 0; i--) {
+      const b = blocks[i]
+      if (
+        b.type === 'delegate' &&
+        b.subagentName === subagent &&
+        b.status === 'running'
+      ) {
+        return b.blocks
+      }
+    }
+  }
+  return blocks
 }
 
 // ============ State / Actions 类型 ============
@@ -163,7 +188,7 @@ export function createChatStore({
                       status: 'active',
                       content: '',
                     }
-              m.blocks.push(block)
+              containerFor(m.blocks, p.subagent).push(block)
             })
             return
           }
@@ -172,7 +197,9 @@ export function createChatStore({
             set((s) => {
               const m = s.messages[s.messages.length - 1]
               if (m?.role !== 'assistant') return
-              const b = m.blocks.find((x) => x.index === p.index)
+              const b = containerFor(m.blocks, p.subagent).find(
+                (x) => x.index === p.index,
+              )
               if (!b) return
               if (b.type === 'text' && p.type === 'text_delta' && p.text) {
                 b.content += p.text
@@ -191,7 +218,9 @@ export function createChatStore({
             set((s) => {
               const m = s.messages[s.messages.length - 1]
               if (m?.role !== 'assistant') return
-              const b = m.blocks.find((x) => x.index === p.index)
+              const b = containerFor(m.blocks, p.subagent).find(
+                (x) => x.index === p.index,
+              )
               if (!b) return
               if (b.type === 'text' || b.type === 'thinking') {
                 b.status = 'done'
@@ -206,6 +235,21 @@ export function createChatStore({
             set((s) => {
               const m = s.messages[s.messages.length - 1]
               if (m?.role !== 'assistant') return
+              // task 工具 = 管家派活 → 建派活块（占位主流，内部装子 agent 的块）
+              if (p.name === 'task' && !p.subagent) {
+                const delegate: DelegateBlock = {
+                  type: 'delegate',
+                  index: p.index,
+                  status: 'running',
+                  subagentName: '',
+                  task: '',
+                  blocks: [],
+                  collapsed: false,
+                  argsJson: '',
+                }
+                m.blocks.push(delegate)
+                return
+              }
               const block: ToolUseBlock = {
                 type: 'tool_use',
                 index: p.index,
@@ -218,7 +262,7 @@ export function createChatStore({
                 resultData: null,
                 collapsed: false,
               }
-              m.blocks.push(block)
+              containerFor(m.blocks, p.subagent).push(block)
             })
             return
           }
@@ -227,22 +271,42 @@ export function createChatStore({
             set((s) => {
               const m = s.messages[s.messages.length - 1]
               if (m?.role !== 'assistant') return
-              const b = m.blocks.find((x) => x.index === p.index)
-              if (b?.type === 'tool_use') b.partialInputJson += p.partial_json
+              const b = containerFor(m.blocks, p.subagent).find(
+                (x) => x.index === p.index,
+              )
+              if (b?.type === 'delegate') b.argsJson += p.partial_json
+              else if (b?.type === 'tool_use')
+                b.partialInputJson += p.partial_json
             })
             return
           }
           case 'tool_use_stop': {
+            const p = payload as ToolUseStopPayload
             set((s) => {
               const m = s.messages[s.messages.length - 1]
               if (m?.role !== 'assistant') return
-              const b = m.blocks.find(
-                (x) => x.index === (payload as { index: number }).index,
+              const b = containerFor(m.blocks, p.subagent).find(
+                (x) => x.index === p.index,
               )
-              if (b?.type !== 'tool_use') return
-              b.status = 'calling'
-              const preview = previewFromPartialJson(b.partialInputJson)
-              if (preview !== null) b.inputPreview = preview
+              if (b?.type === 'delegate') {
+                // task args 收齐 → 解析派给谁（subagent_type）+ 派的活（description）
+                try {
+                  const args = JSON.parse(b.argsJson) as {
+                    subagent_type?: string
+                    description?: string
+                  }
+                  if (typeof args.subagent_type === 'string')
+                    b.subagentName = args.subagent_type
+                  if (typeof args.description === 'string')
+                    b.task = args.description
+                } catch {
+                  // args 不完整 —— 派活块降级，不崩
+                }
+              } else if (b?.type === 'tool_use') {
+                b.status = 'calling'
+                const preview = previewFromPartialJson(b.partialInputJson)
+                if (preview !== null) b.inputPreview = preview
+              }
             })
             return
           }
@@ -251,16 +315,23 @@ export function createChatStore({
             set((s) => {
               const m = s.messages[s.messages.length - 1]
               if (m?.role !== 'assistant') return
-              const b = m.blocks.find((x) => x.index === p.index)
-              if (b?.type !== 'tool_use') return
-              b.status = p.status
-              b.resultSummary = p.result_summary
-              b.resultData = p.result_data
+              const b = containerFor(m.blocks, p.subagent).find(
+                (x) => x.index === p.index,
+              )
+              if (b?.type === 'delegate') {
+                b.status = p.status === 'error' ? 'error' : 'done'
+              } else if (b?.type === 'tool_use') {
+                b.status = p.status
+                b.resultSummary = p.result_summary
+                b.resultData = p.result_data
+              }
             })
             return
           }
           case 'message_delta': {
             const p = payload as MessageDeltaPayload
+            // 子 agent 自己一轮结束的 usage —— 不更新主消息
+            if (p.subagent) return
             set((s) => {
               const m = s.messages[s.messages.length - 1]
               if (m?.role !== 'assistant') return
@@ -273,17 +344,23 @@ export function createChatStore({
             set((s) => {
               const m = s.messages[s.messages.length - 1]
               if (m?.role !== 'assistant') return
-              // 兜底：把所有还 active 的 text / thinking block 收尾
+              // 兜底：把所有还 active 的 text / thinking block 收尾（含派活块内部），
               // 防止后端漏发 content_block_stop 导致光标一直闪
-              for (const b of m.blocks) {
-                if (
-                  (b.type === 'text' || b.type === 'thinking') &&
-                  b.status === 'active'
-                ) {
-                  b.status = 'done'
-                  if (b.type === 'thinking') b.collapsed = true
+              const sweep = (blocks: RenderBlock[]) => {
+                for (const b of blocks) {
+                  if (
+                    (b.type === 'text' || b.type === 'thinking') &&
+                    b.status === 'active'
+                  ) {
+                    b.status = 'done'
+                    if (b.type === 'thinking') b.collapsed = true
+                  } else if (b.type === 'delegate') {
+                    sweep(b.blocks)
+                    if (b.status === 'running') b.status = 'done'
+                  }
                 }
               }
+              sweep(m.blocks)
               m.status = 'completed'
             })
             return

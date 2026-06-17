@@ -9,6 +9,7 @@ import type {
   UserMessage as UserMessageType,
 } from '@/types'
 
+import { DelegateBlock } from './blocks/DelegateBlock'
 import { TextBlock } from './blocks/TextBlock'
 import { ThinkingBlock } from './blocks/ThinkingBlock'
 import { ToolUseBlock } from './blocks/ToolUseBlock'
@@ -158,6 +159,9 @@ const AssistantMessageRow = memo(function AssistantMessageRow({
         }
         if (block.type === 'thinking') {
           return <ThinkingBlock key={block.index} block={block} />
+        }
+        if (block.type === 'delegate') {
+          return <DelegateBlock key={block.index} block={block} />
         }
         return <ToolUseBlock key={block.index} block={block} />
       })}

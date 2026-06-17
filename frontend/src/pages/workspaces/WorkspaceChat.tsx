@@ -1,8 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ring } from 'ldrs'
 
-import { conversationStreamEndpoint, listMessages } from '@/api/workspace'
+import {
+  conversationStreamEndpoint,
+  listMembers,
+  listMessages,
+} from '@/api/workspace'
 import { ChatProvider, useChat } from '@/components/chat/ChatProvider'
+import {
+  SubagentDirectoryProvider,
+  type SubagentInfo,
+} from '@/components/chat/SubagentDirectory'
 import { MessageInput } from '@/components/chat/MessageInput'
 import { MessageList } from '@/components/chat/MessageList'
 import { getOrCreateChatStore } from '@/stores/chat-registry'
@@ -44,6 +52,27 @@ export function WorkspaceChat({
   )
   const [historyLoading, setHistoryLoading] = useState(true)
 
+  // 派活成员名册：member_<id8> → 真名，喂 DelegateBlock 把后端的技术 id 显示成成员名
+  const [directory, setDirectory] = useState<Record<string, SubagentInfo>>({})
+  useEffect(() => {
+    let cancelled = false
+    listMembers(workspaceId)
+      .then((members) => {
+        if (cancelled) return
+        const d: Record<string, SubagentInfo> = {}
+        for (const m of members) {
+          d[`member_${m.id.slice(0, 8)}`] = { name: m.agent.name }
+        }
+        setDirectory(d)
+      })
+      .catch(() => {
+        // 名册拉不到 —— 派活块降级显示 member_xxx，不影响功能
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [workspaceId])
+
   useEffect(() => {
     // 桶已经有内容（之前灌过历史 / 正在后台跑）→ 不重灌，直接放行
     if (store.getState().messages.length > 0) {
@@ -81,9 +110,11 @@ export function WorkspaceChat({
   }
 
   return (
-    <ChatProvider store={store}>
-      <WorkspaceChatBody supervisorReady={supervisorReady} />
-    </ChatProvider>
+    <SubagentDirectoryProvider value={directory}>
+      <ChatProvider store={store}>
+        <WorkspaceChatBody supervisorReady={supervisorReady} />
+      </ChatProvider>
+    </SubagentDirectoryProvider>
   )
 }
 

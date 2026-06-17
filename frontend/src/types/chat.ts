@@ -42,6 +42,15 @@ export interface ChatStreamRequest {
 // ============ SSE Event Payload ============
 // 跟 backend/app/agents/runtime/adapter.py 发的 11 个事件 data 一对一。
 
+/**
+ * 块事件的归属戳 —— adapter 主循环按 `metadata.lc_agent_name` 注入。
+ * 来自被派活成员（子 agent）的块 = `member_xxx`；管家主流的块 = undefined。
+ * dispatch 据此把块路由进对应派活块（DelegateBlock）还是主流。
+ */
+export interface SubagentScoped {
+  subagent?: string
+}
+
 export interface MessageStartPayload {
   id: string
   role: 'assistant'
@@ -56,18 +65,18 @@ export interface Usage {
   output_tokens: number
 }
 
-export interface MessageDeltaPayload {
+export interface MessageDeltaPayload extends SubagentScoped {
   /** 'end_turn' / 'tool_use' / 'max_tokens' / 'cancelled' 等；后端宽松 string，前端也宽松 */
   stop_reason: string
   usage: Usage
 }
 
-export interface ContentBlockStartPayload {
+export interface ContentBlockStartPayload extends SubagentScoped {
   index: number
   type: 'text' | 'thinking'
 }
 
-export interface ContentBlockDeltaPayload {
+export interface ContentBlockDeltaPayload extends SubagentScoped {
   index: number
   type: 'text_delta' | 'thinking_delta'
   /** type=text_delta 时携带 */
@@ -76,30 +85,30 @@ export interface ContentBlockDeltaPayload {
   thinking?: string
 }
 
-export interface ContentBlockStopPayload {
+export interface ContentBlockStopPayload extends SubagentScoped {
   index: number
 }
 
-export interface ToolUseStartPayload {
+export interface ToolUseStartPayload extends SubagentScoped {
   index: number
   id: string
   name: string
   input_preview: string
 }
 
-export interface ToolUseDeltaPayload {
+export interface ToolUseDeltaPayload extends SubagentScoped {
   index: number
   id: string
   type: 'input_json_delta'
   partial_json: string
 }
 
-export interface ToolUseStopPayload {
+export interface ToolUseStopPayload extends SubagentScoped {
   index: number
   id: string
 }
 
-export interface ToolResultPayload {
+export interface ToolResultPayload extends SubagentScoped {
   index: number
   id: string
   status: 'success' | 'error'
@@ -150,7 +159,34 @@ export interface ToolUseBlock {
   collapsed: boolean
 }
 
-export type RenderBlock = TextBlock | ThinkingBlock | ToolUseBlock
+/**
+ * 派活块 —— 管家调 `task` 工具把活分给某成员（子 agent）时建。
+ *
+ * 它在主流 blocks 里占位（管家「我让老二算」的位置），自己内部嵌一个 `blocks`
+ * 装子 agent 实时干活的块；渲染成可折叠块（块头成员标识 + 展开看执行过程）。
+ *
+ * - index        = task 工具块的全局块编号
+ * - subagentName = 派给谁（member_xxx，与后端块事件的 subagent 戳一致）
+ * - task         = 派的活（task 工具的 description 参数）
+ * - blocks       = 子 agent 的实时块（不会再嵌 delegate —— 子 agent 没有 task 工具）
+ */
+export interface DelegateBlock {
+  type: 'delegate'
+  index: number
+  status: 'running' | 'done' | 'error'
+  subagentName: string
+  task: string
+  blocks: RenderBlock[]
+  collapsed: boolean
+  /** 累积 task 工具的流式 args（partial JSON）；tool_use_stop 时解析出 subagentName + task */
+  argsJson: string
+}
+
+export type RenderBlock =
+  | TextBlock
+  | ThinkingBlock
+  | ToolUseBlock
+  | DelegateBlock
 
 // ============ Message（user / assistant union） ============
 

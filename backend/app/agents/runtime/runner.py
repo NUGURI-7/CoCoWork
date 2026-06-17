@@ -234,10 +234,10 @@ async def prepare_stream(
     graph = template.build(
         chat_model=chat_model,
         system_prompt=cfg.system_prompt,
-        tools=await _assemble_tools(cfg, user),
+        tools=await assemble_tools(cfg, user),
     )
 
-    messages = _to_lc_messages(request.history, request.content)
+    messages = to_lc_messages(request.history, request.content)
     return graph, messages
 
 

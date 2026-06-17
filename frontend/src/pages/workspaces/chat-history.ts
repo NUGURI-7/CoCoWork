@@ -13,60 +13,120 @@ import { previewFromPartialJson } from '@/stores/chat-store'
 import type {
   ApiContentBlock,
   ChatMessage,
+  DelegateBlock,
   RenderBlock,
   WorkspaceMessage,
 } from '@/types'
 
-/** DB 块（jsonb dict）→ RenderBlock。index 按数组下标重编（DB 不存 index）。 */
+/** 单个 DB 块 → RenderBlock（text / thinking / tool_use）；index 由调用方分配。 */
+function translateOne(
+  b: Record<string, unknown>,
+  index: number,
+): RenderBlock | null {
+  if (b.type === 'text' && typeof b.text === 'string') {
+    return { type: 'text', index, status: 'done', content: b.text }
+  }
+
+  if (b.type === 'thinking' && typeof b.thinking === 'string') {
+    return {
+      type: 'thinking',
+      index,
+      status: 'done',
+      content: b.thinking,
+      collapsed: true,
+    }
+  }
+
+  if (b.type === 'tool_use') {
+    const partialJson =
+      typeof b.partial_json === 'string' ? b.partial_json : ''
+    return {
+      type: 'tool_use',
+      index,
+      // DB status: success / error 原样；null = 没等到结局（流被掐），
+      // 翻 calling —— 静态灰色正常展示（名字 / 参数可看，无结果区）
+      status:
+        b.status === 'success'
+          ? 'success'
+          : b.status === 'error'
+            ? 'error'
+            : 'calling',
+      id: typeof b.id === 'string' ? b.id : '',
+      name: typeof b.name === 'string' ? b.name : '',
+      // DB 落库的 input_preview 是空串，用流式同款解析从参数 JSON 补
+      inputPreview: previewFromPartialJson(partialJson) ?? '',
+      partialInputJson: partialJson,
+      resultSummary:
+        typeof b.result_summary === 'string' ? b.result_summary : null,
+      resultData: b.result_data ?? null,
+      collapsed: true,
+    }
+  }
+
+  // 未知块类型静默跳过 —— 协议演化后老前端不炸
+  return null
+}
+
+/**
+ * DB 扁平块（带 subagent 戳）→ RenderBlock[]，重建 DelegateBlock 嵌套。
+ *
+ * 与实时 dispatch 对称：name='task' 的 tool_use 块 → DelegateBlock（从 partial_json
+ * 解析 subagent_type + description）；带 subagent 戳的块 → 归最近一个同成员的派活块。
+ * index 全局重编（主流 + 嵌套共用一条递增序列，保证 React key 唯一）。
+ */
 function toRenderBlocks(content: Record<string, unknown>[]): RenderBlock[] {
-  const blocks: RenderBlock[] = []
+  const root: RenderBlock[] = []
+  let idx = 0
 
-  content.forEach((b, index) => {
-    if (b.type === 'text' && typeof b.text === 'string') {
-      blocks.push({ type: 'text', index, status: 'done', content: b.text })
-      return
+  const findDelegate = (subagent: string): DelegateBlock | undefined => {
+    for (let i = root.length - 1; i >= 0; i--) {
+      const b = root[i]
+      if (b.type === 'delegate' && b.subagentName === subagent) return b
     }
+    return undefined
+  }
 
-    if (b.type === 'thinking' && typeof b.thinking === 'string') {
-      blocks.push({
-        type: 'thinking',
-        index,
-        status: 'done',
-        content: b.thinking,
-        collapsed: true,
-      })
-      return
-    }
+  for (const b of content) {
+    const subagent = typeof b.subagent === 'string' ? b.subagent : undefined
 
-    if (b.type === 'tool_use') {
-      const partialJson =
+    // task 工具块 → 重建派活块（subagent 为空 = 管家主流的派活动作）
+    if (b.type === 'tool_use' && b.name === 'task' && !subagent) {
+      const argsJson =
         typeof b.partial_json === 'string' ? b.partial_json : ''
-      blocks.push({
-        type: 'tool_use',
-        index,
-        // DB status: success / error 原样；null = 没等到结局（流被掐），
-        // 翻 calling —— 静态灰色正常展示（名字 / 参数可看，无结果区）
-        status:
-          b.status === 'success'
-            ? 'success'
-            : b.status === 'error'
-              ? 'error'
-              : 'calling',
-        id: typeof b.id === 'string' ? b.id : '',
-        name: typeof b.name === 'string' ? b.name : '',
-        // DB 落库的 input_preview 是空串，用流式同款解析从参数 JSON 补
-        inputPreview: previewFromPartialJson(partialJson) ?? '',
-        partialInputJson: partialJson,
-        resultSummary:
-          typeof b.result_summary === 'string' ? b.result_summary : null,
-        resultData: b.result_data ?? null,
+      let subagentName = ''
+      let task = ''
+      try {
+        const args = JSON.parse(argsJson) as {
+          subagent_type?: string
+          description?: string
+        }
+        if (typeof args.subagent_type === 'string')
+          subagentName = args.subagent_type
+        if (typeof args.description === 'string') task = args.description
+      } catch {
+        // args 不完整 —— 派活块降级，归属不到的子块会落主流
+      }
+      root.push({
+        type: 'delegate',
+        index: idx++,
+        status: b.status === 'error' ? 'error' : 'done',
+        subagentName,
+        task,
+        blocks: [],
         collapsed: true,
+        argsJson,
       })
+      continue
     }
-    // 未知块类型静默跳过 —— 协议演化后老前端不炸
-  })
 
-  return blocks
+    const rb = translateOne(b, idx++)
+    if (!rb) continue
+    // 带 subagent 戳的块归对应派活块内部，否则落主流
+    const target = subagent ? (findDelegate(subagent)?.blocks ?? root) : root
+    target.push(rb)
+  }
+
+  return root
 }
 
 /** DB user 消息 content → ApiContentBlock[]（只认 text 块，形态同构直接收窄）。 */
