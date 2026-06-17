@@ -61,7 +61,10 @@ export function WorkspaceChat({
         if (cancelled) return
         const d: Record<string, SubagentInfo> = {}
         for (const m of members) {
-          d[`member_${m.id.slice(0, 8)}`] = { name: m.agent.name }
+          d[`member_${m.id.slice(0, 8)}`] = {
+            name: m.agent.name,
+            avatarUrl: m.agent.avatar_url ?? '/gopher-fcb-glass.png',
+          }
         }
         setDirectory(d)
       })

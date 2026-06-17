@@ -104,6 +104,8 @@ export interface MemberAgentInfo {
   name: string
   /** 引用的内置模板 registry key */
   template: string
+  /** 头像 URL（后端从 config.ui.avatar_url 摊出，未配为 null） */
+  avatar_url: string | null
 }
 
 /**

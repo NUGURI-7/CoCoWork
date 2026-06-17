@@ -28,6 +28,10 @@ class MemberAgentInfo(BaseModel):
     id: UUID
     name: str
     template: str
+    avatar_url: str | None = Field(
+        default=None,
+        description="头像 URL（从 agent.config.ui.avatar_url 摊出，未配为 None）",
+    )
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -33,5 +33,15 @@ class Agent(UUIDBaseModel, TimestampMixin):
         description="填料：行为（prompt/model）+ 挂载资源（knowledge/tools/skills 的 id 列表）",
     )
 
+    @property
+    def avatar_url(self) -> str | None:
+        """从 config 摊出头像 URL（config.ui.avatar_url），未配则 None。
+
+        让 MemberAgentInfo 等走 from_attributes 的 schema 能把它当顶层属性
+        摊出，而不必把整个 config jsonb 暴露给前端。
+        """
+        ui = (self.config or {}).get("ui") or {}
+        return ui.get("avatar_url")
+
     class Meta:
         table = "agents"
