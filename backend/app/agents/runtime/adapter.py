@@ -19,7 +19,7 @@ import logging
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Any
-
+from langgraph.types import Command
 from app.agents.runtime.events import EventType
 
 logger = logging.getLogger(__name__)
@@ -201,6 +201,23 @@ def _summarize_tool_result(content: Any) -> str:
     return str(content)[:TOOL_SUMMARY_MAX_CHARS]
 
 
+def _unwrap_tool_output(output: Any) -> Any:
+    """工具返回值归一化 —— Command 解包出内部 ToolMessage，其余原样返回。
+
+    langgraph 工具可返回 Command 注入 state（而非直接回值），deepagents 的
+    task 派活工具即此模式：真正的 ToolMessage 埋在 update["messages"] 里、
+    Command 本身没有 tool_call_id。取首个带 tool_call_id 的 message 当结果；
+    取不到返 None（让调用方 early return，不发 tool_result）。
+    """
+    if isinstance(output, Command):
+        update = output.update if isinstance(output.update, dict) else {}
+        for m in update.get("messages") or []:
+            if getattr(m, "tool_call_id", None):
+                return m
+        return None
+    return output
+
+
 # ============ 单例块通用 helper（text / thinking 共用） ============
 
 async def _emit_singleton_delta(
@@ -320,9 +337,10 @@ async def _on_chat_model_stream(
         async for ev in _emit_tool_call_chunk(state, tc):
             yield ev
 
+
 @_register("on_chat_model_end")
 async def _on_chat_model_end(
-    state: StreamState, data: dict[str, Any],
+        state: StreamState, data: dict[str, Any],
 ) -> AsyncIterator[AdapterEvent]:
     """模型一轮 chat 完事：关所有活块 + 发 message_delta(usage)。"""
     async for ev in _close_open_blocks(state):
@@ -341,12 +359,14 @@ async def _on_chat_model_end(
         },
     }
 
+
 @_register("on_tool_end")
 async def _on_tool_end(
-    state: StreamState, data: dict[str, Any],
+        state: StreamState, data: dict[str, Any],
 ) -> AsyncIterator[AdapterEvent]:
     """工具执行完成：从 ToolMessage.tool_call_id 反查 block、发 tool_result。"""
     output = data.get("output")
+    output = _unwrap_tool_output(output) # ← 新增：Command → 内部 ToolMessage
     if output is None:
         return
     tool_call_id = getattr(output, "tool_call_id", None)
@@ -365,10 +385,11 @@ async def _on_tool_end(
         "result_data": content,
     }
 
+
 # ============ 主入口 ============
 
 async def adapt_chat_stream(
-    events: AsyncIterator[dict[str, Any]],
+        events: AsyncIterator[dict[str, Any]],
 ) -> AsyncIterator[AdapterEvent]:
     """LangChain astream_events(v2) → 我们的结构化事件流。
 
@@ -406,5 +427,3 @@ async def adapt_chat_stream(
             }
         except Exception:
             logger.exception("failed to emit error event")
-
-

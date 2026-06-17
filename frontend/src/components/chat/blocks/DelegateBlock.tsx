@@ -66,7 +66,7 @@ export function DelegateBlock({ block }: DelegateBlockProps) {
             palette,
           )}
         >
-          <span className="bg-background flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
+          <span className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
             {info?.avatarUrl ? (
               <img
                 src={info.avatarUrl}
