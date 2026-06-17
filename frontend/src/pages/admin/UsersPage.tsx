@@ -277,7 +277,7 @@ export default function UsersPage() {
                   e.preventDefault()
                   handleDelete()
                 }}
-                className="bg-destructive hover:bg-destructive/90 text-white"
+                variant="destructive"
               >
                 确认删除
               </AlertDialogAction>

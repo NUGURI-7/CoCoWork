@@ -201,7 +201,7 @@ export function DocumentList({ kbId, docs, onDeleted, onProcessed }: DocumentLis
                 e.preventDefault()
                 handleBatchDelete()
               }}
-              className="bg-destructive text-white hover:bg-destructive/90"
+              variant="destructive"
             >
               {batchDeleting ? '删除中…' : '确认删除'}
             </AlertDialogAction>
@@ -408,7 +408,7 @@ function DocumentRow({
                 e.preventDefault()
                 handleDelete()
               }}
-              className="bg-destructive text-white hover:bg-destructive/90"
+              variant="destructive"
             >
               {deleting ? '删除中…' : '确认删除'}
             </AlertDialogAction>

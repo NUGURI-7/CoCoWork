@@ -142,7 +142,7 @@ export function WorkspaceCard({ workspace, onDelete }: WorkspaceCardProps) {
                 e.preventDefault()
                 handleDelete()
               }}
-              className="bg-destructive text-white hover:bg-destructive/90"
+              variant="destructive"
             >
               确认删除
             </AlertDialogAction>

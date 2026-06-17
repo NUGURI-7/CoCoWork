@@ -140,7 +140,7 @@ export function ProviderCard({ provider, onDeleted }: ProviderCardProps) {
                 e.preventDefault()
                 handleDelete()
               }}
-              className="bg-destructive text-white hover:bg-destructive/90"
+              variant="destructive"
             >
               {deleting ? '删除中...' : '确认删除'}
             </AlertDialogAction>
