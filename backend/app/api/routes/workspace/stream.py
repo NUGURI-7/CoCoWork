@@ -3,9 +3,9 @@
 POST /workspaces/{wid}/conversations/{cid}/stream  →  text/event-stream
 
 与 Playground 流端点（agent/playground.py）的三点差异：
-- 历史真源在 DB：后端拉 messages 拼 history，前端只送当前一句（ConversationStreamIn）
+- 历史真源在 DB：后端拉 messages → assembler 按应答者视角组装，前端只送当前一句（ConversationStreamIn）
 - 全程落库：流前落 user 消息，流完 finally 落 assistant 消息（done / error / stopped 三态）
-- supervisor 不在 agents 表：AgentSpec.from_jsonb(workspace.supervisor) 直接装配
+- 应答者经 build_workspace_graph 装配：没 @ → supervisor（workspace.supervisor jsonb、不在 agents 表）；@ 了 → 被 @ 的成员
 """
 import asyncio
 from typing import Annotated
@@ -15,16 +15,15 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
 from app.agents.runtime import (
-    AgentSpec,
     MessageCollector,
     run_chat_stream,
 )
 from app.agents.workspace.workspace import build_workspace_graph
 from app.core.depends import get_current_user
 from app.core.exceptions import NotFound404
-from app.models import Conversation, Message, MessageStatus, SenderKind, MessageRole
+from app.models import Conversation, Message, MessageStatus, SenderKind, MessageRole, WorkspaceMember
 from app.models.user import User
-from app.schemas.agent.chat_schema import ChatStreamRequest, HistoryMessage, TextBlock
+from app.schemas.agent.chat_schema import ChatStreamRequest
 from app.schemas.workspace import ConversationStreamIn, MessageAppend
 from app.services.workspace import MessageService, get_message_service
 
@@ -37,27 +36,6 @@ CurrentUserDep = Annotated[User, Depends(get_current_user)]
 MessageServiceDep = Annotated[MessageService, Depends(get_message_service)]
 
 SSE_MEDIA_TYPE = "text/event-stream"
-
-
-def _db_messages_to_history(messages: list[Message]) -> list[HistoryMessage]:
-    """DB 消息 → LLM 上下文 history，只回放 text 块（存而不喂）。
-
-    thinking 是模型内部草稿、tool 轨迹回放吃上下文且易把模型带偏；
-    DB 留完整事实给前端还原，上下文只给模型有用的部分。
-    整条凑不出非空 text 的消息（纯工具轮 / 刚开口就被掐）直接跳过。
-    """
-    history: list[HistoryMessage] = []
-
-    for m in messages:
-        texts = [
-            TextBlock(text=b["text"])
-            for b in m.content
-            if b.get("type") == "text" and b.get("text")
-        ]
-        if not texts:
-            continue
-        history.append(HistoryMessage(role=m.role, content=texts))
-    return history
 
 
 @router.post("/stream", summary="Workspace 对话流（supervisor 应答）")
@@ -84,7 +62,22 @@ async def conversation_stream(
 
     # ② 拉历史 —— 必须是"落 user 之前"的快照，否则当前这句 history / content 双送
     past = await Message.filter(conversation_id=conversation_id).order_by("created_at")
-    history = _db_messages_to_history(past)
+
+    # 选应答者：没 @ → supervisor(None)；@ 了 → 第一个被 @ 的成员（v1 单 @）
+    # 放在落 user 之前：@ 到无效成员是请求错误,直接 404、不落库
+    responder: WorkspaceMember | None = None
+    if body.mentioned_member_ids:
+        responder = (
+            await WorkspaceMember.filter(
+                id=body.mentioned_member_ids[0],
+                workspace_id=workspace_id
+            )
+            .select_related("agent") # build_workspace_graph 要 responder.agent.config
+            .first()
+        )
+        if responder is None:
+            raise NotFound404("被 @ 的成员不存在或已移出空间")
+
 
     # ③ 先落 user —— 说出去的话即事实；prepare 失败(400)也不该让输入蒸发
     await svc.append(
@@ -93,15 +86,17 @@ async def conversation_stream(
             role=MessageRole.USER,
             sender_kind=SenderKind.USER,
             content=[b.model_dump() for b in body.content],
+            mentioned_member_ids=body.mentioned_member_ids
         ),
     )
 
-    # ④ supervisor jsonb → AgentSpec → 装配（可 raise → 400 JSON，SSE 还没起）
-    spec = AgentSpec.from_jsonb(conversation.workspace.supervisor)
+    # ④ supervisor 装配（可 raise → 400 JSON，SSE 还没起）
     graph, lc_messages = await build_workspace_graph(
         conversation.workspace,
-        ChatStreamRequest(content=body.content, history=history),
+        ChatStreamRequest(content=body.content, history=[]),
         current_user,
+        past,
+        responder,
     )
 
     collector = MessageCollector()
@@ -112,12 +107,20 @@ async def conversation_stream(
         # message_id 来自 MESSAGE_START 帧；极端早断没收到时不传，
         # 让 MessageAppend 的 default_factory 自己造
         keyed = {"id": collector.message_id} if collector.message_id else {}
+
+        # 应答者身份：supervisor(responder=None) 或被 @ 的成员
+        if responder is None:
+            sender_kind, sender_member_id = SenderKind.SUPERVISOR, None
+        else:
+            sender_kind, sender_member_id = SenderKind.MEMBER, responder.id
+
         await svc.append(
             conversation_id,
             MessageAppend(
                 **keyed,
                 role=MessageRole.ASSISTANT,
-                sender_kind=SenderKind.SUPERVISOR,
+                sender_kind=sender_kind,
+                sender_member_id=sender_member_id,
                 content=collector.blocks,
                 status=final,
                 error_message=collector.error_message,

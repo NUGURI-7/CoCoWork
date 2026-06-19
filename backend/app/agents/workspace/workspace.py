@@ -9,6 +9,7 @@ runtime.run_chat_stream 跑。与 Playground 的三点差异：
 - 返回形态与 prepare_stream 一致 (CompiledStateGraph, list[BaseMessage])，
   stream 端点 ⑤⑥ plumbing + Playground 全部零改。
 """
+from datetime import date
 from typing import Annotated, TypedDict
 
 from langchain.agents import create_agent
@@ -21,7 +22,10 @@ from langchain_core.language_models import BaseChatModel
 from deepagents.middleware.subagents import CompiledSubAgent, DEFAULT_SUBAGENT_PROMPT
 from deepagents import SubAgentMiddleware
 from deepagents.backends import StateBackend
-
+from langchain_core.messages import BaseMessage, HumanMessage
+from app.models import User, Workspace, WorkspaceMember, Message
+from app.agents.workspace.view_context_assembler import ViewContextAssembler, Viewer
+from app.models import SenderKind
 from app.agents.runtime.runner import (
     assemble_tools,
     build_chat_model,
@@ -31,6 +35,26 @@ from app.core.exceptions import ValidationException
 from app.models import User, Workspace, WorkspaceMember
 from app.schemas.agent.chat_schema import ChatStreamRequest
 from app.schemas.agent.config_schema import AgentConfig
+
+
+def _workspace_base_prompt(workspace_name: str, member_names: list[str]) -> str:
+    """workspace 协作框架 —— supervisor / member 共享的出场底座。
+
+        拼在应答者自己的人设之前。静态协议说明(让 LLM 读懂 <msg from> 标签)
+        + 动态(成员名单 / 日期)。
+    """
+    roster = "、".join(member_names) if member_names else "（暂无其他成员）"
+    today = date.today().isoformat()
+    return (
+        f"你在一个多成员协作的工作空间「{workspace_name}」。\n"
+        f"当前空间成员：{roster}。\n"
+        f"今天是 {today}。\n"
+        "对话中的发言来源这样区分：\n"
+        '- 被 <msg from="X">…</msg> 包裹的，是成员 X 的发言，不是你说的；\n'
+        "- 没有标签的，是人类用户说的；\n"
+        "- 你自己以往的发言，是普通 assistant 消息。\n"
+        '（例：<msg from="老大">搞定了</msg> 表示老大说了“搞定了”。）\n'
+    )
 
 
 class WorkspaceState(TypedDict):
@@ -96,7 +120,9 @@ async def _member_to_subagent(
 async def build_workspace_graph(
         workspace: Workspace,
         request: ChatStreamRequest,
-        user: User
+        user: User,
+        past: list[Message],  # ← 新增:DB 历史消息(视角化用)
+        responder: WorkspaceMember | None = None,  # None = supervisor;否则 = 被 @ 的成员
 ) -> tuple[CompiledStateGraph, list[BaseMessage]]:
     """装配 workspace 对话图 —— 内置 supervisor 套外层 StateGraph。
 
@@ -108,56 +134,72 @@ async def build_workspace_graph(
             workspace: 已取出的 Workspace 实例(supervisor jsonb 在 workspace.supervisor)
             request:   当前轮 user 输入 + 历史(历史由 stream 端点从 DB 拼好)
             user:      当前用户(KB 工具归属校验用)
+            past:      新增:DB 历史消息(视角化用)
+            responder: None = supervisor;否则 = 被 @ 的成员
 
         Raises:
             ValidationException: supervisor 未配 chat 模型 / 槽位类型错 / 模型不存在
     """
 
-    cfg = AgentConfig.model_validate(workspace.supervisor)
 
     # 拉本 workspace 招募的成员（select_related agent —— 正向 FK 走 JOIN，一次查询）
     members = await WorkspaceMember.filter(
         workspace_id=workspace.id
     ).select_related("agent")
 
+    member_names = {m.id: m.agent.name for m in members}
+
+    # 根据 responder 定三件事:用谁的 config、什么视角、能不能派活
+
+    if responder is None:
+        cfg = AgentConfig.model_validate(workspace.supervisor)
+        viewer = Viewer(sender_kind=SenderKind.SUPERVISOR)
+        can_delegate = True
+    else:
+        cfg = AgentConfig.model_validate(responder.agent.config)
+        viewer = Viewer(sender_kind=SenderKind.MEMBER, member_id=responder.id)
+        can_delegate = False # @直连成员不派活
+
     if cfg.models.chat is None:
-        raise ValidationException("Workspace 未配置 Supervisor 的 chat 模型")
+        raise ValidationException("应答者未配置 chat 模型")
 
     chat_model = await build_chat_model(cfg.models.chat)
     tools = await assemble_tools(cfg, user)
 
-    # 招募成员 → 可派活的子 agent（没配模型的成员继承 supervisor 的 chat_model 兜底）
-    subagents = [
-        await _member_to_subagent(member, user, chat_model)
-        for member in members
-    ]
-    # supervisor 的 middleware：上下文注入始终挂；派活仅在有成员时挂
-    # （SubAgentMiddleware 的 subagents 不能为空，空会 raise）
-    middleware: list[AgentMiddleware]= [WorkspaceContextMiddleware()]
-    if subagents:
-        middleware.append(
-            SubAgentMiddleware(
-                backend=StateBackend(),
-                subagents=subagents
-            )
-        )
+    # base 框架(协议说明 + 名单 + 日期)+ 应答者自己的人设
+    base = _workspace_base_prompt(workspace.name, list(member_names.values()))
 
-    # supervisor = 工作空间自带的通用内置 loop，直接拼，不走模板装配链
-    supervisor = create_agent(
+    system_prompt = f"{base}\n{cfg.system_prompt}" if cfg.system_prompt else base
+
+    # 派活 middleware 只有 supervisor 挂
+    middleware: list[AgentMiddleware] = [WorkspaceContextMiddleware()]
+    if can_delegate:
+        subagents = [
+            await _member_to_subagent(member, user, chat_model)
+            for member in members
+        ]
+        if subagents:
+            middleware.append(
+                SubAgentMiddleware(backend=StateBackend(), subagents=subagents)
+            )
+
+    responder_agent = create_agent(
         model=chat_model,
         tools=tools,
-        system_prompt=cfg.system_prompt,
-        middleware=middleware,
+        system_prompt=system_prompt,
+        middleware=middleware
     )
 
     # 外层薄图：supervisor 作唯一节点，START → supervisor → END
     builder = StateGraph(WorkspaceState)
 
-    builder.add_node("supervisor", supervisor)
+    builder.add_node("supervisor", responder_agent)
     builder.add_edge(START, "supervisor")
     builder.add_edge("supervisor", END)
     graph = builder.compile()
 
-    messages = to_lc_messages(request.history, request.content)
+    # 视角化历史(viewer 跟着应答者走)+ 当前轮 user 输入
+    history = await ViewContextAssembler().build(past, viewer, member_names)
+    messages = history + to_lc_messages([], request.content)
 
     return graph, messages

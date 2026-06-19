@@ -47,6 +47,10 @@ class ConversationStreamIn(BaseModel):
     """
 
     content: list[ContentBlock]
+    mentioned_member_ids: list[UUID] = Field(
+        default_factory=list,
+        description="被 @ 的成员 id（WorkspaceMember.id）；空 = supervisor 应答",
+    )
 
 
 class MessageAppend(BaseModel):
