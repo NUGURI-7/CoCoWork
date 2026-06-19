@@ -119,7 +119,7 @@ export interface ChatState {
   messages: ChatMessage[]
   isLoading: boolean
 
-  send: (content: ApiContentBlock[]) => Promise<void>
+  send: (content: ApiContentBlock[], mentionedMemberIds?: string[]) => Promise<void>
   stop: () => void
   reset: () => void
   /** 用 DB 历史一次性灌入 messages（进对话回放）。流中不可调 —— 调用方靠
@@ -146,6 +146,8 @@ export function createChatStore({
 }): ChatStore {
   // AbortController 内部维护 —— send 时新建、stop / reset / 完成时丢弃
   let abortCtrl: AbortController | null = null
+  // 这一轮被 @ 的成员 id —— send 时记下，message_start 盖到 assistant 上（乐观显示成员身份）
+  let pendingSenderMemberId: string | undefined
 
   return createStore<ChatState>()(
     immer((set, get) => {
@@ -164,6 +166,7 @@ export function createChatStore({
                 usage: null,
                 stopReason: null,
                 errorMessage: null,
+                senderMemberId: pendingSenderMemberId,
               })
             })
             return
@@ -419,7 +422,7 @@ export function createChatStore({
         messages: [],
         isLoading: false,
 
-        async send(content) {
+        async send(content, mentionedMemberIds) {
           // 防重入 —— 上一轮还在跑时不允许新发送
           if (get().isLoading) return
 
@@ -432,13 +435,16 @@ export function createChatStore({
             ? messagesToHistory(get().messages.slice(0, -1))
             : []
 
+          // 这一轮谁应答：被 @ 的成员（v1 取第一个）；没 @ 则 supervisor（undefined）
+          pendingSenderMemberId = mentionedMemberIds?.[0]
+
           // 2) 新建 abort signal
           abortCtrl = new AbortController()
 
           try {
             for await (const { event, data } of streamChat(
               endpoint,
-              { content, history },
+              { content, history, mentioned_member_ids: mentionedMemberIds },
               { signal: abortCtrl.signal },
             )) {
               const payload = data ? JSON.parse(data) : {}

@@ -11,6 +11,7 @@ import {
   SubagentDirectoryProvider,
   type SubagentInfo,
 } from '@/components/chat/SubagentDirectory'
+import type { MentionItem } from '@/components/chat/MentionList'
 import { MessageInput } from '@/components/chat/MessageInput'
 import { MessageList } from '@/components/chat/MessageList'
 import { getOrCreateChatStore } from '@/stores/chat-registry'
@@ -27,7 +28,7 @@ interface WorkspaceChatProps {
 }
 
 /**
- * 主对话区 —— workspace 真对话（supervisor 应答）。
+ * 主对话区 —— workspace 真对话。
  *
  * 架构与 Playground 同款 mount，三点差异：
  * - sendHistory: false —— 历史真源在 DB，后端自己拼，body 只送当前一句
@@ -36,8 +37,8 @@ interface WorkspaceChatProps {
  *   切对话组件销毁，但桶留在架子上、流继续 →「切走不断流」。空桶才灌历史，
  *   非空（灌过 / 后台在跑）直接复用。架子在离开工作空间时整体回收。
  *
- * mock 双轨路由 / @mention popover 已退役 —— d-3 @ 路由片按真设计重做
- * （mentioned_member_ids 要进请求 body，输入框届时扩展）。
+ * @mention：listMembers 映射成 mentionItems 传给 MessageInput（成员候选）；
+ * 选中插 atomic token，发送时取 token id → mentioned_member_ids（Step C）。
  */
 export function WorkspaceChat({
   workspaceId,
@@ -52,24 +53,26 @@ export function WorkspaceChat({
   )
   const [historyLoading, setHistoryLoading] = useState(true)
 
-  // 派活成员名册：member_<id8> → 真名，喂 DelegateBlock 把后端的技术 id 显示成成员名
+  // 成员名册：①派活块 directory（member_<id8> → 真名/头像）②@mention 候选 items
   const [directory, setDirectory] = useState<Record<string, SubagentInfo>>({})
+  const [mentionItems, setMentionItems] = useState<MentionItem[]>([])
   useEffect(() => {
     let cancelled = false
     listMembers(workspaceId)
       .then((members) => {
         if (cancelled) return
         const d: Record<string, SubagentInfo> = {}
+        const items: MentionItem[] = []
         for (const m of members) {
-          d[`member_${m.id.slice(0, 8)}`] = {
-            name: m.agent.name,
-            avatarUrl: m.agent.avatar_url ?? '/gopher-fcb-glass.png',
-          }
+          const avatar = m.agent.avatar_url ?? '/gopher-fcb-glass.png'
+          d[`member_${m.id.slice(0, 8)}`] = { name: m.agent.name, avatarUrl: avatar }
+          items.push({ id: m.id, label: m.agent.name, avatar })
         }
         setDirectory(d)
+        setMentionItems(items)
       })
       .catch(() => {
-        // 名册拉不到 —— 派活块降级显示 member_xxx，不影响功能
+        // 名册拉不到 —— 派活块降级 / 输入框无候选，不影响基础功能
       })
     return () => {
       cancelled = true
@@ -115,13 +118,22 @@ export function WorkspaceChat({
   return (
     <SubagentDirectoryProvider value={directory}>
       <ChatProvider store={store}>
-        <WorkspaceChatBody supervisorReady={supervisorReady} />
+        <WorkspaceChatBody
+          supervisorReady={supervisorReady}
+          mentionItems={mentionItems}
+        />
       </ChatProvider>
     </SubagentDirectoryProvider>
   )
 }
 
-function WorkspaceChatBody({ supervisorReady }: { supervisorReady: boolean }) {
+function WorkspaceChatBody({
+  supervisorReady,
+  mentionItems,
+}: {
+  supervisorReady: boolean
+  mentionItems: MentionItem[]
+}) {
   const isEmpty = useChat((s) => s.messages.length === 0)
 
   return (
@@ -130,6 +142,7 @@ function WorkspaceChatBody({ supervisorReady }: { supervisorReady: boolean }) {
       <MessageInput
         disabled={!supervisorReady}
         disabledHint="先在右侧「空间配置」里给管家选一个对话模型"
+        mentionItems={mentionItems}
       />
     </>
   )

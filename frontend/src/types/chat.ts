@@ -37,6 +37,9 @@ export interface ApiHistoryMessage {
 export interface ChatStreamRequest {
   content: ApiContentBlock[]
   history: ApiHistoryMessage[]
+  /** 被 @ 的成员 id（WorkspaceMember.id）。仅 workspace @直连用；
+   *  Playground / supervisor 不传，JSON.stringify 自动省略 undefined。 */
+  mentioned_member_ids?: string[]
 }
 
 // ============ SSE Event Payload ============
@@ -210,6 +213,12 @@ export interface AssistantMessage {
   stopReason: string | null
   /** error 事件给的 message（已脱敏） */
   errorMessage: string | null
+  /**
+   * @直连应答的成员 id（WorkspaceMember.id）。supervisor / Playground 应答为 undefined。
+   * 实时：send 时记下被 @ 的成员、message_start 标上；回放：从 DB sender_member_id 译。
+   * 渲染：MessageList 据此在气泡顶上显示成员头像 / 名字（查 SubagentDirectory）。
+   */
+  senderMemberId?: string
 }
 
 export type ChatMessage = UserMessage | AssistantMessage

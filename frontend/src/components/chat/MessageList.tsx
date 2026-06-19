@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowDown } from 'lucide-react'
+import { ArrowDown, User } from 'lucide-react'
 import { bouncy } from 'ldrs'
 
 bouncy.register()
@@ -14,6 +14,7 @@ import { TextBlock } from './blocks/TextBlock'
 import { ThinkingBlock } from './blocks/ThinkingBlock'
 import { ToolUseBlock } from './blocks/ToolUseBlock'
 import { useChat } from './ChatProvider'
+import { useSubagentInfo } from './SubagentDirectory'
 import { MarkdownRender } from './MarkdownRender'
 
 /** 触底容差 —— 离底部多少 px 内算"在底"。 */
@@ -150,9 +151,16 @@ const AssistantMessageRow = memo(function AssistantMessageRow({
   message: AssistantMessageType
 }) {
   const isStreaming = message.status === 'streaming'
+  // 只有 @直连成员才露身份（头像 + 名）；supervisor / Playground（senderMemberId 空）
+  // 保持裸气泡（ChatGPT 风、默认对话方）。
+  const identity = useSubagentInfo(
+    message.senderMemberId
+      ? `member_${message.senderMemberId.slice(0, 8)}`
+      : '',
+  )
 
-  return (
-    <div className="flex flex-col gap-2">
+  const body = (
+    <>
       {message.blocks.map((block) => {
         if (block.type === 'text') {
           return <TextBlock key={block.index} block={block} />
@@ -171,8 +179,7 @@ const AssistantMessageRow = memo(function AssistantMessageRow({
       )}
 
       {/* 流式中底部 loader —— l-bouncy 三球弹跳 brand 墨绿 + warning 暖橙 drop-shadow
-          做"冷暖混色"光晕（ldrs 单 color 限制，混色靠外层 CSS filter）。
-          完成后不显示 —— actions row 未来挂上方时配静态 logo。 */}
+          做"冷暖混色"光晕（ldrs 单 color 限制，混色靠外层 CSS filter）。 */}
       {isStreaming && (
         <div
           className="mt-2 inline-block"
@@ -183,6 +190,34 @@ const AssistantMessageRow = memo(function AssistantMessageRow({
           <l-bouncy size="28" speed="1.2" color="#2f6b53" />
         </div>
       )}
+    </>
+  )
+
+  // 没有身份信息（如 Playground 沙盒）→ 裸渲染，ChatGPT 风
+  if (!identity) {
+    return <div className="flex flex-col gap-2">{body}</div>
+  }
+
+  // 群聊风：左侧头像 gutter + 发送者名 + 内容（user 仍是右气泡）
+  return (
+    <div className="flex gap-3">
+      <span className="border-border bg-background mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border">
+        {identity.avatarUrl ? (
+          <img
+            src={identity.avatarUrl}
+            alt=""
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <User size={16} />
+        )}
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+        <span className="text-foreground text-sm font-medium">
+          {identity.name}
+        </span>
+        <div className="flex flex-col gap-2">{body}</div>
+      </div>
     </div>
   )
 })

@@ -161,6 +161,11 @@ export function workspaceMessagesToChatMessages(
       stopReason: null,
       errorMessage:
         m.status === 'error' ? m.error_message || '生成失败' : null,
+      // @直连成员答的消息：从 DB 身份字段译出成员 id（supervisor 应答为 undefined）
+      senderMemberId:
+        m.sender_kind === 'member' && m.sender_member_id
+          ? m.sender_member_id
+          : undefined,
     }
   })
 }
