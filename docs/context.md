@@ -63,6 +63,7 @@
 - **Workspace d-1 对话整片全栈打通（stream + 落库 + 前端接真 + 配置面板）**：后端 runtime 事件总线化——adapter 改吐 `(EventType, payload)` 二元组（SSE 序列化收口 runner）+ runner `sink` 旁路钩子（Unix tee：一份前端一份落库，`_feed_sink` 兜异常不断主流）+ `MessageCollector` 桶（runtime 通用、只攒不判，status 由调用方控制流位置判定）；stream 端点 `POST .../conversations/{cid}/stream`（拉 DB 历史只回放 text「存而不喂」→ 先落 user → `AgentSpec.from_jsonb(supervisor)` 装配 → 流完 finally `asyncio.shield` 落 assistant 三态 + touch updated_at）；`ConversationStreamIn` 无 history 字段（谁持有历史谁拼：沙盒前端持、workspace DB 持）；流式 id == DB id（`MessageAppend.id` default_factory + 透传）；`from_jsonb` 砍「dict 里翻 template」假能力（template 改显式形参，脏数据 fail fast）。前端 workspace mock 全退役接真：types/api 对齐 11 端点 + 列表/详情/对话切换接真（无对话自动建）+ `WorkspaceChat` mount 通用 chat 层（`sendHistory:false` + `hydrate` + `chat-history.ts` 翻译器：stopped→completed、tool 无结局→calling 灰展示）+ 右栏「空间配置 ⇄ 产出物」FlipPanel 3D 翻转（默认配置面：管家 chat 模型 + system_prompt）+ `supervisorReady` 前置校验（未配模型输入框禁发指路）。@mention/mock 双轨退役待 d-3。**MVU（2026-06-14）后**：对话已改跑在「外层 StateGraph + 内置 supervisor」上（`agents/workspace/workspace.py` 的 `build_workspace_graph` 绕模板直拼 supervisor + 透传 `WorkspaceContextMiddleware`），`stream.py` ④ 已切换、流穿外层图验证通过；runner `_assemble_tools`/`_to_lc_messages` 转正为公开 `assemble_tools`/`to_lc_messages`。
 - **Workspace 成员招募 CRUD 全栈打通（commit c7839a6）**：后端 3 端点 `/workspaces/{wid}/members`（招募 / 列表 / 踢人）—— 成员 = 对 agent 的**不可变硬 FK 引用**（workspace 侧无覆盖配置，`unique(workspace, agent)` 撞库 → 新增 `Conflict409` 异常，响应体 `code=409`）；schema `MemberRecruitIn`（只收 agent_id）+ `MemberOut`（内嵌 `MemberAgentInfo`，service `prefetch_related("agent")` 摊出）。前端招募弹窗「从我的 Agent」接真 `listAgents` + 已招募置灰（前端拦 + 后端 409 兜底）、通讯录接真 `listMembers` + agent 行 hover-X 二次确认踢人、管家是合成行（`roster.ts` 的 `SUPERVISOR_ROSTER`）置顶不可踢、`mock.ts` 退役换精简 view-model `RosterMember`。**「从模板」tab 暂禁用**（= 临时成员 A，决策只走 B：用完即销毁、不进任何表，故硬 FK 定型不改）。
 - **Workspace 派活整片打通（单元 2 收官）**：管家（supervisor）经 deepagents `SubAgentMiddleware` 把活分给招募成员——每成员转 `CompiledSubAgent`（复用 supervisor 装配链）、原生单 `task` + `subagent_type` 路由、`StateBackend()` 占位、空成员不挂。子 agent 实时露脸靠 adapter 按 `metadata.lc_agent_name` 给块盖 `subagent` 戳；前端 `DelegateBlock` 折叠块（成员 pill + 内部实时渲染）+ 落库带戳 + 回放重建嵌套。**「手搓 agent-as-tool」决策已推翻**（详见最近迭代 2026-06-17）。
+- **Workspace d-3 @ 路由整片打通（@直连 + 视角化协议 + TipTap @mention + 群聊 UI）**：用户 `@成员` 让该成员绕 supervisor 直连应答（双轨另一轨）。后端 `ViewContextAssembler`（按应答者 viewer 重写历史、**只标第三方**→ prompt cache 友好）+ `build_workspace_graph` 泛化 `responder=supervisor|member` + `_workspace_base_prompt`（协议读端说明 + 名单 + 日期）+ 端点 `mentioned_member_ids` 路由（404 兜底）+ 落库 `sender_kind`。前端输入框换 **TipTap**（`extension-mention` atomic token、id 挂 node 不靠反解 + floating-ui 候选浮层）+ `send` 带 mention id + `MessageList` 群聊风（@直连成员露头像/名、supervisor 保持裸）+ 身份实时乐观 + 回放译。**多 @ 并发 = v2**。详见最近迭代 2026-06-18。
 
 ## 下一步
 - **知识库 / RAG 模块 v1 整片完工（片1-6 收官）+ 收尾增强**：数据层 + KB CRUD + 存储抽象 + 文档上传/下载 + 处理管线 + 检索/命中测试全栈打通；**增强**：文档批量向量化/删除（部分成功语义）、命中测试检索耗时展示、文档列表段数展示、触发同步置 processing 修「刷新后轮询丢失」。
@@ -70,7 +71,7 @@
   - **v2 方向**：混合检索 / FTS / RRF / rerank / 多向量；切块优化（heading 感知——命中测试已暴露双换行段切分对 list-heavy md 失效，留作自研切块器 A/B 对照案例）；评估体系（Recall@k/MRR + LLM 自动造测试集）。
   - 既有决策：embedding 每库锁一个模型、rerank 先阿里、全文检索先 Postgres 原生 FTS（不够再上 ParadeDB pg_search，不上 ES）、切块默认（递归~512token+50overlap）+ 可配；混合检索/FTS/RRF/rerank/多向量 = v2；文档编辑用自封装 tiptap（后做）。
 - **Agent 模块（CRUD + Playground + 工具装配 全打通）**：架构地基见 `docs/architecture.md`（11 节战略 + 附录 A），产品形态（双入口 / 三层资源 / L1-L3 记忆 / @直连 vs 管家）保留为待迭代区。Hybrid Schema（核心列 + jsonb 扩展，AgentConfig 嵌套 schema 强类型契约 Pydantic + `extra="forbid"`）+ 模板层 1+N（1 个可配置 loop 引擎 `general` + N 个 graph 模板首批 0）。**已完成**：后端 5 端点 + 模板层 + LoopTemplate.build() 真实装配（共享 create_agent 工厂 + base_prompt 追加 system_prompt 不覆盖）+ Playground 对话流整片（runtime/runner + route + 前端通用对话层）+ 字段对齐（types/agent.ts + ConfigPanel + AgentCard 嵌套 schema）+ 头像统一默认 gopher 不暴露上传 UI + **工具装配链路全栈（见最近迭代「工具模块第一刀」）**。**接下来候选**：(a) MCP 工具接入（`mcp_tools` 字段 + `langchain-mcp-adapters` 运行时拉远端工具）/ ~~(b) KB-as-tool~~（已完成，见 2026-06-08 迭代）/ (c) 有 key 内置工具的凭据层（抄 Model Provider 那套，Fernet 加密 + 运行时工厂装配）/ (d) workspace 真对话片（chat 层全复用零工作量，仅后端 Conversation + Redis cache-aside）/ (e) **KB-as-tool v2 增强**（hybrid/keyword 模式实装 + KB slug 字段 + 多 KB rerank + 命中测试 UI 加 mode 选择器 + LangChain `create_retriever_tool` 工厂收口）。详情页砍「正式对话」——归 workspace。
-- **Workspace 模块（d-1 + MVU 完工；剩两个排后小件）**：对话流 + 落库 + 前端接真 + 配置面板（d-1）+ 外层 StateGraph + 内置 supervisor（MVU，见最近迭代 2026-06-14）全打通。**排后小件**：(1) 标题异步生成走 BackgroundTasks（lazy 兜底：进对话时若 title=="" 且 message_count >= 2 再补一次，ChatGPT/Claude 同款异步后置）；(2) **多会话并发流**——前端 `conversationId → store` 缓存 Map（vanilla store 流循环不挂组件生命周期，切走不杀 store 即后台跑完落库 done；切回复用 store 接着看；后端零改动）。**单元 2（多 Agent）全收官** ✅：成员招募 CRUD（commit c7839a6）+ 派活（`SubAgentMiddleware` + 子 agent 实时露脸 + 回放，见最近迭代 2026-06-17）。**「从模板」招募（= 临时成员 A）暂禁用**，决策只走 B（用完即销毁、不进任何表、stream 事件驱动通讯录临时露脸），故 `WorkspaceMember` 硬 FK 定型不改。**d-3**：@ 路由（mentioned_member_ids 进 body + 输入框 @mention 按真设计重做）+ 视图隔离 + 共享内存。**远期已讨论**：沙箱执行产物走**真文件系统（沙箱持久卷，不进 state、不走 R2）** + 消息存引用 + 产物清单注入上下文（LangChain ToolMessage content/artifact 同款分野），引用天然落在 tool_use 块 result_data jsonb、schema 零改。
+- **Workspace 模块（d-1 + MVU 完工；剩两个排后小件）**：对话流 + 落库 + 前端接真 + 配置面板（d-1）+ 外层 StateGraph + 内置 supervisor（MVU，见最近迭代 2026-06-14）全打通。**排后小件**：(1) 标题异步生成走 BackgroundTasks（lazy 兜底：进对话时若 title=="" 且 message_count >= 2 再补一次，ChatGPT/Claude 同款异步后置）；(2) **多会话并发流**——前端 `conversationId → store` 缓存 Map（vanilla store 流循环不挂组件生命周期，切走不杀 store 即后台跑完落库 done；切回复用 store 接着看；后端零改动）。**单元 2（多 Agent）全收官** ✅：成员招募 CRUD（commit c7839a6）+ 派活（`SubAgentMiddleware` + 子 agent 实时露脸 + 回放，见最近迭代 2026-06-17）。**「从模板」招募（= 临时成员 A）暂禁用**，决策只走 B（用完即销毁、不进任何表、stream 事件驱动通讯录临时露脸），故 `WorkspaceMember` 硬 FK 定型不改。**d-3 @ 路由 ✅**（@直连 + 视角化协议 + TipTap @mention + 群聊 UI，见最近迭代 2026-06-18）；**d-3 剩**：视图隔离 + 共享内存（`WorkspaceContextMiddleware` 当前透传占位、留作接缝）。**多 @ 并发（一条消息 @ 多个成员各自并发应答）= v2**：v1 只 @ 一个；并发需后端一条 SSE 多路复用 N 路应答 + 前端 chat-store 从「单条 streaming」改「按成员 id 维护 N 个并发气泡」，中型切片，单 @ 已够 d-3。**远期已讨论**：沙箱执行产物走**真文件系统（沙箱持久卷，不进 state、不走 R2）** + 消息存引用 + 产物清单注入上下文（LangChain ToolMessage content/artifact 同款分野），引用天然落在 tool_use 块 result_data jsonb、schema 零改。
 - **前端 App Shell**：批次1骨架 ✅、批次2 头像菜单 ✅、批次3 admin 独立壳 ✅、批次4 Home 卡片式 dashboard ✅（静态占位版，数字待各模块接口就绪后灌真数）。
 - 后端可选生产功能（RBAC / Email 校验 / 密码重置 / 限流）随需推进。
 
@@ -90,6 +91,22 @@
 - 如果某次改动不足以影响项目理解，就不要把噪音写进来。
 
 ## 最近迭代
+
+### 2026-06-18 — Workspace d-3 @ 路由整片：视角化协议 + TipTap @mention + 群聊 UI
+
+**@直连**：用户 `@成员` 让该成员绕 supervisor 直接应答（「@直连 vs 管家派活」双轨的另一轨；Message 三层身份字段早备好）。
+
+**视角化协议（核心，`agents/workspace/view_context_assembler.py`）**：`ViewContextAssembler` 按「谁在应答(viewer)」把对话历史重写成 LLM messages——viewer 自己说的→`AIMessage`、user→无标签 `HumanMessage`、**其他第三方成员→`HumanMessage` 包 `<msg from="X">` 标签**。关键设计「只标第三方」：user/应答者不标 → 纯净对话(无成员发言)产出跟普通 `to_lc_messages` 逐字一样 → **prompt cache 不受影响**（每个 viewer 一条独立 cache 线、各自前缀只增不改、标签确定性=稳定前缀）。协议两端：写端 assembler 生成标签 + 读端 base prompt 说明让 LLM 读懂；防混淆的硬约束是 role 层（成员话进 `HumanMessage` 不进 `AIMessage`，supervisor 不会当成自己说的），标签 + 说明是补充。
+
+**装配泛化（`workspace.py`）**：`build_workspace_graph` 加 `responder: WorkspaceMember | None`——None=supervisor(挂派活)、member=@直连成员(不挂派活、用自己 cfg/prompt)；`viewer`/`cfg`/`can_delegate` 按 responder 切。`_workspace_base_prompt`(协议说明 + 成员名单 + 日期、日期到天 cache 一天才失效一次)拼在应答者人设前(supervisor/member 共享)。
+
+**端点 + 落库（`stream.py`）**：`ConversationStreamIn` 加 `mentioned_member_ids`；端点取第一个被 @ 成员(v1 单 @)、`select_related("agent")`、无效成员落 user 前 404；落库按 responder 写 `sender_kind`(supervisor/member + sender_member_id) + user 消息记 mentioned。删 `_db_messages_to_history`(assembler 取代)。
+
+**前端 @mention（TipTap）**：输入框 textarea → **TipTap**（StarterKit 关富文本只留纯文本 + `extension-mention` atomic token：`@老大` 不可拆整体、id 挂 node 上、从根避免反解 + `extension-placeholder` + 候选浮层用 `@floating-ui/dom` 定位，依赖树已有、不装过时的 tippy）。集成踩坑：`handleKeyDown` mount 固化用 ref 读最新、IME `event.isComposing`、空内容订阅 `useEditorState`、placeholder 动态派发空 transaction 重算；**Enter 冲突**——editorProps.handleKeyDown 先于 suggestion 插件、回车被发送抢，候选浮层开着时 editorProps 让路(return false)。`send(content, mentionedMemberIds)` 取所有 mention id 送 body(**v2-ready**、后端 v1 取第一个)；mention 可选 prop(传成员候选启用、Playground 不传退化纯文本，同 SubagentDirectory 模式)。
+
+**群聊 UI（`MessageList`）**：@直连成员答的气泡左侧露头像 + 名(查 SubagentDirectory)、**supervisor 保持裸**(默认对话方、ChatGPT 风)——一眼区分「管家答 vs 召唤了某成员」。身份实时乐观(send 记 `pendingSenderMemberId`、message_start 标)+ 回放(`chat-history` 从 `sender_member_id` 译)。
+
+**决策**：v1 前端不硬限单 @(inline 天然支持多 token = v2-ready)、后端取第一个；多 @ 并发(各自应答)= v2(后端一条 SSE 多路复用 + 前端多并发气泡，中型切片)。`WorkspaceContextMiddleware` 留作透传接缝(本想砍、用户留作书签提醒)。命名弃「管家/Butler」统一 Supervisor（已记 memory）。TipTap 3.x 引入(为后续自封装文档编辑器共用底座；文档编辑器用 Simple Editor Template、聊天输入框用 headless StarterKit)。
 
 ### 2026-06-17 — Workspace 单元 2 收官：派活（SubAgentMiddleware）+ 子 agent 实时露脸 + 回放
 
@@ -256,48 +273,8 @@
 
 **端到端验证**：Playground 实测——LLM 主动调 `knowledge_<hex8>` tool、返 markdown 段落 + 相关度，UI ToolUseBlock 正常渲染。
 
-### 2026-06-07 — Playground 整片端到端打通 + 字段对齐 + immer/Zustand 工厂踩坑
-
-**后端补完 runtime / route**
-
-- `runtime/runner.py`：`build_chat_model(ModelSlot) → BaseChatModel`（函数形态；provider_type → LangChain model_provider 映射表，OpenAI 兼容 provider 全走 `"openai"` + base_url 区分上游，仅 Anthropic 走官方协议；凭证 Model 级覆盖优先 fallback Provider 级）+ `prepare_stream(agent, request)` 同步装配（AgentConfig.model_validate + 模板取 + chat_model build + graph build + 拼 messages，**所有可能 raise 的活在此完成、FastAPI handler 接 400 JSON**）+ `run_chat_stream(graph, messages)` SSE 编排（message_start → adapter → finally 兜底 message_stop）。
-- 路由 `playground.py`：`POST /agents/{id}/playground/stream` → `StreamingResponse(media_type="text/event-stream")`。route 直接 ORM 查 Agent 内联归属校验（不走 service，service 返 AgentOut Pydantic 不适合 SSE 路径）。挂在 agent 子路由聚合。
-- 配套：`templates/base.py` `LoopTemplate.build()` 占位换成真实 `create_agent(model, tools, prompt)`；prompt 合成 = base_prompt（模板出厂底座）+ system_prompt（用户实例特化）**追加**（不覆盖，客服 / 老师等模板场景才不会丢底座）。
-
-**前端通用对话层整片落盘**
-
-- `types/chat.ts` 三层结构（协议层 ApiContentBlock + SSE event payload + RenderBlock UI 状态 + Message union）。命名约定：API 字段 snake_case 透传后端零映射、前端内部状态字段 camelCase，**`UserMessage.content: ApiContentBlock[]`**（不是 string，未来 image 多模态不破坏 schema）。
-- `api/chat-stream.ts` `parseSSEStream` async generator（buffer + `\n\n` 切事件 + finally 释放 reader lock）+ `streamChat(endpoint, body, opts?)` 主入口（endpoint 形参注入、Playground / Workspace 通用、AbortSignal 透传）+ 自定义 `ChatStreamHttpError`。
-- `stores/chat-store.ts` **Zustand 工厂模式 `createStore` + immer middleware + Context Provider**（详坑 #2）+ 11 case dispatch + `messagesToHistory` 摊平 helper（user 透传 / assistant 把 RenderBlock filter 出 done text block 拼）+ AbortController 内部维护，stop() 立即 UI 反馈 + abort signal 全链路真停。
-- `components/chat/` 通用组件套：MarkdownRender（react-markdown + remark-gfm + Tailwind Typography `prose-sm` 14px）+ TextBlock / ThinkingBlock（折叠 + Brain icon + auto-collapse on done）/ ToolUseBlock（4 态图标 + JSON 美化 + 折叠）+ MessageList（ResizeObserver 跟随滚 + 20px 触底容差 + 手势停跟随 + "回到最新" sticky）+ MessageInput（textarea auto-resize + composition 拦截中文输入法 + isLoading 时键变停止）+ ChatProvider Context（vanilla store + useStore hook）。
-- `pages/agents/Playground.tsx` 重写：useMemo + endpoint deps（切 agent 重建 store）+ unmount cleanup `store.getState().reset()`。
-
-**字段对齐 = 预期内的字段错位（详坑 #3）**
-
-- `types/agent.ts` `AgentConfig` 嵌套对齐后端 `schemas/agent/config_schema.py`：`models.{chat|stt|tts|vision|image_gen|video}.{id, params}` + `system_prompt` + `capabilities` + `knowledge / tools / skills` + `behavior` + `ui.avatar_url`。
-- `ConfigPanel.tsx` form state 仍扁平方便编辑（model_id / knowledge_ids / tool_ids / skill_ids / temperature / top_p / max_tokens），`agentToForm` 从嵌套读 / `save()` 显式构造嵌套不 spread 旧 config（防带入旧 schema 残留）；头像 UI 删色块改静态 `<img src="/gopher-fcb-glass.png" />` 圆形（**P0 不暴露上传 UI、所有 Agent 默认 gopher**）。
-- `AgentCard.tsx` 取数同步嵌套、头像同款。`mock.ts` Template 删 `default_avatar_color`。
-
-**三个深坑（新对话直接抄就能避）**
-
-- **#1 immer copy-on-write vs Vue reactive**：旧版 Vue `streaming.value = msg` + `messages.push(msg)` 两引用共享一个 reactive 对象、mutate 一边两边同步；React 移植到 immer 时存独立 `streaming` 字段引用 → immer mutate `s.streaming.blocks.push(...)` 复制 streaming 对象、`messages[N]` 仍指旧、blocks 永远空、UI 完全不渲染。**修法 = 删 `streaming` 字段，所有 dispatch case 在 set 内查 `s.messages[s.messages.length - 1]` 拿 Draft 引用**（流中 assistant 永远是最后一条，语义清晰、无引用分裂）。
-- **#2 Zustand 工厂 + Context 标准 pattern**：必须 vanilla store `createStore` + `useStore(store, selector)`（来自 `zustand`）。`create()` 返的 `useBoundStore` 通过 Context 传下来再直接调 `store(selector)` 看似可工作但**React 不识别这是 hook 订阅、state 变化不触发 re-render**。
-- **#3 ConfigPanel 字段不对齐**：后端按 spec 改 `AgentConfig` Pydantic + `extra="forbid"`、前端 mock 字段名（`model_id` / `knowledge_ids` / `mcp_ids` / `avatar_color` / `params`）没跟上 → `prepare_stream` 取 agent.config 时 ValidationError 6 项 extra_forbidden 全爆。修：DB 现存 Agent 删了重建 + 前端字段全部对齐嵌套 schema。
-
-**loader icon 演化（产品决策）**
-
-- inline 闪烁光标（▊ char → CSS 矩形圆角）→ 用户指认要消息级 → lucide `Sparkles` + 自定义变速 `animate-[spin_2s_ease-in-out_infinite]` → 用户否决（太垃圾 + 跟项目其他 Sparkles 重合）→ **最终 ldrs `l-bouncy`**（三球弹跳、size=28 / speed=1.2 / brand 墨绿 `#2f6b53`）+ 外层 wrap div `filter: drop-shadow(0 0 5px rgba(217, 119, 6, 0.55))` **暖橙发光做冷暖混色光晕**（ldrs 单 color 限制，混色只能靠外层 CSS filter）。流式中显示 / 完成后不显示等 actions row。
-
-**通用对话层不绑场景（关键设计沉淀）**
-
-- 后端 `runtime/` 包名、`chat_schema.py` 注释、前端 `chat.ts` / `chat-stream.ts` / `chat-store.ts` 命名都刻意避 playground / workspace 场景。workspace 真对话片直接 mount `createChatStore({ endpoint: 'workspaces/.../stream' })` 全复用、零工作量。
-- Redis 不引中间态：workspace 持久化走 **PostgreSQL（真源）+ Redis cache-aside**（DB 查询加速、不当 session 短期存储；30min TTL 跨界 + 多 Tab 撞 + 过期不直观）—— cache-aside 标准做法，前端持 history（沙盒）vs 后端 PG 持 history（workspace）两套设计 runtime 层零差异。
-
-**stop() 全链路真停（沉淀）**
-
-- 前端 `ctrl.abort()` → fetch 抛 AbortError → TCP/HTTP 关 → Starlette/Uvicorn 收到 client disconnect → asyncio cancel response task → runner generator 收到 `CancelledError`（**adapter 的 `except Exception` 抓不到 `CancelledError`，3.8+ 是 `BaseException` 直接子类、cancel 信号穿透**）→ langgraph / langchain / openai SDK / httpx 全链路 cancel → 上游 LLM API 收到客户端断开 → 真停（不再吐 token、不再计费 future）。**但已生成的 token 仍计费**（业界限制、ChatGPT / Claude 网页同款）。
-
 ## 历史摘要
+- **2026-06-07 — Playground 整片端到端 + 字段对齐 + immer/Zustand 工厂踩坑**：后端 `runtime/runner.py`（build_chat_model + prepare_stream + run_chat_stream）+ playground route；前端通用对话层（types/chat 三层 + chat-stream parseSSE + chat-store Zustand 工厂 + immer + components/chat 全套 + Playground 重写）。三深坑：①immer copy-on-write→删 `streaming` 字段、dispatch 查 messages 最后一条 ②Zustand 工厂 + Context 必须 vanilla `createStore` + `useStore` ③ConfigPanel 字段对齐嵌套 `AgentConfig`（extra=forbid）。loader 定 ldrs `l-bouncy` 暖橙混色光晕；stop() 全链路真停（`CancelledError` 是 BaseException 子类、穿透 adapter 的 except Exception）；**通用对话层刻意不绑场景**——workspace 真对话直接复用零工作量。
 - **2026-06-06 — Playground 对话流 P0 翻译层（events / schema / adapter）+ CLAUDE.md 第 9 条**：runtime 立起——`events.py`（Anthropic 风 11 事件名 StrEnum + `sse_event` ensure_ascii=False）+ `chat_schema.py`（通用契约，content 走 block 数组）+ `adapter.py`（astream_events(v2)→SSE：SingletonSlot / ToolRegistry 三表 / StreamState + 装饰器 dispatch + 单例块 helper + 跨 provider text/reasoning 双路聚合 + 唯一关块入口防漂移 + 错误脱敏 + 兜底自包 try）。adapter 历经 4 版重写（极简 bool→blocks 字典过度设计→单指针→OO 否决→函数式 + dataclass，ROI 教训）。立 CLAUDE.md 第 9 条「代码默认生产级最终版、不写阶段化占位」。
 - **2026-06-04 — Agent 前端 mock → 真接口全栈 + 允许同名资源 + service bug fix**：`api/agent.ts` 5 函数 + `types/agent.ts` 重构（`Agent` 对齐 `AgentOut` 核心列 + config jsonb，扁平字段下沉 config）+ AgentsPage/AgentCard/CreateAgentDialog/AgentDetailPage 接真 + **ConfigPanel 大重构**（本地 form state + Sticky「未保存」橙点 + 整体 PUT，`agentToForm` 摊平 / `save()` 打包回 config）+ Playground 字段对齐 + `agent-mock-store` 删除 + mock 模板池砍到 2 张。全局允许同名资源（KB/Provider 删 `unique_together` + 迁移 0010）。`get_by_id` `.filter().filter()` 笔误改 `.first()`。
 - **2026-06-03 — Agent 后端整片 + 模板 1+N 重构**：`agents` 表 Hybrid Schema（核心列 + `config` jsonb，迁移 0009）+ CRUD 5 端点（`AgentService` + 归属隔离 + template 创建后锁死）+ 模板层 `app/agents/templates/`（三层基类 `AgentTemplate/LoopTemplate/GraphTemplate` + 装饰器注册表防环三铁律 + `builtin/general`）；能力从「模板轴」降级为**实例层可组合开关**（`config.capabilities` + 注册表 + 装配器），loop 收成 1 个可配置引擎、graph 首批 0（依据 Anthropic Augmented LLM 基线）。详见 `agent-templates-v1.md`。
