@@ -93,7 +93,7 @@ export default function Home() {
       listWorkspaces(),
     ]).then(([agents, knowledge, models, tools, workspaces]) => {
       if (cancelled) return
-      const len = (r: PromiseSettledResult<{ length: number }[]>) =>
+      const len = (r: PromiseSettledResult<unknown[]>) =>
         r.status === 'fulfilled' ? r.value.length : null
       setCounts({
         agents: len(agents),

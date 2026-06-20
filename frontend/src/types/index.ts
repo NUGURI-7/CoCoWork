@@ -79,6 +79,7 @@ export type {
   TextBlock,
   ThinkingBlock,
   ToolUseBlock,
+  DelegateBlock,
   RenderBlock,
   // Message union
   UserMessage,
