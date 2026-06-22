@@ -24,7 +24,7 @@ from deepagents import SubAgentMiddleware
 from deepagents.backends import StateBackend
 from langchain_core.messages import BaseMessage, HumanMessage
 from app.models import User, Workspace, WorkspaceMember, Message
-from app.agents.workspace.view_context_assembler import ViewContextAssembler, Viewer
+from app.agents.workspace.view_context_assembler import ViewContextAssembler, Viewer, SPEAKER_SUPERVISOR
 from app.models import SenderKind
 from app.agents.runtime.runner import (
     assemble_tools,
@@ -37,23 +37,22 @@ from app.schemas.agent.chat_schema import ChatStreamRequest
 from app.schemas.agent.config_schema import AgentConfig
 
 
-def _workspace_base_prompt(workspace_name: str, member_names: list[str]) -> str:
+def _workspace_base_prompt(
+    workspace_name: str, member_names: list[str], self_name: str
+) -> str:
     """workspace 协作框架 —— supervisor / member 共享的出场底座。
 
-        拼在应答者自己的人设之前。静态协议说明(让 LLM 读懂 <msg from> 标签)
-        + 动态(成员名单 / 日期)。
+    拼在应答者自己的人设之前。含空间名 / 成员名单 / 日期、应答者自我身份
+    (self_name 与 assembler 打的 <msg from> 标签同名，应答者据此认出对自己的引用)，
+    以及读 / 写 <msg> 标签的约定。
     """
     roster = "、".join(member_names) if member_names else "（暂无其他成员）"
     today = date.today().isoformat()
     return (
-        f"你在一个多成员协作的工作空间「{workspace_name}」。\n"
-        f"当前空间成员：{roster}。\n"
-        f"今天是 {today}。\n"
-        "对话中的发言来源这样区分：\n"
-        '- 被 <msg from="X">…</msg> 包裹的，是成员 X 的发言，不是你说的；\n'
-        "- 没有标签的，是人类用户说的；\n"
-        "- 你自己以往的发言，是普通 assistant 消息。\n"
-        '（例：<msg from="老大">搞定了</msg> 表示老大说了“搞定了”。）\n'
+        f"你在多成员协作的工作空间「{workspace_name}」，成员：{roster}。今天是 {today}。\n"
+        f'你在这里的身份是「{self_name}」——别人提到 {self_name}、或标 <msg from="{self_name}"> 时，指的就是你。\n'
+        '历史里 <msg from="X">…</msg> 是 X 的发言，无标签的是人类用户的发言。\n'
+        "回复时直接正常说话，不要自己带 <msg> 标签。\n"
     )
 
 
@@ -155,10 +154,12 @@ async def build_workspace_graph(
         cfg = AgentConfig.model_validate(workspace.supervisor)
         viewer = Viewer(sender_kind=SenderKind.SUPERVISOR)
         can_delegate = True
+        self_name = SPEAKER_SUPERVISOR # 与 assembler 打的 from 标签同源
     else:
         cfg = AgentConfig.model_validate(responder.agent.config)
         viewer = Viewer(sender_kind=SenderKind.MEMBER, member_id=responder.id)
         can_delegate = False # @直连成员不派活
+        self_name = responder.agent.name # 成员用 agent.name，同样与 from 标签同源
 
     if cfg.models.chat is None:
         raise ValidationException("应答者未配置 chat 模型")
@@ -166,8 +167,8 @@ async def build_workspace_graph(
     chat_model = await build_chat_model(cfg.models.chat)
     tools = await assemble_tools(cfg, user)
 
-    # base 框架(协议说明 + 名单 + 日期)+ 应答者自己的人设
-    base = _workspace_base_prompt(workspace.name, list(member_names.values()))
+    # base 框架(协议说明 + 名单 + 日期 + 应答者自我身份)+ 应答者自己的人设
+    base = _workspace_base_prompt(workspace.name, list(member_names.values()), self_name)
 
     system_prompt = f"{base}\n{cfg.system_prompt}" if cfg.system_prompt else base
 

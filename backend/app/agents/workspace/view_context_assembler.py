@@ -19,7 +19,7 @@ from app.models import Message, SenderKind
 
 # 非成员说话人的固定显示名(成员名字走 names map)
 _SPEAKER_USER = "User"
-_SPEAKER_SUPERVISOR = "Supervisor"
+SPEAKER_SUPERVISOR = "Supervisor"  # 公开：workspace.py 用作 supervisor 自我名，与下方 from 标签同源
 _SPEAKER_MEMBER_FALLBACK = "Member"
 
 
@@ -103,7 +103,7 @@ class ViewContextAssembler:
         if m.sender_kind == SenderKind.USER:
             return _SPEAKER_USER
         if m.sender_kind == SenderKind.SUPERVISOR:
-            return _SPEAKER_SUPERVISOR
+            return SPEAKER_SUPERVISOR
         if m.sender_member_id is not None:
             return names.get(m.sender_member_id, _SPEAKER_MEMBER_FALLBACK)
         return _SPEAKER_MEMBER_FALLBACK
