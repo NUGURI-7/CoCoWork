@@ -2,6 +2,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -10,6 +11,7 @@ import { ring } from 'ldrs'
 import {
   ChevronLeft,
   Expand,
+  MessagesSquare,
   Minimize2,
   PanelLeft,
   PanelRight,
@@ -35,7 +37,7 @@ import {
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb'
 import { Button } from '@/components/ui/button'
-import { SidebarTrigger } from '@/components/ui/sidebar'
+import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
 import { disposeAllChatStores, disposeChatStore } from '@/stores/chat-registry'
 import { useImmersiveStore } from '@/stores/immersive'
@@ -46,7 +48,7 @@ import { SUPERVISOR_ROSTER, memberToRoster, type RosterMember } from './roster'
 import { ArtifactPanel } from './ArtifactPanel'
 import { ConversationPanel } from './ConversationPanel'
 import { ConversationSwitcher } from './ConversationSwitcher'
-import { MemberPanel, MemberRoster } from './MemberRoster'
+import { MemberRoster, MemberStrip } from './MemberRoster'
 import { RecruitDialog } from './RecruitDialog'
 import { WorkspaceChat } from './WorkspaceChat'
 import { WorkspaceSettingsPanel } from './WorkspaceSettingsPanel'
@@ -89,12 +91,12 @@ ring.register()
 /**
  * /workspaces/$workspaceId — 工作空间详情页
  *
- * 三栏：成员（左）/ 主对话（中，flex-1）/ 配置·产物面板（右 320，可关，翻转）。
- * 成员栏两种形态：非沉浸 = 原宽 roster（w-60，可关）；沉浸 = 常驻窄 dock
- * （hover 浮出完整卡）。
+ * 三栏：左（非沉浸 = 成员 roster，可关；沉浸 = 会话面板，可整块开关）/ 主对话
+ * （中，flex-1）/ 配置·产物面板（右 320，可关，翻转）。
  *
- * 沉浸模式（每空间记忆）：藏掉顶栏 / TabBar / 面包屑 / 右侧面板，会话铺满；
- * 成员窄 dock 仍常驻。退出按钮在会话顶部那条 switcher 行尾。
+ * 沉浸模式（每空间记忆）：藏掉顶栏 / TabBar / 面包屑 / 右侧面板 + 强制收起全局侧栏，
+ * 会话铺满；成员降级为沉浸顶栏右侧的头像条（不再单占一行）；会话面板为对话区左侧
+ * 的浮层（绝对定位，不挤压 message list），开关在沉浸顶栏。退出按钮在沉浸顶栏行尾。
  *
  * 接真状态：workspace 本体 + conversation 列表/创建 + 成员招募/列表/踢人 全走真接口；
  * 管家是合成行（workspace.supervisor，非 members 表的行），固定置顶。
@@ -111,9 +113,15 @@ export default function WorkspaceDetailPage() {
   const [immersiveArtifactOpen, setImmersiveArtifactOpen] = useState(false)
   // 非沉浸模式宽 roster 的开关（沉浸模式走左栏常驻面板，与此无关）
   const [rosterOpen, setRosterOpen] = useState(true)
-  // 沉浸左栏两张卡的折叠态（会话内本地态，不持久化）
-  const [membersCollapsed, setMembersCollapsed] = useState(false)
-  const [conversationsCollapsed, setConversationsCollapsed] = useState(false)
+  // 沉浸左栏会话面板开/关 —— 每空间记忆（刷新还原），默认展开
+  const conversationsOpen = useImmersiveStore((s) => s.convOpen[workspaceId] ?? true)
+  const setConvOpen = useImmersiveStore((s) => s.setConvOpen)
+  // 全局侧栏开关 —— 沉浸模式强制收起、退出复原。shadcn 的 setOpen 依赖 open，每次
+  // 开合都换引用；用 ref 持最新、effect 只认 immersive，避免用户手动展开后被 effect
+  // 重跑又关掉（那会让全局栏 trigger 看着「失效」）。
+  const { setOpen: setGlobalSidebarOpen } = useSidebar()
+  const setGlobalSidebarOpenRef = useRef(setGlobalSidebarOpen)
+  setGlobalSidebarOpenRef.current = setGlobalSidebarOpen
   // 右栏默认展示配置面（新空间第一件事是配管家）
   const [rightPanel, setRightPanel] = useState<RightPanelFace>('config')
   // 招募的真成员（后端 MemberOut）；管家是合成行、不在此列
@@ -131,6 +139,15 @@ export default function WorkspaceDetailPage() {
     enterImmersive(workspaceId)
     return () => leaveImmersive()
   }, [workspaceId, enterImmersive, leaveImmersive])
+
+  // 沉浸模式：进入即收起全局侧栏，退出 / 离开页面复原。放 effect（而非 enter()）→
+  // 刷新进「上次沉浸」的空间也会重跑，始终默认收起；非沉浸不触发（body 早返回），
+  // 不干扰用户在普通模式下自己折叠全局栏的偏好。
+  useEffect(() => {
+    if (!immersive) return
+    setGlobalSidebarOpenRef.current(false)
+    return () => setGlobalSidebarOpenRef.current(true)
+  }, [immersive])
 
   // 离开本空间 / 切到别的空间 → 清空 chat-registry，回收所有对话桶（含中断在跑的
   // 流）。桶只在「逛当前空间」期间常驻，给内存封顶。
@@ -364,8 +381,27 @@ export default function WorkspaceDetailPage() {
           onNew={handleNewConversation}
           onDelete={handleDeleteConversation}
           immersive
+          actions={
+            <MemberStrip members={roster} onRecruit={() => setRecruitOpen(true)} />
+          }
           leading={
-            <SidebarTrigger className="text-muted-foreground hover:text-foreground -ml-0.5" />
+            <>
+              <SidebarTrigger className="text-muted-foreground hover:text-foreground -ml-0.5" />
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setConvOpen(workspaceId, !conversationsOpen)}
+                title={conversationsOpen ? '收起会话' : '展开会话'}
+                className={cn(
+                  'size-8',
+                  conversationsOpen
+                    ? 'text-brand bg-brand-subtle hover:text-brand'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                <MessagesSquare className="size-4" />
+              </Button>
+            </>
           }
           trailing={
             <>
@@ -399,54 +435,36 @@ export default function WorkspaceDetailPage() {
 
       {/* 内容行 —— 沉浸：左栏双卡 + 对话区（无内层 switcher）；非沉浸：宽 roster + 右侧配置/产物 */}
       <div className={cn('flex min-h-0 flex-1 overflow-hidden', immersive ? 'gap-3' : 'gap-4')}>
-        {immersive ? (
-          // 沉浸左栏：成员面板（上 ~2/5）+ 会话列表面板（下 ~3/5），两张独立卡同宽竖排。
-          // 任一折叠 → 收成单条表头（shrink-0），剩下那张吃满空余高度。
-          <div className="flex w-60 shrink-0 flex-col gap-3 overflow-hidden">
-            {/* 成员封顶 2/5（basis-2/5 不 grow）—— 对话收起也不撑满，空余留白 */}
-            <div className={cn('min-h-0 shrink-0', !membersCollapsed && 'basis-2/5')}>
-              <MemberPanel
-                members={roster}
-                collapsed={membersCollapsed}
-                onToggleCollapsed={() => setMembersCollapsed((v) => !v)}
-              />
-            </div>
-            {/* 对话吃满剩余（flex-1）；自己收起则缩成单条表头 */}
-            <div
-              className={cn(
-                'min-h-0',
-                conversationsCollapsed ? 'shrink-0' : 'flex-1',
-              )}
-            >
+        {/* 非沉浸：成员 roster 占左栏 flex 位。沉浸下会话面板改走浮层（见下方对话区内） */}
+        {!immersive && rosterOpen && (
+          <div className="w-60 shrink-0">
+            <MemberRoster
+              members={roster}
+              onRecruit={() => setRecruitOpen(true)}
+              onRemove={handleRemove}
+              onClose={() => setRosterOpen(false)}
+            />
+          </div>
+        )}
+        <div
+          className={cn(
+            'relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden',
+            !immersive && 'bg-background rounded-lg border shadow-sm',
+          )}
+        >
+          {/* 沉浸：会话面板浮在对话区左侧（绝对定位，不占布局宽度 → 不挤压 message
+              list），带阴影像浮卡；开关仍在沉浸顶栏，开/关每空间记忆 */}
+          {immersive && conversationsOpen && (
+            <div className="absolute top-2 bottom-2 left-2 z-20 w-60 rounded-lg shadow-xl">
               <ConversationPanel
                 conversations={conversations}
                 currentId={currentConvId}
                 onSelect={setCurrentConvId}
                 onNew={handleNewConversation}
                 onDelete={handleDeleteConversation}
-                collapsed={conversationsCollapsed}
-                onToggleCollapsed={() => setConversationsCollapsed((v) => !v)}
               />
             </div>
-          </div>
-        ) : (
-          rosterOpen && (
-            <div className="w-60 shrink-0">
-              <MemberRoster
-                members={roster}
-                onRecruit={() => setRecruitOpen(true)}
-                onRemove={handleRemove}
-                onClose={() => setRosterOpen(false)}
-              />
-            </div>
-          )
-        )}
-        <div
-          className={cn(
-            'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden',
-            !immersive && 'bg-background rounded-lg border shadow-sm',
           )}
-        >
           {/* 沉浸模式下标题/退出都已上移到全宽顶栏，对话区内不再重复 switcher */}
           {!immersive && (
             <ConversationSwitcher

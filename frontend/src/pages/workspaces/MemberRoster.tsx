@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, UserPlus, X } from 'lucide-react'
+import { UserPlus, X } from 'lucide-react'
 
 import {
   AlertDialog,
@@ -12,6 +12,12 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import type { RosterMember } from './roster'
 
@@ -147,59 +153,60 @@ export function MemberRoster({
   )
 }
 
-// ============ 成员面板（沉浸模式左栏上段，纯展示）============
+// ============ 成员头像条（沉浸模式对话区顶部）============
 
-interface MemberPanelProps {
+interface MemberStripProps {
   members: RosterMember[]
-  /** 折叠态：只留表头，body 收起 */
-  collapsed?: boolean
-  onToggleCollapsed?: () => void
+  onRecruit: () => void
 }
 
 /**
- * 成员面板（沉浸模式）
+ * 成员头像条（沉浸模式）
  *
- * 满宽常驻卡片：表头「成员 N」+ 成员行列表（头像 + 名字 + 副标题 + 运行时状态点），
- * 与下方会话面板同宽、各自独立成卡。纵向占左栏上段（~2/5 高）。可折叠成单条表头。
- *
- * 纯展示：沉浸模式追求纯净，不带招募 / 踢人等管理动作（成员管理回非沉浸的宽 roster）。
+ * 嵌在沉浸顶栏右侧：成员头像（间隔排列，hover 出品牌淡色 tooltip 显示头像 / 名字 /
+ * 角色）+ 招募按钮，不单占一行。成员从左栏卡片降级为这一条，省出对话区宽高；踢人等
+ * 管理动作回非沉浸的宽 roster。
  */
-export function MemberPanel({
-  members,
-  collapsed = false,
-  onToggleCollapsed,
-}: MemberPanelProps) {
+export function MemberStrip({ members, onRecruit }: MemberStripProps) {
   return (
-    <div
-      className={cn(
-        'bg-background flex flex-col overflow-hidden rounded-lg border shadow-sm',
-        collapsed ? 'h-auto' : 'h-full min-h-0',
-      )}
-    >
-      <div className="flex shrink-0 items-center justify-between border-b px-4 py-3">
-        <button
-          type="button"
-          onClick={onToggleCollapsed}
-          className="hover:text-foreground -ml-1 flex items-center gap-1.5 rounded px-1 text-sm font-medium"
-        >
-          <ChevronDown
-            className={cn(
-              'text-muted-foreground size-3.5 shrink-0 transition-transform',
-              collapsed && '-rotate-90',
-            )}
-          />
-          成员
-        </button>
-        <span className="text-muted-foreground text-xs">{members.length}</span>
-      </div>
-      {!collapsed && (
-        <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-2">
+    <TooltipProvider delayDuration={200}>
+      <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
           {members.map((m) => (
-            <MemberRow key={m.id} member={m} showStatus />
+            <Tooltip key={m.id}>
+              <TooltipTrigger asChild>
+                <img
+                  src={m.avatarUrl ?? '/gopher-fcb-glass.png'}
+                  alt={m.name}
+                  className="size-6 cursor-default rounded-full object-cover"
+                />
+              </TooltipTrigger>
+              {/* 品牌淡色底（覆写默认 bg-foreground 深色）+ 同色系文字；箭头一并染成 brand-subtle */}
+              <TooltipContent className="bg-brand-subtle text-brand border-brand-border flex items-center gap-2.5 border px-2.5 py-2 [&>svg]:bg-brand-subtle [&>svg]:fill-brand-subtle">
+                <img
+                  src={m.avatarUrl ?? '/gopher-fcb-glass.png'}
+                  alt=""
+                  className="size-7 rounded-full object-cover"
+                />
+                <div className="min-w-0 leading-tight">
+                  <div className="text-brand text-sm font-medium">{m.name}</div>
+                  <div className="text-brand/70 text-[11px]">{m.subtitle}</div>
+                </div>
+              </TooltipContent>
+            </Tooltip>
           ))}
         </div>
-      )}
-    </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-muted-foreground hover:text-foreground size-7"
+          onClick={onRecruit}
+          title="招募成员"
+        >
+          <UserPlus className="size-4" />
+        </Button>
+      </div>
+    </TooltipProvider>
   )
 }
 

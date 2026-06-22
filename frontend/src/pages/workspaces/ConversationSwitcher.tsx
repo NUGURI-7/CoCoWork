@@ -19,6 +19,8 @@ interface ConversationSwitcherProps {
   onDelete: (id: string) => void
   /** 右侧「新对话」之后的尾槽（沉浸模式放退出按钮，平时不传） */
   trailing?: ReactNode
+  /** 沉浸模式右侧、尾槽之前的槽（放成员头像条），仅沉浸用 */
+  actions?: ReactNode
   /** 沉浸模式：会话列表已常驻左栏 → 标题静态化、隐藏下拉与「新对话」，只留 trailing */
   immersive?: boolean
   /** 沉浸模式标题左侧的引导槽（放全局侧栏收起按钮），仅沉浸全宽顶栏用 */
@@ -40,6 +42,7 @@ export function ConversationSwitcher({
   trailing,
   immersive = false,
   leading,
+  actions,
 }: ConversationSwitcherProps) {
   const [open, setOpen] = useState(false)
   // 待确认删除的对话 id —— 单个受控 AlertDialog（放 Popover 外，portaled 不受 hover 收起影响）
@@ -65,7 +68,10 @@ export function ConversationSwitcher({
           </span>
           {current && <StatusDot status={statuses[current.id] ?? 'idle'} />}
         </div>
-        <div className="flex items-center gap-1">{trailing}</div>
+        <div className="flex items-center gap-3">
+          {actions}
+          {trailing && <div className="flex items-center gap-1">{trailing}</div>}
+        </div>
       </div>
     )
   }

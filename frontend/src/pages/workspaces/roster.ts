@@ -3,7 +3,7 @@
  *
  * 管家不是 members 表的行（它是 workspace.supervisor），故前端合成一行固定置顶；
  * 真成员由后端 MemberOut 映射而来。两者收敛成同一个 RosterMember，喂给
- * MemberRoster / MemberPanel 渲染。
+ * MemberRoster / MemberStrip 渲染。
  */
 
 import type { WorkspaceMemberOut } from '@/types'
@@ -32,6 +32,7 @@ export function memberToRoster(m: WorkspaceMemberOut): RosterMember {
   return {
     id: m.id,
     name: m.agent.name,
+    avatarUrl: m.agent.avatar_url,
     role: 'agent',
     subtitle: '成员',
   }

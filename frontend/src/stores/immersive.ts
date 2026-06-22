@@ -28,6 +28,10 @@ interface ImmersiveState {
   leave: () => void
   /** 切换某空间：写 prefs + 同步 active */
   set: (workspaceId: string, v: boolean) => void
+  /** 会话面板开/关，每空间记忆（沉浸左栏用），刷新还原 */
+  convOpen: Record<string, boolean>
+  /** 设某空间的会话面板开/关 */
+  setConvOpen: (workspaceId: string, v: boolean) => void
 }
 
 export const useImmersiveStore = create<ImmersiveState>()(
@@ -39,11 +43,14 @@ export const useImmersiveStore = create<ImmersiveState>()(
       leave: () => set({ active: false }),
       set: (workspaceId, v) =>
         set((s) => ({ active: v, prefs: { ...s.prefs, [workspaceId]: v } })),
+      convOpen: {},
+      setConvOpen: (workspaceId, v) =>
+        set((s) => ({ convOpen: { ...s.convOpen, [workspaceId]: v } })),
     }),
     {
       name: 'immersive',
-      // 只持久化 prefs；active 是临时态，进页面时重新同步
-      partialize: (s) => ({ prefs: s.prefs }),
+      // 持久化 prefs + convOpen；active 是临时态，进页面时重新同步
+      partialize: (s) => ({ prefs: s.prefs, convOpen: s.convOpen }),
     },
   ),
 )
