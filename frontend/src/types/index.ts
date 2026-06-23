@@ -10,6 +10,7 @@ export type {
   TemplateKind,
   Template,
   AgentConfig,
+  ModelParams,
   Agent,
   Message,
 } from './agent'

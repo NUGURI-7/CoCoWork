@@ -33,9 +33,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Slider } from '@/components/ui/slider'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  ModelParamsFields,
+  fromApiParams,
+  toApiParams,
+  type ModelParamsValue,
+} from '@/components/ModelParamsFields'
 import { cn } from '@/lib/utils'
 import type { Agent, AgentConfig, AIModel, KnowledgeBase, Tool } from '@/types'
 import { KindBadge } from './KindBadge'
@@ -58,9 +63,8 @@ interface FormState {
   tool_ids: string[]
   /** 旧版 mcp_ids 改名 —— 对齐后端 schema 的 skills 字段（mock 期 MCP = skill） */
   skill_ids: string[]
-  /** 摊平字段：save 时打包成 config.models.chat.params */
-  temperature: number
-  max_tokens: number
+  /** 调用参数：save 时打包成 config.models.chat.params（maxTokens=null → 不发上限） */
+  params: ModelParamsValue
 }
 
 function agentToForm(agent: Agent): FormState {
@@ -74,8 +78,7 @@ function agentToForm(agent: Agent): FormState {
     knowledge_ids: c.knowledge ?? [],
     tool_ids: c.builtin_tools ?? [],
     skill_ids: c.skills ?? [],
-    temperature: (chat?.params?.temperature as number | undefined) ?? 1,
-    max_tokens: (chat?.params?.max_tokens as number | undefined) ?? 1024,
+    params: fromApiParams(chat?.params),
   }
 }
 
@@ -139,13 +142,7 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
     const config: AgentConfig = {
       models: {
         chat: form.model_id
-          ? {
-              id: form.model_id,
-              params: {
-                temperature: form.temperature,
-                max_tokens: form.max_tokens,
-              },
-            }
+          ? { id: form.model_id, params: toApiParams(form.params) }
           : null,
       },
       system_prompt: form.system_prompt.trim() || null,
@@ -268,22 +265,10 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
                   <AccordionTrigger className="py-1 text-sm font-medium hover:no-underline">
                     调用参数
                   </AccordionTrigger>
-                  <AccordionContent className="space-y-5 pt-3">
-                    <SliderField
-                      label="temperature"
-                      value={form.temperature}
-                      min={0}
-                      max={2}
-                      step={0.1}
-                      onChange={(v) => patch('temperature', v)}
-                    />
-                    <SliderField
-                      label="max_tokens"
-                      value={form.max_tokens}
-                      min={256}
-                      max={8192}
-                      step={256}
-                      onChange={(v) => patch('max_tokens', v)}
+                  <AccordionContent className="pt-3">
+                    <ModelParamsFields
+                      value={form.params}
+                      onChange={(v) => patch('params', v)}
                     />
                   </AccordionContent>
                 </AccordionItem>
@@ -381,43 +366,6 @@ function Field({
         )}
       </div>
       {children}
-    </div>
-  )
-}
-
-/** Slider + 当前值显示，拖动随动即落 form（保存按钮才提交后端） */
-function SliderField({
-  label,
-  value,
-  min,
-  max,
-  step,
-  onChange,
-}: {
-  label: string
-  value: number
-  min: number
-  max: number
-  step: number
-  onChange: (v: number) => void
-}) {
-  // step >= 1 → 整数；step < 0.1 → 两位小数；其它 → 一位小数
-  const decimals = step >= 1 ? 0 : step < 0.1 ? 2 : 1
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <Label className="text-xs">{label}</Label>
-        <span className="text-muted-foreground font-mono text-xs tabular-nums">
-          {value.toFixed(decimals)}
-        </span>
-      </div>
-      <Slider
-        value={[value]}
-        min={min}
-        max={max}
-        step={step}
-        onValueChange={(v) => onChange(v[0])}
-      />
     </div>
   )
 }

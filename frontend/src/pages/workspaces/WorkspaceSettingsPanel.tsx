@@ -16,7 +16,13 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
-import type { AIModel, Workspace } from '@/types'
+import {
+  ModelParamsFields,
+  fromApiParams,
+  toApiParams,
+  type ModelParamsValue,
+} from '@/components/ModelParamsFields'
+import type { AIModel, ModelParams, Workspace } from '@/types'
 
 interface WorkspaceSettingsPanelProps {
   workspace: Workspace
@@ -29,19 +35,21 @@ interface FormState {
   name: string
   description: string
   model_id: string | null
+  params: ModelParamsValue
   system_prompt: string
 }
 
 /** workspace → 扁平表单初值（supervisor jsonb 摊平） */
 function workspaceToForm(ws: Workspace): FormState {
   const sup = ws.supervisor as {
-    models?: { chat?: { id?: string } }
+    models?: { chat?: { id?: string; params?: ModelParams } }
     system_prompt?: string | null
   }
   return {
     name: ws.name,
     description: ws.description,
     model_id: sup.models?.chat?.id ?? null,
+    params: fromApiParams(sup.models?.chat?.params),
     system_prompt: sup.system_prompt ?? '',
   }
 }
@@ -97,7 +105,11 @@ export function WorkspaceSettingsPanel({
         description: form.description.trim(),
         // 显式构造 supervisor jsonb（AgentConfig 形态），不带 template 键
         supervisor: {
-          models: { chat: form.model_id ? { id: form.model_id } : null },
+          models: {
+            chat: form.model_id
+              ? { id: form.model_id, params: toApiParams(form.params) }
+              : null,
+          },
           system_prompt: form.system_prompt.trim() || null,
         },
       })
@@ -175,6 +187,14 @@ export function WorkspaceSettingsPanel({
               ))}
             </SelectContent>
           </Select>
+        </div>
+
+        <div className="space-y-3">
+          <Label className="text-xs font-medium tracking-wide uppercase">调用参数</Label>
+          <ModelParamsFields
+            value={form.params}
+            onChange={(v) => patch('params', v)}
+          />
         </div>
 
         <div className="space-y-2">

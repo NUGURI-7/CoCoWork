@@ -21,6 +21,7 @@ from uuid_utils import uuid7
 
 from app.agents.runtime.adapter import adapt_chat_stream
 from app.agents.runtime.events import EventType, sse_event
+from app.agents.runtime.param_adapter import get_param_adapter
 from app.agents.runtime.spec import AgentSpec
 from app.agents.templates import get_template
 from app.core.encryption import decrypt
@@ -115,15 +116,16 @@ async def build_chat_model(slot: ModelSlot) -> BaseChatModel:
 
     lc_provider = _resolve_lc_provider(provider.provider_type)
 
-    # params：exclude_none —— 让 LangChain / 各 provider 用自己默认
+    # params：exclude_none —— 没填的让 provider 用自己默认；再按 provider 家族方言翻译入参
     params = slot.params.model_dump(exclude_none=True)
+    init_kwargs = get_param_adapter(lc_provider).to_init_kwargs(params)
 
     return init_chat_model(
         model=ai_model.model_name,
         model_provider=lc_provider,
         base_url=base_url,
         api_key=api_key,
-        **params
+        **init_kwargs
     )
 
 
