@@ -35,8 +35,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         )}
         <div
           className={cn(
-            'flex min-h-0 min-w-0 flex-1 flex-col p-4',
-            !immersive && 'gap-4',
+            'flex min-h-0 min-w-0 flex-1 flex-col',
+            // 沉浸态收紧顶部留白（兑现「去留白铺满」意图）：顶 8 / 两侧·底 16
+            immersive ? 'px-4 pt-2 pb-4' : 'gap-4 p-4',
           )}
         >
           {children}

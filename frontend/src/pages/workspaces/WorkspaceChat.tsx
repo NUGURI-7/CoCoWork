@@ -25,6 +25,8 @@ interface WorkspaceChatProps {
   conversationId: string
   /** 管家是否已配 chat 模型；未配置时禁发 + 提示去右栏配置 */
   supervisorReady: boolean
+  /** 顶部淡出遮罩（沉浸态无边框顶栏下用，替代硬分隔线） */
+  topFade?: boolean
 }
 
 /**
@@ -44,6 +46,7 @@ export function WorkspaceChat({
   workspaceId,
   conversationId,
   supervisorReady,
+  topFade = false,
 }: WorkspaceChatProps) {
   const endpoint = conversationStreamEndpoint(workspaceId, conversationId)
   const store = useMemo(
@@ -121,6 +124,7 @@ export function WorkspaceChat({
         <WorkspaceChatBody
           supervisorReady={supervisorReady}
           mentionItems={mentionItems}
+          topFade={topFade}
         />
       </ChatProvider>
     </SubagentDirectoryProvider>
@@ -130,15 +134,17 @@ export function WorkspaceChat({
 function WorkspaceChatBody({
   supervisorReady,
   mentionItems,
+  topFade,
 }: {
   supervisorReady: boolean
   mentionItems: MentionItem[]
+  topFade: boolean
 }) {
   const isEmpty = useChat((s) => s.messages.length === 0)
 
   return (
     <>
-      {isEmpty ? <EmptyHint /> : <MessageList />}
+      {isEmpty ? <EmptyHint /> : <MessageList topFade={topFade} />}
       <MessageInput
         disabled={!supervisorReady}
         disabledHint="先在右侧「空间配置」里给管家选一个对话模型"

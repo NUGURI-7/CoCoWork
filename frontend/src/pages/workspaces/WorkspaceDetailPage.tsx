@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -6,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { Link, useParams } from '@tanstack/react-router'
+import { Link, Outlet, useMatches, useNavigate, useParams } from '@tanstack/react-router'
 import { ring } from 'ldrs'
 import {
   ChevronLeft,
@@ -50,15 +51,19 @@ import { ConversationPanel } from './ConversationPanel'
 import { ConversationSwitcher } from './ConversationSwitcher'
 import { MemberRoster, MemberStrip } from './MemberRoster'
 import { RecruitDialog } from './RecruitDialog'
-import { WorkspaceChat } from './WorkspaceChat'
 import { WorkspaceSettingsPanel } from './WorkspaceSettingsPanel'
+import { WorkspaceShellContext } from './shell-context'
 
 /** 右栏当前显示的面：配置 / 产出物 / 收起 */
 type RightPanelFace = 'config' | 'artifact' | null
 
 /**
- * 右栏 3D 翻转容器 —— 配置 / 产出物共用一块地，rotateY 翻面切换。
- * 两面常驻 DOM（backface-hidden 各藏一半），翻转纯 CSS 零重挂。
+ * 右栏切换容器 —— 配置 / 产出物共用一块地，淡入淡出切面。
+ * 两面常驻 DOM（叠放，非当前面 opacity-0 + pointer-events-none），切换纯 CSS 零重挂。
+ *
+ * 用 2D 淡切而非 3D 翻转：3D（perspective + preserve-3d + backface-hidden）的合成上下文
+ * 会让面内 overflow 滚动容器在 Chrome 里命中失效（程序化能滚、滚轮/拖拽不动），
+ * 故弃 3D，换零副作用的 opacity 过渡。
  */
 function FlipPanel({
   face,
@@ -70,17 +75,22 @@ function FlipPanel({
   back: ReactNode
 }) {
   return (
-    <div className="h-full [perspective:1200px]">
+    <div className="relative h-full">
       <div
         className={cn(
-          'relative h-full transition-transform duration-500 [transform-style:preserve-3d]',
-          face === 'back' && '[transform:rotateY(180deg)]',
+          'absolute inset-0 transition-opacity duration-300',
+          face === 'front' ? 'opacity-100' : 'pointer-events-none opacity-0',
         )}
       >
-        <div className="absolute inset-0 [backface-visibility:hidden]">{front}</div>
-        <div className="absolute inset-0 [transform:rotateY(180deg)] [backface-visibility:hidden]">
-          {back}
-        </div>
+        {front}
+      </div>
+      <div
+        className={cn(
+          'absolute inset-0 transition-opacity duration-300',
+          face === 'back' ? 'opacity-100' : 'pointer-events-none opacity-0',
+        )}
+      >
+        {back}
       </div>
     </div>
   )
@@ -105,7 +115,35 @@ export default function WorkspaceDetailPage() {
   const { workspaceId } = useParams({ from: '/_authenticated/workspaces/$workspaceId' })
   const [workspace, setWorkspace] = useState<Workspace | null>(null)
   const [conversations, setConversations] = useState<Conversation[]>([])
-  const [currentConvId, setCurrentConvId] = useState<string | null>(null)
+  const navigate = useNavigate()
+  // 当前会话 id —— 真源在 URL（子路由 /c/$conversationId 的 path 参数），从匹配树里读
+  const matches = useMatches()
+  const currentConvId = useMemo<string | null>(() => {
+    for (const m of matches) {
+      const p = m.params as { conversationId?: string }
+      if (p?.conversationId) return p.conversationId
+    }
+    return null
+  }, [matches])
+  // 切会话 = 改 URL（push，前进后退能在会话间跳）；id=null 回 index；程序化跳转传 replace
+  const setCurrentConvId = useCallback(
+    (id: string | null, opts?: { replace?: boolean }) => {
+      if (id == null) {
+        navigate({
+          to: '/workspaces/$workspaceId',
+          params: { workspaceId },
+          replace: opts?.replace,
+        })
+      } else {
+        navigate({
+          to: '/workspaces/$workspaceId/c/$conversationId',
+          params: { workspaceId, conversationId: id },
+          replace: opts?.replace,
+        })
+      }
+    },
+    [navigate, workspaceId],
+  )
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [recruitOpen, setRecruitOpen] = useState(false)
@@ -159,9 +197,7 @@ export default function WorkspaceDetailPage() {
 
   // 管家是否已配 chat 模型 —— 决定对话区可不可发（保存配置后 setWorkspace 自动翻转）
   const supervisorReady = useMemo(() => {
-    const sup = workspace?.supervisor as
-      | { models?: { chat?: { id?: string } } }
-      | undefined
+    const sup = workspace?.supervisor as { models?: { chat?: { id?: string } } } | undefined
     return Boolean(sup?.models?.chat?.id)
   }, [workspace])
 
@@ -170,10 +206,7 @@ export default function WorkspaceDetailPage() {
     () => [SUPERVISOR_ROSTER, ...members.map(memberToRoster)],
     [members],
   )
-  const recruitedAgentIds = useMemo(
-    () => members.map((m) => m.agent.id),
-    [members],
-  )
+  const recruitedAgentIds = useMemo(() => members.map((m) => m.agent.id), [members])
 
   useEffect(() => {
     let cancelled = false
@@ -191,15 +224,13 @@ export default function WorkspaceDetailPage() {
         setWorkspace(ws)
         setMembers(mems)
         if (convs.length > 0) {
-          // 后端按 updated_at 倒序，第一条 = 最近活跃
+          // 后端按 updated_at 倒序，第一条 = 最近活跃；选中哪条交给下方 URL 同步 effect
           setConversations(convs)
-          setCurrentConvId(convs[0].id)
         } else {
           // 新空间无对话：自动建一条，保证「进来就能打字」
           const created = await createConversation(workspaceId)
           if (cancelled) return
           setConversations([created])
-          setCurrentConvId(created.id)
         }
       } catch {
         // 404 / 网络失败统一进 not-found 空态（拦截器已 toast 具体原因）
@@ -214,6 +245,14 @@ export default function WorkspaceDetailPage() {
       cancelled = true
     }
   }, [workspaceId])
+
+  // URL 同步：会话加载完后，若当前 URL 没指向有效会话（落在 index 或 cid 失效/跨空间残留），
+  // replace 跳到最近一条。自动建会话由 load 负责，这里只管把 URL 钉到某一条。
+  useEffect(() => {
+    if (loading || conversations.length === 0) return
+    const valid = conversations.some((c) => c.id === currentConvId)
+    if (!valid) setCurrentConvId(conversations[0].id, { replace: true })
+  }, [loading, conversations, currentConvId, setCurrentConvId])
 
   async function handleNewConversation() {
     try {
@@ -245,7 +284,7 @@ export default function WorkspaceDetailPage() {
         const next = [...remaining].sort(
           (a, b) => +new Date(b.updated_at) - +new Date(a.updated_at),
         )[0]
-        setCurrentConvId(next.id)
+        setCurrentConvId(next.id, { replace: true })
       }
       return
     }
@@ -254,10 +293,10 @@ export default function WorkspaceDetailPage() {
     try {
       const created = await createConversation(workspaceId)
       setConversations([created])
-      setCurrentConvId(created.id)
+      setCurrentConvId(created.id, { replace: true })
     } catch {
       setConversations([])
-      setCurrentConvId(null)
+      setCurrentConvId(null, { replace: true })
     }
   }
 
@@ -298,226 +337,216 @@ export default function WorkspaceDetailPage() {
   }
 
   return (
-    <div className={cn('flex min-h-0 flex-1 flex-col', immersive ? 'gap-3' : 'gap-4')}>
-      {/* 顶部：面包屑 + 面板开关 —— 沉浸模式整条隐藏 */}
-      {!immersive && (
-        <div className="flex items-center justify-between gap-3">
-          <Breadcrumb>
-            <BreadcrumbList>
-              <BreadcrumbItem>
-                <BreadcrumbLink asChild>
-                  <Link to="/workspaces" className="inline-flex items-center gap-1">
-                    <ChevronLeft className="size-3.5" />
-                    工作空间
-                  </Link>
-                </BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                <BreadcrumbPage>{workspace.name}</BreadcrumbPage>
-              </BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
-          <div className="flex items-center gap-1">
-            {!rosterOpen && (
+    <WorkspaceShellContext.Provider value={{ supervisorReady }}>
+      <div className={cn('flex min-h-0 flex-1 flex-col', !immersive && 'gap-4')}>
+        {/* 顶部：面包屑 + 面板开关 —— 沉浸模式整条隐藏 */}
+        {!immersive && (
+          <div className="flex items-center justify-between gap-3">
+            <Breadcrumb>
+              <BreadcrumbList>
+                <BreadcrumbItem>
+                  <BreadcrumbLink asChild>
+                    <Link to="/workspaces" className="inline-flex items-center gap-1">
+                      <ChevronLeft className="size-3.5" />
+                      工作空间
+                    </Link>
+                  </BreadcrumbLink>
+                </BreadcrumbItem>
+                <BreadcrumbSeparator />
+                <BreadcrumbItem>
+                  <BreadcrumbPage>{workspace.name}</BreadcrumbPage>
+                </BreadcrumbItem>
+              </BreadcrumbList>
+            </Breadcrumb>
+            <div className="flex items-center gap-1">
+              {!rosterOpen && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={() => setRosterOpen(true)}
+                >
+                  <PanelLeft className="size-4" />
+                  成员
+                </Button>
+              )}
+              {/* 右栏两面常驻开关：点当前面 = 收起，点另一面 = 翻转 */}
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  rightPanel === 'config'
+                    ? 'text-brand bg-brand-subtle hover:text-brand'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+                onClick={() => setRightPanel((p) => (p === 'config' ? null : 'config'))}
+              >
+                <Settings2 className="size-4" />
+                配置
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  rightPanel === 'artifact'
+                    ? 'text-brand bg-brand-subtle hover:text-brand'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+                onClick={() => setRightPanel((p) => (p === 'artifact' ? null : 'artifact'))}
+              >
+                <PanelRight className="size-4" />
+                产出物
+              </Button>
+              {/* 沉浸模式：藏掉所有 chrome，会话铺满 */}
               <Button
                 variant="ghost"
                 size="sm"
                 className="text-muted-foreground hover:text-foreground"
-                onClick={() => setRosterOpen(true)}
+                onClick={() => setImmersive(workspaceId, true)}
               >
-                <PanelLeft className="size-4" />
-                成员
+                <Expand className="size-4" />
+                沉浸
               </Button>
-            )}
-            {/* 右栏两面常驻开关：点当前面 = 收起，点另一面 = 翻转 */}
-            <Button
-              variant="ghost"
-              size="sm"
-              className={cn(
-                rightPanel === 'config'
-                  ? 'text-brand bg-brand-subtle hover:text-brand'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-              onClick={() => setRightPanel((p) => (p === 'config' ? null : 'config'))}
-            >
-              <Settings2 className="size-4" />
-              配置
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className={cn(
-                rightPanel === 'artifact'
-                  ? 'text-brand bg-brand-subtle hover:text-brand'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-              onClick={() => setRightPanel((p) => (p === 'artifact' ? null : 'artifact'))}
-            >
-              <PanelRight className="size-4" />
-              产出物
-            </Button>
-            {/* 沉浸模式：藏掉所有 chrome，会话铺满 */}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground hover:text-foreground"
-              onClick={() => setImmersive(workspaceId, true)}
-            >
-              <Expand className="size-4" />
-              沉浸
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* 沉浸模式：极简全宽顶栏 —— 收起全局侧栏 + 当前对话标题 + 产物/退出。
-          内容行整体落其下，左栏卡片不再顶到内容区最上沿。 */}
-      {immersive && (
-        <ConversationSwitcher
-          conversations={conversations}
-          currentId={currentConvId}
-          onSelect={setCurrentConvId}
-          onNew={handleNewConversation}
-          onDelete={handleDeleteConversation}
-          immersive
-          actions={
-            <MemberStrip members={roster} onRecruit={() => setRecruitOpen(true)} />
-          }
-          leading={
-            <>
-              <SidebarTrigger className="text-muted-foreground hover:text-foreground -ml-0.5" />
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setConvOpen(workspaceId, !conversationsOpen)}
-                title={conversationsOpen ? '收起会话' : '展开会话'}
-                className={cn(
-                  'size-8',
-                  conversationsOpen
-                    ? 'text-brand bg-brand-subtle hover:text-brand'
-                    : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                <MessagesSquare className="size-4" />
-              </Button>
-            </>
-          }
-          trailing={
-            <>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setImmersiveArtifactOpen((v) => !v)}
-                title="产物"
-                className={cn(
-                  'size-8',
-                  immersiveArtifactOpen
-                    ? 'text-brand bg-brand-subtle hover:text-brand'
-                    : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                <PanelRight className="size-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setImmersive(workspaceId, false)}
-                title="退出沉浸"
-                className="text-muted-foreground hover:text-foreground size-8"
-              >
-                <Minimize2 className="size-4" />
-              </Button>
-            </>
-          }
-        />
-      )}
-
-      {/* 内容行 —— 沉浸：左栏双卡 + 对话区（无内层 switcher）；非沉浸：宽 roster + 右侧配置/产物 */}
-      <div className={cn('flex min-h-0 flex-1 overflow-hidden', immersive ? 'gap-3' : 'gap-4')}>
-        {/* 非沉浸：成员 roster 占左栏 flex 位。沉浸下会话面板改走浮层（见下方对话区内） */}
-        {!immersive && rosterOpen && (
-          <div className="w-60 shrink-0">
-            <MemberRoster
-              members={roster}
-              onRecruit={() => setRecruitOpen(true)}
-              onRemove={handleRemove}
-              onClose={() => setRosterOpen(false)}
-            />
+            </div>
           </div>
         )}
-        <div
-          className={cn(
-            'relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden',
-            !immersive && 'bg-background rounded-lg border shadow-sm',
+
+        {/* 沉浸模式：极简全宽顶栏 —— 收起全局侧栏 + 当前对话标题 + 产物/退出。
+          内容行整体落其下，左栏卡片不再顶到内容区最上沿。 */}
+        {immersive && (
+          <ConversationSwitcher
+            conversations={conversations}
+            currentId={currentConvId}
+            onSelect={setCurrentConvId}
+            onNew={handleNewConversation}
+            onDelete={handleDeleteConversation}
+            immersive
+            actions={<MemberStrip members={roster} onRecruit={() => setRecruitOpen(true)} />}
+            leading={
+              <>
+                <SidebarTrigger className="text-muted-foreground hover:text-foreground -ml-0.5" />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setConvOpen(workspaceId, !conversationsOpen)}
+                  title={conversationsOpen ? '收起会话' : '展开会话'}
+                  className={cn(
+                    'size-7',
+                    conversationsOpen
+                      ? 'text-brand bg-brand-subtle hover:text-brand'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  <MessagesSquare className="size-4" />
+                </Button>
+              </>
+            }
+            trailing={
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setImmersiveArtifactOpen((v) => !v)}
+                  title="产物"
+                  className={cn(
+                    'size-7',
+                    immersiveArtifactOpen
+                      ? 'text-brand bg-brand-subtle hover:text-brand'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  <PanelRight className="size-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setImmersive(workspaceId, false)}
+                  title="退出沉浸"
+                  className="text-muted-foreground hover:text-foreground size-7"
+                >
+                  <Minimize2 className="size-4" />
+                </Button>
+              </>
+            }
+          />
+        )}
+
+        {/* 内容行 —— 沉浸：左栏双卡 + 对话区（无内层 switcher）；非沉浸：宽 roster + 右侧配置/产物 */}
+        <div className={cn('flex min-h-0 flex-1 overflow-hidden', immersive ? 'gap-3' : 'gap-4')}>
+          {/* 非沉浸：成员 roster 占左栏 flex 位。沉浸下会话面板改走浮层（见下方对话区内） */}
+          {!immersive && rosterOpen && (
+            <div className="w-60 shrink-0">
+              <MemberRoster
+                members={roster}
+                onRecruit={() => setRecruitOpen(true)}
+                onRemove={handleRemove}
+                onClose={() => setRosterOpen(false)}
+              />
+            </div>
           )}
-        >
-          {/* 沉浸：会话面板浮在对话区左侧（绝对定位，不占布局宽度 → 不挤压 message
+          <div
+            className={cn(
+              'relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden',
+              !immersive && 'bg-background rounded-lg border shadow-sm',
+            )}
+          >
+            {/* 沉浸：会话面板浮在对话区左侧（绝对定位，不占布局宽度 → 不挤压 message
               list），带阴影像浮卡；开关仍在沉浸顶栏，开/关每空间记忆 */}
-          {immersive && conversationsOpen && (
-            <div className="absolute top-2 bottom-2 left-2 z-20 w-60 rounded-lg shadow-xl">
-              <ConversationPanel
+            {immersive && conversationsOpen && (
+              <div className="absolute top-2 bottom-2 left-2 z-20 w-60 rounded-lg shadow-xl">
+                <ConversationPanel
+                  conversations={conversations}
+                  currentId={currentConvId}
+                  onSelect={setCurrentConvId}
+                  onNew={handleNewConversation}
+                  onDelete={handleDeleteConversation}
+                />
+              </div>
+            )}
+            {/* 沉浸模式下标题/退出都已上移到全宽顶栏，对话区内不再重复 switcher */}
+            {!immersive && (
+              <ConversationSwitcher
                 conversations={conversations}
                 currentId={currentConvId}
                 onSelect={setCurrentConvId}
                 onNew={handleNewConversation}
                 onDelete={handleDeleteConversation}
               />
+            )}
+            {/* 对话区 = 子路由 /c/$conversationId；无会话时 index 路由占位、外壳 effect 跳最近一条 */}
+            <Outlet />
+          </div>
+          {!immersive && rightPanel !== null && (
+            <div className="w-80 shrink-0">
+              <FlipPanel
+                face={rightPanel === 'config' ? 'front' : 'back'}
+                front={
+                  <WorkspaceSettingsPanel
+                    workspace={workspace}
+                    onSaved={setWorkspace}
+                    onClose={() => setRightPanel(null)}
+                  />
+                }
+                back={<ArtifactPanel onClose={() => setRightPanel(null)} />}
+              />
             </div>
           )}
-          {/* 沉浸模式下标题/退出都已上移到全宽顶栏，对话区内不再重复 switcher */}
-          {!immersive && (
-            <ConversationSwitcher
-              conversations={conversations}
-              currentId={currentConvId}
-              onSelect={setCurrentConvId}
-              onNew={handleNewConversation}
-              onDelete={handleDeleteConversation}
-            />
-          )}
-          {currentConvId ? (
-            <WorkspaceChat
-              key={currentConvId}
-              workspaceId={workspaceId}
-              conversationId={currentConvId}
-              supervisorReady={supervisorReady}
-            />
-          ) : (
-            <div className="text-muted-foreground/70 flex flex-1 items-center justify-center text-sm">
-              选择或新建一个对话
+          {/* 沉浸模式产物栏 —— 真侧栏推开会话，无遮罩，产物可拖进对话框。
+            不撑满整列：定高 70vh + 垂直居中，跟左侧成员 dock 呼应。 */}
+          {immersive && immersiveArtifactOpen && (
+            <div className="h-[70vh] max-h-full w-80 shrink-0 self-center">
+              <ArtifactPanel onClose={() => setImmersiveArtifactOpen(false)} />
             </div>
           )}
         </div>
-        {!immersive && rightPanel !== null && (
-          <div className="w-80 shrink-0">
-            <FlipPanel
-              face={rightPanel === 'config' ? 'front' : 'back'}
-              front={
-                <WorkspaceSettingsPanel
-                  workspace={workspace}
-                  onSaved={setWorkspace}
-                  onClose={() => setRightPanel(null)}
-                />
-              }
-              back={<ArtifactPanel onClose={() => setRightPanel(null)} />}
-            />
-          </div>
-        )}
-        {/* 沉浸模式产物栏 —— 真侧栏推开会话，无遮罩，产物可拖进对话框。
-            不撑满整列：定高 70vh + 垂直居中，跟左侧成员 dock 呼应。 */}
-        {immersive && immersiveArtifactOpen && (
-          <div className="h-[70vh] max-h-full w-80 shrink-0 self-center">
-            <ArtifactPanel onClose={() => setImmersiveArtifactOpen(false)} />
-          </div>
-        )}
-      </div>
 
-      <RecruitDialog
-        open={recruitOpen}
-        onOpenChange={setRecruitOpen}
-        onRecruit={handleRecruit}
-        recruitedAgentIds={recruitedAgentIds}
-      />
-    </div>
+        <RecruitDialog
+          open={recruitOpen}
+          onOpenChange={setRecruitOpen}
+          onRecruit={handleRecruit}
+          recruitedAgentIds={recruitedAgentIds}
+        />
+      </div>
+    </WorkspaceShellContext.Provider>
   )
 }

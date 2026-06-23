@@ -8,6 +8,7 @@ import type {
   AssistantMessage as AssistantMessageType,
   UserMessage as UserMessageType,
 } from '@/types'
+import { cn } from '@/lib/utils'
 
 import { DelegateBlock } from './blocks/DelegateBlock'
 import { TextBlock } from './blocks/TextBlock'
@@ -36,8 +37,11 @@ function apiContentToText(content: ApiContentBlock[]): string {
  * - 用户 wheel / touchmove 时若不在底部 → 停跟随
  * - 触底 20px 容差内 → 恢复跟随
  * - 不跟随时显示 sticky "回到最新" 按钮
+ *
+ * topFade：顶部渐变遮罩 —— 无边框浮层顶栏（沉浸态）下，消息滚到顶时淡出消失（Claude 风），
+ * 替代硬分隔线。背景是图也不穿帮（真 alpha mask，非纯色覆盖）。
  */
-export function MessageList() {
+export function MessageList({ topFade = false }: { topFade?: boolean }) {
   const messages = useChat((s) => s.messages)
 
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -98,7 +102,12 @@ export function MessageList() {
   return (
     <div
       ref={scrollRef}
-      className="relative flex-1 overflow-y-auto px-4 pt-6"
+      className={cn(
+        'relative flex-1 overflow-y-auto px-4',
+        topFade
+          ? 'pt-4 [mask-image:linear-gradient(to_bottom,transparent,#000_2rem)] [-webkit-mask-image:linear-gradient(to_bottom,transparent,#000_2rem)]'
+          : 'pt-6',
+      )}
       onWheel={handleUserIntent}
       onTouchMove={handleUserIntent}
       onScroll={handleScroll}

@@ -60,7 +60,7 @@ export function ConversationSwitcher({
   // 沉浸模式：会话列表已在左栏常驻 → 退化为全宽极简顶栏（leading 收起钮 + 静态标题 + 尾槽）
   if (immersive) {
     return (
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b px-2 py-2">
+      <div className="flex shrink-0 items-center justify-between gap-2 px-2 py-1">
         <div className="flex min-w-0 items-center gap-2">
           {leading}
           <span className="truncate text-sm font-medium">
