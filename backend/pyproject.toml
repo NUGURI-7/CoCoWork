@@ -26,6 +26,7 @@ dependencies = [
     "langchain-anthropic>=1.4.4",
     "deepagents>=0.6.10",
     "langgraph>=1.2.4",
+    "langfuse>=4.11.0",
 ]
 
 [dependency-groups]

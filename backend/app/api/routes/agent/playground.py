@@ -20,6 +20,7 @@ from fastapi.responses import StreamingResponse
 from app.agents.runtime import prepare_stream, run_chat_stream, AgentSpec
 from app.core.depends import get_current_user
 from app.core.exceptions import NotFound404
+from app.core.observability import TraceContext
 from app.models import Agent
 from app.models.user import User
 from app.schemas.agent import ChatStreamRequest
@@ -47,6 +48,15 @@ async def playground_stream(
     graph, messages = await prepare_stream(AgentSpec.from_agent(agent), body, current_user)
 
     return StreamingResponse(
-        run_chat_stream(graph, messages),
+        run_chat_stream(
+            graph,
+            messages,
+            trace=TraceContext(
+                user_id=str(current_user.id),
+                name="playground",
+                tags=["playground"],
+                metadata={"agent_id": str(agent.id)},
+            ),
+        ),
         media_type=SSE_MEDIA_TYPE,
     )

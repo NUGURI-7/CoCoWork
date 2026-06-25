@@ -21,6 +21,7 @@ from app.agents.runtime import (
 from app.agents.workspace.workspace import build_workspace_graph
 from app.core.depends import get_current_user
 from app.core.exceptions import NotFound404
+from app.core.observability import TraceContext
 from app.models import Conversation, Message, MessageStatus, SenderKind, MessageRole, WorkspaceMember
 from app.models.user import User
 from app.schemas.agent.chat_schema import ChatStreamRequest
@@ -131,7 +132,21 @@ async def conversation_stream(
     async def stream():
         status = MessageStatus.STOPPED  # 悲观默认：没自然走完就是被掐
         try:
-            async for sse in run_chat_stream(graph, lc_messages, sink=collector.feed):
+            async for sse in run_chat_stream(
+                graph,
+                lc_messages,
+                sink=collector.feed,
+                trace=TraceContext(
+                    user_id=str(current_user.id),
+                    session_id=str(conversation_id),
+                    name="workspace_chat",
+                    tags=["workspace_chat"],
+                    metadata={
+                        "workspace_id": str(workspace_id),
+                        "responder": "supervisor" if responder is None else str(responder.id),
+                    },
+                ),
+            ):
                 yield sse
             status = MessageStatus.DONE  # 自然走到这行 = 完整流完
         finally:

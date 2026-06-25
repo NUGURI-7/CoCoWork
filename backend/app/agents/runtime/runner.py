@@ -26,6 +26,7 @@ from app.agents.runtime.spec import AgentSpec
 from app.agents.templates import get_template
 from app.core.encryption import decrypt
 from app.core.exceptions import ValidationException
+from app.core.observability import TraceContext, get_langfuse_handler
 from app.models import KnowledgeBase, User
 from app.models.model import AIModel
 from app.schemas.agent.chat_schema import ChatStreamRequest
@@ -247,7 +248,8 @@ async def run_chat_stream(
         graph: CompiledStateGraph,
         messages: list[BaseMessage],
         *,
-        sink: SinkFn | None = None
+        sink: SinkFn | None = None,
+        trace: TraceContext | None = None,
 ) -> AsyncIterator[str]:
     """SSE 流主编排 —— 包 message_start / 驱动 adapter / 兜底 message_stop。
 
@@ -268,9 +270,21 @@ async def run_chat_stream(
     yield sse_event(EventType.MESSAGE_START, start_payload)
 
     try:
+        # Langfuse:配了 key 才挂 callback;trace 归因走 config.metadata(langfuse_* 键)
+        handler = get_langfuse_handler()
+        config: dict[str, Any] = {}
+
+        if handler is not None:
+            config["callbacks"] = [handler]
+            if trace is not None:
+                if trace.name:
+                    config["run_name"] = trace.name
+                config["metadata"] = trace.to_config_metadata()
+
         events = graph.astream_events(
             {"messages": messages},
             version="v2",
+            config=config or None,
         )
 
         async for event, payload in adapt_chat_stream(events):
