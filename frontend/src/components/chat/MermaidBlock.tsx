@@ -23,6 +23,9 @@ function loadMermaid(): Promise<MermaidApi> {
       theme: 'default',
       securityLevel: 'strict',
       fontFamily: 'inherit',
+      // 解析失败时只抛异常、不往 DOM 注入自带的「Syntax error」炸弹图 ——
+      // 改由本组件 catch 后走优雅降级框（非法图表语法不该把炸弹画到用户页面上）
+      suppressErrorRendering: true,
       themeVariables: {
         edgeLabelBackground: '#ffffff',
       },
