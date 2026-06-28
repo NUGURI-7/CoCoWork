@@ -12,6 +12,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
+import { SidebarConversations } from '@/pages/workspaces/SidebarConversations'
 import { useAuthStore } from '@/stores/auth'
 import { UserMenu } from './UserMenu'
 import { mainNav, type NavItem } from './nav.config'
@@ -49,7 +50,7 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup>
+        <SidebarGroup className="shrink-0">
           <SidebarGroupContent>
             <SidebarMenu>
               {mainNav.map((item) => (
@@ -68,6 +69,9 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {/* 会话区：空间选择器 + 当前空间会话列表（常驻，占满剩余高度独立滚动） */}
+        <SidebarConversations />
       </SidebarContent>
 
       <SidebarFooter>

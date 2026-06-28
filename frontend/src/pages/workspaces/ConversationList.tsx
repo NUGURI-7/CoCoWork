@@ -50,8 +50,8 @@ interface ConversationListProps {
 /**
  * 会话列表行（纯展示）
  *
- * 顶部 hover 浮窗（ConversationSwitcher）与沉浸左栏常驻面板（ConversationPanel）
- * 共用同一份行渲染。不带自己的滚动容器与表头 —— 由各容器套外层，高度/留白自定。
+ * 全局侧栏会话区（SidebarConversations）复用这份行渲染。
+ * 不带自己的滚动容器与表头 —— 由容器套外层，高度/留白自定。
  */
 export function ConversationList({
   conversations,

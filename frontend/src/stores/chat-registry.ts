@@ -36,7 +36,10 @@ export function getOrCreateChatStore(conversationId: string, create: () => ChatS
         useStreamStatusStore.getState().set(conversationId, next)
       }
     }
-    push() // 落初值
+    // 落初值放微任务里：getOrCreateChatStore 常在组件 render 阶段（useMemo）被调，
+    // 同步写 stream-status 会触发别处订阅它的会话列表「在 render 中更新」React 告警；
+    // 推迟到 render 后再落，订阅后续的真状态变更都发生在异步流事件里、无此问题。
+    queueMicrotask(push)
     unsubs.set(conversationId, created.subscribe(push))
 
     store = created

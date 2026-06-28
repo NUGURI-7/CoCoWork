@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ring } from 'ldrs'
 import { Layers, Plus } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { deleteWorkspace, listWorkspaces } from '@/api/workspace'
+import { deleteWorkspace } from '@/api/workspace'
 import { Button } from '@/components/ui/button'
 import { useWorkspaceTabsStore } from '@/stores/tab-store'
+import { useWorkspaceSession } from '@/stores/workspace-session'
 import type { Workspace } from '@/types'
 import { CreateWorkspaceDialog } from './CreateWorkspaceDialog'
 import { WorkspaceCard } from './WorkspaceCard'
@@ -14,30 +15,24 @@ ring.register()
 
 /** /workspaces — 工作空间列表页（Header + 卡片网格） */
 export default function WorkspacesPage() {
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
-  const [loading, setLoading] = useState(true)
+  // 列表真源在 workspace-session store（与侧栏空间选择器同步）
+  const workspaces = useWorkspaceSession((s) => s.workspaces)
+  const workspacesLoaded = useWorkspaceSession((s) => s.workspacesLoaded)
+  const loadWorkspaces = useWorkspaceSession((s) => s.loadWorkspaces)
+  const addWorkspace = useWorkspaceSession((s) => s.addWorkspace)
+  const removeWorkspace = useWorkspaceSession((s) => s.removeWorkspace)
+  const [loading, setLoading] = useState(!workspacesLoaded)
   const [dialogOpen, setDialogOpen] = useState(false)
 
-  const refetch = useCallback(async () => {
-    setLoading(true)
-    try {
-      const data = await listWorkspaces()
-      setWorkspaces(data)
-    } catch {
-      // 全局拦截器已 toast；保持空列表
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
   useEffect(() => {
-    refetch()
-  }, [refetch])
+    // 进列表页刷新一次最新（反映他处的增删）；store 写回后侧栏选择器同步更新
+    setLoading(true)
+    loadWorkspaces().finally(() => setLoading(false))
+  }, [loadWorkspaces])
 
   function handleCreate(ws: Workspace) {
-    // 创建接口返完整 WorkspaceOut，直接头插（列表按活跃倒序）不重拉。
-    // 暂不跳详情 —— 详情页 3c 接真后恢复「创建即进入」。
-    setWorkspaces((prev) => [ws, ...prev])
+    // 创建接口返完整 WorkspaceOut，头插 store（列表按活跃倒序）不重拉。
+    addWorkspace(ws)
     toast.success(`工作空间「${ws.name}」已创建`)
   }
 
@@ -45,7 +40,7 @@ export default function WorkspacesPage() {
     const target = workspaces.find((w) => w.id === id)
     try {
       await deleteWorkspace(id)
-      setWorkspaces((prev) => prev.filter((w) => w.id !== id))
+      removeWorkspace(id)
       useWorkspaceTabsStore.getState().close(`/workspaces/${id}`)
       toast.success(`工作空间「${target?.name ?? ''}」已删除`)
     } catch {

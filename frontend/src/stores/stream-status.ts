@@ -16,7 +16,7 @@ interface StreamStatusState {
  *
  * 由 chat-registry 在「桶创建时」订阅每个 chat store 写入，更新与 React 组件挂载
  * 无关 —— 后台在跑的对话（其 WorkspaceChat 已卸载）照样能更新状态。
- * ConversationSwitcher 读它给每条对话画状态点，实现「同时盯多个 thread」。
+ * 侧栏会话列表读它给每条对话画状态点，实现「同时盯多个 thread」。
  */
 export const useStreamStatusStore = create<StreamStatusState>((set) => ({
   statuses: {},
