@@ -232,3 +232,6 @@ __marimo__/
 /node_modules/
 /package.json
 /package-lock.json
+
+# 基准测试 / RAG 数据集（Multi-CPR 等，几百 MB，不入仓库）
+/data/

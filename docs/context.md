@@ -65,13 +65,15 @@
 - **Workspace 派活整片打通（单元 2 收官）**：管家（supervisor）经 deepagents `SubAgentMiddleware` 把活分给招募成员——每成员转 `CompiledSubAgent`（复用 supervisor 装配链）、原生单 `task` + `subagent_type` 路由、`StateBackend()` 占位、空成员不挂。子 agent 实时露脸靠 adapter 按 `metadata.lc_agent_name` 给块盖 `subagent` 戳；前端 `DelegateBlock` 折叠块（成员 pill + 内部实时渲染）+ 落库带戳 + 回放重建嵌套。**「手搓 agent-as-tool」决策已推翻**（详见最近迭代 2026-06-17）。
 - **Workspace d-3 @ 路由整片打通（@直连 + 视角化协议 + TipTap @mention + 群聊 UI）**：用户 `@成员` 让该成员绕 supervisor 直连应答（双轨另一轨）。后端 `ViewContextAssembler`（按应答者 viewer 重写历史、**只标第三方**→ prompt cache 友好）+ `build_workspace_graph` 泛化 `responder=supervisor|member` + `_workspace_base_prompt`（协议读端说明 + 名单 + 日期）+ 端点 `mentioned_member_ids` 路由（404 兜底）+ 落库 `sender_kind`。前端输入框换 **TipTap**（`extension-mention` atomic token、id 挂 node 不靠反解 + floating-ui 候选浮层）+ `send` 带 mention id + `MessageList` 群聊风（@直连成员露头像/名、supervisor 保持裸）+ 身份实时乐观 + 回放译。**多 @ 并发 = v2**。详见最近迭代 2026-06-18。
 - **Workspace 多会话并发流全栈打通（前端，后端零改动）**：对话 store 移出组件生命周期、常驻模块级架子 `chat-registry`（`Map<conversationId, ChatStore>` + `getOrCreateChatStore` / `disposeChatStore` / `disposeAllChatStores`）—— 切对话组件销毁但桶留架子上、流继续落库（**切走不断流**）、切回复用桶接着看；离开工作空间整体回收封顶内存。配套 `stream-status` 实时状态表（running / idle / error，订阅活在 registry 里与组件生命周期解耦，后台在跑的对话照样翻状态），接 ConversationList / ConversationSwitcher 状态点 + WorkspaceDetailPage 离开回收。
+- **MCP 工具接入全栈整片打通（端到端实测可用）**：用户配外部 MCP server → agent 挂载 → 运行时拉工具供 LLM 调用。后端：`mcp_servers` 表（迁移 0012）+ CRUD 5 端点 + 运行时连接（`langchain-mcp-adapters` 0.3.0 的 `MultiServerMCPClient`，`fetch_mcp_tools` 无状态按需连）+ **SSRF 防护**（连接前 `loop.getaddrinfo` 解析 → 精确网段黑名单拦内网/回环/链路本地元数据，**刻意不用 `is_private`**——它把 `198.18/15` benchmark 也算 private、误伤 Clash/Surge 的 fake-ip）+ 测试连接端点 `POST /mcp-servers/test`（返工具列表/错误）+ headers 整体 JSON Fernet 加密（同 Provider，URL 不加密）+ `assemble_tools` 接 mcp 来源（`asyncio.gather` 并发拉、单 server 失败容错跳过、`created_by`+`enabled` 过滤）+ `AgentConfig.mcp_servers: list[UUID]`。前端：`/tools` MCP tab 改造成 server 管理（卡片 favicon→首字母哈希彩块 + URL query 脱敏 + 启用开关乐观更新 + 创建/编辑弹窗 headers 动态行 + 测试连接按钮内联结果）+ ConfigPanel「MCP server」选择器（归内置工具旁）。**关键决策**：按 server 选非按工具选（业界标准 Dify/Cursor）；只做远端 HTTP（streamable_http/sse）不做本地 stdio（Web 后端 spawn 子进程是安全噩梦）；不存 tools 缓存（运行时实时 `tools/list`）；server_url 含 key 时明文存 DB（个人项目可接受、UI 脱敏即可，加密留作可选增强）。
 
 ## 下一步
 - **知识库 / RAG 模块 v1 整片完工（片1-6 收官）+ 收尾增强**：数据层 + KB CRUD + 存储抽象 + 文档上传/下载 + 处理管线 + 检索/命中测试全栈打通；**增强**：文档批量向量化/删除（部分成功语义）、命中测试检索耗时展示、文档列表段数展示、触发同步置 processing 修「刷新后轮询丢失」。
   - **方案见** `docs/design/knowledge-rag-v1.md`（spec + §13 切片清单全部勾掉）+ `knowledge-rag-decisions.md`（决策/权衡）。六片：VectorField + pgvector + 4 表迁移 0005 + AIModel.meta 0006 + KB CRUD + 存储抽象 R2/Local + Document 上传 CRUD 下载 8 端点 + Splitter 抽象层 + `process_document()` + 触发端点 + enum 化迁移 0007/0008 + 检索 service + 命中测试端点。详见最近迭代。
   - **v2 方向**：混合检索 / FTS / RRF / rerank / 多向量；切块优化（heading 感知——命中测试已暴露双换行段切分对 list-heavy md 失效，留作自研切块器 A/B 对照案例）；评估体系（Recall@k/MRR + LLM 自动造测试集）。
+  - **检索性能 / 召回基准（进行中，2026-06-28 起）**：专项文档 `docs/design/knowledge-rag-benchmark-v1.md`——Multi-CPR 医疗语料（~96 万 passage，已落 `data/medical/`）+ `bge-large-zh-v1.5`·1024·zero-shot，补 HNSW 索引（partial 表达式）+ 批量导入入口 + `ranx` 评测，分阶段测延迟（仅 `search_ms`）/ 召回随规模 N。**待**：建库 → 导入 → 建索引 → 跑基准。
   - 既有决策：embedding 每库锁一个模型、rerank 先阿里、全文检索先 Postgres 原生 FTS（不够再上 ParadeDB pg_search，不上 ES）、切块默认（递归~512token+50overlap）+ 可配；混合检索/FTS/RRF/rerank/多向量 = v2；文档编辑用自封装 tiptap（后做）。
-- **Agent 模块（CRUD + Playground + 工具装配 全打通）**：架构地基见 `docs/architecture.md`（11 节战略 + 附录 A），产品形态（双入口 / 三层资源 / L1-L3 记忆 / @直连 vs 管家）保留为待迭代区。Hybrid Schema（核心列 + jsonb 扩展，AgentConfig 嵌套 schema 强类型契约 Pydantic + `extra="forbid"`）+ 模板层 1+N（1 个可配置 loop 引擎 `general` + N 个 graph 模板首批 0）。**已完成**：后端 5 端点 + 模板层 + LoopTemplate.build() 真实装配（共享 create_agent 工厂 + base_prompt 追加 system_prompt 不覆盖）+ Playground 对话流整片（runtime/runner + route + 前端通用对话层）+ 字段对齐（types/agent.ts + ConfigPanel + AgentCard 嵌套 schema）+ 头像统一默认 gopher 不暴露上传 UI + **工具装配链路全栈（见最近迭代「工具模块第一刀」）**。**接下来候选**：(a) MCP 工具接入（`mcp_tools` 字段 + `langchain-mcp-adapters` 运行时拉远端工具）/ ~~(b) KB-as-tool~~（已完成，见 2026-06-08 迭代）/ (c) 有 key 内置工具的凭据层（抄 Model Provider 那套，Fernet 加密 + 运行时工厂装配）/ (d) workspace 真对话片（chat 层全复用零工作量，仅后端 Conversation + Redis cache-aside）/ (e) **KB-as-tool v2 增强**（hybrid/keyword 模式实装 + KB slug 字段 + 多 KB rerank + 命中测试 UI 加 mode 选择器 + LangChain `create_retriever_tool` 工厂收口）。详情页砍「正式对话」——归 workspace。
+- **Agent 模块（CRUD + Playground + 工具装配 全打通）**：架构地基见 `docs/architecture.md`（11 节战略 + 附录 A），产品形态（双入口 / 三层资源 / L1-L3 记忆 / @直连 vs 管家）保留为待迭代区。Hybrid Schema（核心列 + jsonb 扩展，AgentConfig 嵌套 schema 强类型契约 Pydantic + `extra="forbid"`）+ 模板层 1+N（1 个可配置 loop 引擎 `general` + N 个 graph 模板首批 0）。**已完成**：后端 5 端点 + 模板层 + LoopTemplate.build() 真实装配（共享 create_agent 工厂 + base_prompt 追加 system_prompt 不覆盖）+ Playground 对话流整片（runtime/runner + route + 前端通用对话层）+ 字段对齐（types/agent.ts + ConfigPanel + AgentCard 嵌套 schema）+ 头像统一默认 gopher 不暴露上传 UI + **工具装配链路全栈（见最近迭代「工具模块第一刀」）**。**接下来候选**：~~(a) MCP 工具接入~~（已完成，见 2026-06-28 迭代）/ ~~(b) KB-as-tool~~（已完成，见 2026-06-08 迭代）/ (c) 有 key 内置工具的凭据层（抄 Model Provider 那套，Fernet 加密 + 运行时工厂装配）/ (d) workspace 真对话片（chat 层全复用零工作量，仅后端 Conversation + Redis cache-aside）/ (e) **KB-as-tool v2 增强**（hybrid/keyword 模式实装 + KB slug 字段 + 多 KB rerank + 命中测试 UI 加 mode 选择器 + LangChain `create_retriever_tool` 工厂收口）。详情页砍「正式对话」——归 workspace。
 - **Workspace 模块（d-1 + MVU 完工；剩一个排后小件）**：对话流 + 落库 + 前端接真 + 配置面板（d-1）+ 外层 StateGraph + 内置 supervisor（MVU，见最近迭代 2026-06-14）全打通。**排后小件**：标题异步生成走 BackgroundTasks（lazy 兜底：进对话时若 title=="" 且 message_count >= 2 再补一次，ChatGPT/Claude 同款异步后置）。**多会话并发流已完工**（chat-registry 模块级 Map + stream-status 状态表，见「当前已有功能」）。**单元 2（多 Agent）全收官** ✅：成员招募 CRUD（commit c7839a6）+ 派活（`SubAgentMiddleware` + 子 agent 实时露脸 + 回放，见最近迭代 2026-06-17）。**「从模板」招募（= 临时成员 A）暂禁用**，决策只走 B（用完即销毁、不进任何表、stream 事件驱动通讯录临时露脸），故 `WorkspaceMember` 硬 FK 定型不改。**d-3 @ 路由 ✅**（@直连 + 视角化协议 + TipTap @mention + 群聊 UI，见最近迭代 2026-06-18）；**d-3 剩**：视图隔离 + 共享内存（`WorkspaceContextMiddleware` 当前透传占位、留作接缝）。**多 @ 并发（一条消息 @ 多个成员各自并发应答）= v2**：v1 只 @ 一个；并发需后端一条 SSE 多路复用 N 路应答 + 前端 chat-store 从「单条 streaming」改「按成员 id 维护 N 个并发气泡」，中型切片，单 @ 已够 d-3。**远期已讨论**：沙箱执行产物走**真文件系统（沙箱持久卷，不进 state、不走 R2）** + 消息存引用 + 产物清单注入上下文（LangChain ToolMessage content/artifact 同款分野），引用天然落在 tool_use 块 result_data jsonb、schema 零改。
 - **前端 App Shell**：批次1骨架 ✅、批次2 头像菜单 ✅、批次3 admin 独立壳 ✅、批次4 Home 卡片式 dashboard ✅（静态占位版，数字待各模块接口就绪后灌真数）。
 - 后端可选生产功能（RBAC / Email 校验 / 密码重置 / 限流）随需推进。
@@ -92,6 +94,30 @@
 - 如果某次改动不足以影响项目理解，就不要把噪音写进来。
 
 ## 最近迭代
+
+### 2026-06-28 — MCP 工具接入全栈整片：CRUD → 运行时连接 → 测试连接 → 装进 agent
+
+五段全栈（详细形态见「当前已有功能」）。**底层祛魅**（陪用户从协议层理解）：MCP = JSON-RPC over stdio/HTTP，LLM 不在这条线上（只吐 tool_call、App 才连 server 执行）、server 内部 = 死路由、流式 tool_use 三段式（start 定 name、delta 拼 partial_json、stop 后 parse）；只做远端 HTTP（本地 stdio 对 Web 后端无意义 + spawn 是安全噩梦）、按 server 选非按工具选（Dify/Cursor 标准）。**三个实测踩坑**：① SSRF 误伤——`is_private` 把 `198.18/15` benchmark 也拦，而 Clash/Surge fake-ip 把 `mcp.amap.com` 映射到 198.18.x，改精确网段黑名单修复；② favicon 不可用——MCP 子域名命中率极低 + Google 无图标返丑地球（不 404、onError 失效），改首字母哈希彩块；③ key-in-URL（高德）——卡片砍 query 脱敏、DB 明文存可接受。**协作固化**：所有代码先审核后落盘（除非授权）+ 模板代码 Claude 写但仍过审核关（已记 memory）。
+
+### 2026-06-28 — RAG 检索性能基准：数据集选型 + 现状勘察 + 分阶段计划
+
+（详情见专项文档 `docs/design/knowledge-rag-benchmark-v1.md`，本条只留索引。接 06-25「KB 数据生成尝试放弃」——彼时因无 embedding 额度 / MiMo 限流放弃自造 KB 数据 + RAGAS，现硅基流动 embedding 到位，改用现成标准数据集重启检索基准线。）
+
+**数据集**：Multi-CPR 医疗域（Alibaba-NLP, SIGIR 2022）；MS MARCO/TREC 格式（corpus `pid⇥text` / query `qid⇥text` / qrels `qid 0 pid 1`），**自带切好段 + 相关性标注**。已下 4 个 `corpus_split_*.tsv`（~96 万 passage）+ `dev.query.txt`（1000）+ `qrels.dev.tsv` 到 `data/medical/`（`.gitignore` 加 `/data/`、~334MB 不入库）；`train.*`（fine-tune 用）zero-shot 不下。`query[i] ↔ pid 30000000+i` 实测咬合。
+
+**embedding**：硅基流动 `bge-large-zh-v1.5` / 1024 维 / **zero-shot**（不 fine-tune；模型自己配，仅维度 1024 渗进 DB）。
+
+**入库决策**：passage 已是检索单元 → `Paragraph:Embedding = 1:1`（**段=块**），parent-child 在此**退化**；**不二次切**（qrels 针对整条 passage、再切对不上）；parent-child 真实价值留**真实长文档线**（Multi-CPR 给不了层级）。
+
+**现状勘察（KB/RAG 设施已生产级完备）**：`KnowledgeBase/Document/Paragraph/Embedding`（parent-child 双层）+ `process_document`（解析→切段→切块→batch embed）+ splitter + `VectorRetriever`（余弦 `<=>` + `DISTINCT ON` 去重 + 阈值 + top_k + **`embed_ms`/`search_ms` 计时埋点**）+ 完整 service/route/迁移 0005-0008。**三缺口**：① **Gap1 HNSW 未建**（grep 全 backend 无 `CREATE INDEX hnsw`、现全表顺扫；`VectorField` 列无维度 → 不能直接建 → 须 **partial 表达式索引** `((embedding::vector(1024)) vector_cosine_ops) WHERE kb_id=...`、cast 须与检索 SQL 逐字一致、先灌后建）；② **Gap2 缺批量导入入口**（`process_document` 依赖文件上传 + `\n\n` 切段 + splitter，喂不进扁平 TSV 且丢 pid；须独立入口、**pid 存 `Embedding.meta`** 对 qrels）；③ **缺评测脚本**。
+
+**评测工具决策**：召回 **`ranx`**/`pytrec_eval`（不自写指标）；性能**只看 `search_ms`**（排 `embed_ms` 网络抖动）、`numpy.percentile` 出 p50/p95/p99；QPS `locust` 按需。脚本走 `backend/benchmarks/`、**独立、复用检索 service、不进产品**。
+
+**分阶段计划**：0 打通（建库+导入+1万+HNSW+召回脚本，验链路 + recall@10 对论文 baseline）→ 1 基准（10万有索引：p50/p95、QPS、recall@10、MRR@10）→ 2 无索引对照（复刻 30s→0.5s）→ 3 规模曲线（验 O(log N) 亚线性 + 找拐点）→ 4 调参（`ef_search`/`m`/`ef_construction` 召回-延迟权衡）→ 5 可选模型对比。
+
+**概念澄清（未落档，待『记笔记』走 `notes/`）**：大库 vs 多小库（HNSW O(log N) 非线性、单大库 + metadata 过滤 ≫ 多物理小库）、chunk 大小（生产 256-512 token、overlap 10-20%）、维度=容量非质量、模型不绑数据集（换 embedding = 全库重建）。
+
+**进度**：数据已落位，待建库 → 批量导入 → 建索引 → 跑基准。**实现（导入 service / 建索引迁移）归用户写、过审后落盘**。
 
 ### 2026-06-18 — Workspace d-3 @ 路由整片：视角化协议 + TipTap @mention + 群聊 UI
 
