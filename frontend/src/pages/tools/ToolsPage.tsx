@@ -1,10 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { ring } from 'ldrs'
-import { Wrench } from 'lucide-react'
+import { Plug, Plus, Wrench } from 'lucide-react'
 
+import { listMCPServers } from '@/api/mcp'
 import { listTools } from '@/api/tool'
+import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import type { Tool, ToolSource } from '@/types'
+import type { MCPServer, Tool } from '@/types'
+
+import { CreateMcpServerDialog } from './CreateMcpServerDialog'
+import { McpServerCard } from './McpServerCard'
 import { ToolCard } from './ToolCard'
 
 ring.register()
@@ -39,18 +44,20 @@ function ToolGrid({ tools }: { tools: Tool[] }) {
   )
 }
 
-/** /tools — 工具目录（只读：三带式 Header / 统计带 / Tab + 卡片网格） */
+/** /tools — 工具与来源管理：内置工具（只读）+ MCP server（可增删改） */
 export default function ToolsPage() {
   const [tools, setTools] = useState<Tool[] | null>(null)
+  const [servers, setServers] = useState<MCPServer[] | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editing, setEditing] = useState<MCPServer | null>(null)
 
   useEffect(() => {
     let cancelled = false
     listTools()
-      .then((data) => {
-        if (!cancelled) setTools(data)
+      .then((d) => {
+        if (!cancelled) setTools(d)
       })
       .catch(() => {
-        // 拦截器已 toast；失败按空列表收场
         if (!cancelled) setTools([])
       })
     return () => {
@@ -58,7 +65,17 @@ export default function ToolsPage() {
     }
   }, [])
 
-  if (tools === null) {
+  const loadServers = useCallback(() => {
+    listMCPServers()
+      .then(setServers)
+      .catch(() => setServers([]))
+  }, [])
+
+  useEffect(() => {
+    loadServers()
+  }, [loadServers])
+
+  if (tools === null || servers === null) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <l-ring size="36" stroke="3" speed="2" color="#2f6b53" />
@@ -67,13 +84,15 @@ export default function ToolsPage() {
   }
 
   const builtin = tools.filter((t) => t.source_type === 'builtin')
-  const mcp = tools.filter((t) => t.source_type === 'mcp')
 
-  const byTab: Record<'all' | ToolSource, Tool[]> = {
-    all: tools,
-    builtin,
-    mcp,
-    custom: tools.filter((t) => t.source_type === 'custom'),
+  function openCreate() {
+    setEditing(null)
+    setDialogOpen(true)
+  }
+
+  function openEdit(server: MCPServer) {
+    setEditing(server)
+    setDialogOpen(true)
   }
 
   return (
@@ -85,25 +104,66 @@ export default function ToolsPage() {
 
       {/* ② 概览统计带 */}
       <div className="flex divide-x rounded-lg border">
-        <Stat label="工具" value={tools.length} />
-        <Stat label="内置" value={builtin.length} />
-        <Stat label="MCP" value={mcp.length} />
+        <Stat label="内置工具" value={builtin.length} />
+        <Stat label="MCP server" value={servers.length} />
       </div>
 
-      {/* ③ Tab 按来源筛 + 卡片网格 */}
-      <Tabs defaultValue="all">
+      {/* ③ Tab：内置工具（只读）/ MCP（server 管理） */}
+      <Tabs defaultValue="builtin">
         <TabsList>
-          <TabsTrigger value="all">全部</TabsTrigger>
-          <TabsTrigger value="builtin">内置</TabsTrigger>
+          <TabsTrigger value="builtin">内置工具</TabsTrigger>
           <TabsTrigger value="mcp">MCP</TabsTrigger>
         </TabsList>
 
-        {(['all', 'builtin', 'mcp'] as const).map((tab) => (
-          <TabsContent key={tab} value={tab} className="mt-4">
-            <ToolGrid tools={byTab[tab]} />
-          </TabsContent>
-        ))}
+        <TabsContent value="builtin" className="mt-4">
+          <ToolGrid tools={builtin} />
+        </TabsContent>
+
+        <TabsContent value="mcp" className="mt-4">
+          <div className="space-y-4">
+            <div className="flex justify-end">
+              <Button onClick={openCreate}>
+                <Plus />
+                添加 MCP server
+              </Button>
+            </div>
+
+            {servers.length === 0 ? (
+              <div className="text-muted-foreground flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed py-16 text-sm">
+                <Plug className="size-8 opacity-40" />
+                <p>还没有 MCP server</p>
+                <Button variant="outline" size="sm" onClick={openCreate}>
+                  <Plus className="size-4" />
+                  添加第一个
+                </Button>
+              </div>
+            ) : (
+              <div
+                className="grid gap-4"
+                style={{
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
+                }}
+              >
+                {servers.map((s) => (
+                  <McpServerCard
+                    key={s.id}
+                    server={s}
+                    onEdit={openEdit}
+                    onChanged={loadServers}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </TabsContent>
       </Tabs>
+
+      <CreateMcpServerDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        editing={editing}
+        onSaved={loadServers}
+      />
     </div>
   )
 }

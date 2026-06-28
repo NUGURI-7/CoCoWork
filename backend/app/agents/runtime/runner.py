@@ -8,6 +8,7 @@
 凭证解析：Model 级覆盖优先、空则 fallback Provider 级（沿用 ModelClient 同款）。
 """
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator, Callable
 from typing import Any
@@ -27,12 +28,13 @@ from app.agents.templates import get_template
 from app.core.encryption import decrypt
 from app.core.exceptions import ValidationException
 from app.core.observability import TraceContext, get_langfuse_handler
-from app.models import KnowledgeBase, User
+from app.models import KnowledgeBase, MCPServer, User
 from app.models.model import AIModel
 from app.schemas.agent.chat_schema import ChatStreamRequest
 from app.schemas.agent.chat_schema import ContentBlock, HistoryMessage
 from app.schemas.agent.config_schema import AgentConfig
 from app.schemas.agent.config_schema import ModelSlot
+from app.services.mcp.mcp_runtime import fetch_tools_for_server
 from app.tools import resolve_tools
 from app.tools.knowledge_retrieval import KnowledgeRetrievalTool
 
@@ -171,6 +173,7 @@ async def assemble_tools(cfg: AgentConfig, user: User) -> list[BaseTool]:
     来源：
     - builtin：registry 单例（无状态）
     - knowledge：per-KB bound 实例（运行时按 cfg.knowledge 实例化）
+    - mcp：按 cfg.mcp_servers 连 server 拉工具（并发 + 单 server 失败容错跳过）
     """
     tools: list[BaseTool] = []
     tools.extend(resolve_tools(cfg.builtin_tools))
@@ -193,6 +196,24 @@ async def assemble_tools(cfg: AgentConfig, user: User) -> list[BaseTool]:
                     user=user,
                 )
             )
+
+    if cfg.mcp_servers:
+        # 拉挂载的、属于本人的、启用中的 server；残留 / 禁用 id 自动过滤
+        servers = await MCPServer.filter(
+            id__in=cfg.mcp_servers, created_by=user, enabled=True
+        ).all()
+        # 并发连接拉工具；单个 server 失败容错跳过，不连累整个装配
+        results = await asyncio.gather(
+            *(fetch_tools_for_server(s) for s in servers),
+            return_exceptions=True,
+        )
+        for server, result in zip(servers, results):
+            if isinstance(result, Exception):
+                logger.warning(
+                    "MCP server 工具装配失败 name=%s: %s", server.name, result
+                )
+                continue
+            tools.extend(result)
 
     return tools
 

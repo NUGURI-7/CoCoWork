@@ -57,6 +57,7 @@ export type {
   MemberRecruitPayload,
 } from './workspace'
 export type { ToolSource, Tool } from './tool'
+export type { MCPTransport, MCPServer } from './mcp'
 export type {
   // 协议层
   ApiTextBlock,

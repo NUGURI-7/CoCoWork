@@ -99,8 +99,9 @@ class AgentConfig(BaseModel):
     capabilities: list[str] = Field(default_factory=list)
 
     knowledge: list[UUID] = Field(default_factory=list)
-    # 工具按来源分字段：内置走 registry name（str）；MCP / custom 那刀再加 mcp_tools / custom_tools
+    # 工具按来源分字段：内置走 registry name（str）；MCP 走 server id（运行时连上拉工具）；custom 那刀再加
     builtin_tools: list[str] = Field(default_factory=list)
+    mcp_servers: list[UUID] = Field(default_factory=list)
     skills: list[UUID] = Field(default_factory=list)
 
     behavior: AgentBehavior = Field(default_factory=AgentBehavior)

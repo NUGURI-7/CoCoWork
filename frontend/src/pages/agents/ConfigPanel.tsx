@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 
 import { updateAgent, type AgentUpdatePayload } from '@/api/agent'
 import { listKnowledgeBases } from '@/api/knowledge'
+import { listMCPServers } from '@/api/mcp'
 import { listAllModels } from '@/api/model'
 import { listTools } from '@/api/tool'
 import {
@@ -42,7 +43,14 @@ import {
   type ModelParamsValue,
 } from '@/components/ModelParamsFields'
 import { cn } from '@/lib/utils'
-import type { Agent, AgentConfig, AIModel, KnowledgeBase, Tool } from '@/types'
+import type {
+  Agent,
+  AgentConfig,
+  AIModel,
+  KnowledgeBase,
+  MCPServer,
+  Tool,
+} from '@/types'
 import { KindBadge } from './KindBadge'
 import { mockTemplates } from './mock'
 
@@ -61,6 +69,7 @@ interface FormState {
   system_prompt: string
   knowledge_ids: string[]
   tool_ids: string[]
+  mcp_server_ids: string[]
   /** 旧版 mcp_ids 改名 —— 对齐后端 schema 的 skills 字段（mock 期 MCP = skill） */
   skill_ids: string[]
   /** 调用参数：save 时打包成 config.models.chat.params（maxTokens=null → 不发上限） */
@@ -77,6 +86,7 @@ function agentToForm(agent: Agent): FormState {
     system_prompt: c.system_prompt ?? '',
     knowledge_ids: c.knowledge ?? [],
     tool_ids: c.builtin_tools ?? [],
+    mcp_server_ids: c.mcp_servers ?? [],
     skill_ids: c.skills ?? [],
     params: fromApiParams(chat?.params),
   }
@@ -94,6 +104,7 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
   const [chatModels, setChatModels] = useState<AIModel[]>([])
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([])
   const [tools, setTools] = useState<Tool[]>([])
+  const [mcpServers, setMcpServers] = useState<MCPServer[]>([])
 
   // 切换 agent / 外部 setAgent 时（保存成功覆盖）同步本地 form
   useEffect(() => {
@@ -110,6 +121,9 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
       .catch(() => {})
     listTools()
       .then(setTools)
+      .catch(() => {})
+    listMCPServers()
+      .then(setMcpServers)
       .catch(() => {})
   }, [])
 
@@ -149,6 +163,7 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
       capabilities: agent.config.capabilities ?? [],
       knowledge: form.knowledge_ids,
       builtin_tools: form.tool_ids,
+      mcp_servers: form.mcp_server_ids,
       skills: form.skill_ids,
       behavior: agent.config.behavior ?? {},
       ui: agent.config.ui ?? {},
@@ -298,17 +313,30 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
                 />
               </Field>
 
-              <Field label="工具">
+              <Field label="内置工具">
                 <MultiSelectPopover
                   items={tools.map((t) => ({
                     id: t.name,
                     name: t.display_name,
-                    meta: t.source_type === 'mcp' ? 'MCP' : '内置',
                   }))}
                   value={selectedToolIds}
                   onChange={setToolSelection}
-                  placeholder="搜索工具..."
-                  emptyLabel="未挂载任何工具"
+                  placeholder="搜索内置工具..."
+                  emptyLabel="未挂载任何内置工具"
+                />
+              </Field>
+
+              <Field label="MCP server">
+                <MultiSelectPopover
+                  items={mcpServers.map((s) => ({
+                    id: s.id,
+                    name: s.name,
+                    meta: 'MCP',
+                  }))}
+                  value={form.mcp_server_ids}
+                  onChange={(ids) => patch('mcp_server_ids', ids)}
+                  placeholder="搜索 MCP server..."
+                  emptyLabel="未挂载任何 MCP server"
                 />
               </Field>
             </div>

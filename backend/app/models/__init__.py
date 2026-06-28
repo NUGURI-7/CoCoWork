@@ -11,6 +11,7 @@ from app.models.workspace import (
     Workspace,
     WorkspaceMember,
 )
+from app.models.mcp import MCPServer, MCPTransport
 
 __all__ = [
     "Agent",
@@ -29,4 +30,6 @@ __all__ = [
     "MessageRole",
     "MessageStatus",
     "SenderKind",
+    "MCPServer",
+    "MCPTransport",
 ]
