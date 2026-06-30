@@ -19,7 +19,7 @@ class ProviderCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100, description="显示名")
     provider_type: ProviderType = Field(description="服务商类型")
     base_url: str = Field(min_length=1, max_length=512, description="API base URL")
-    api_key: str = Field(min_length=1, description="API Key（明文，后端加密存储）")
+    api_key: str = Field(default="", description="API Key（明文，后端加密存储；可留空）")
     description: str = Field(default="", max_length=500, description="备注")
 
 

@@ -61,7 +61,7 @@ export function CreateProviderDialog({
   const [showKey, setShowKey] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
-  const canSubmit = name.trim() && providerType && baseUrl.trim() && apiKey.trim()
+  const canSubmit = name.trim() && providerType && baseUrl.trim()
 
   function handleTypeChange(value: ProviderType) {
     setProviderType(value)
@@ -172,9 +172,7 @@ export function CreateProviderDialog({
 
           {/* API Key */}
           <div className="grid gap-2">
-            <Label htmlFor="provider-key">
-              API Key <span className="text-destructive">*</span>
-            </Label>
+            <Label htmlFor="provider-key">API Key</Label>
             <div className="relative">
               <Input
                 id="provider-key"

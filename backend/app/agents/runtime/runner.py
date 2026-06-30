@@ -123,6 +123,13 @@ async def build_chat_model(slot: ModelSlot) -> BaseChatModel:
     params = slot.params.model_dump(exclude_none=True)
     init_kwargs = get_param_adapter(lc_provider).to_init_kwargs(params)
 
+    # 空 Key：占位符过 SDK 构造校验，再把真正发出的 Authorization 覆盖成空，
+    # 等价于"不带/带空鉴权"请求上游（无鉴权服务用）。
+    if not api_key:
+        headers = {**init_kwargs.get("default_headers", {}), "Authorization": ""}
+        init_kwargs["default_headers"] = headers
+        api_key = "placeholder"
+
     return init_chat_model(
         model=ai_model.model_name,
         model_provider=lc_provider,

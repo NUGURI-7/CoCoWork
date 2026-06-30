@@ -21,7 +21,15 @@ class ModelClient:
     @staticmethod
     def build_client(base_url: str, api_key: str) -> AsyncOpenAI:
         """构建 OpenAI 兼容客户端。Validator 和业务调用共用此方法。"""
-        return AsyncOpenAI(api_key=api_key, base_url=base_url)
+        if api_key:
+            return AsyncOpenAI(api_key=api_key, base_url=base_url)
+        # 空 Key：占位符过 SDK 构造校验，再用 default_headers 把真正发出的
+        # Authorization 覆盖成空，等价于"不带/带空鉴权"请求上游。
+        return AsyncOpenAI(
+            api_key="placeholder",
+            base_url=base_url,
+            default_headers={"Authorization": ""},
+        )
 
     @staticmethod
     def _resolve_credentials(model: AIModel) -> tuple[str, str]:
