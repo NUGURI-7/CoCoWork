@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ChevronDown, User } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
+import { softPalette } from '@/lib/avatar-color'
 import type { DelegateBlock as DelegateBlockType } from '@/types'
 import { useSubagentInfo } from '../SubagentDirectory'
 import { TextBlock } from './TextBlock'
@@ -22,27 +23,10 @@ interface DelegateBlockProps {
  * （管家会在主流接着总结结果，过程默认收起、可手动展开回看）。
  */
 
-// 成员 categorical 色板 —— 柔和、跟品牌墨绿和谐；静态类 + dark: variant，自动适配深色模式。
-const PALETTE = [
-  'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200',
-  'bg-violet-50 text-violet-800 dark:bg-violet-950/60 dark:text-violet-200',
-  'bg-orange-50 text-orange-800 dark:bg-orange-950/60 dark:text-orange-200',
-  'bg-sky-50 text-sky-800 dark:bg-sky-950/60 dark:text-sky-200',
-  'bg-rose-50 text-rose-800 dark:bg-rose-950/60 dark:text-rose-200',
-  'bg-amber-50 text-amber-800 dark:bg-amber-950/60 dark:text-amber-200',
-]
-
-/** 稳定哈希：同一成员永远同一个色（djb2 变体）。 */
-function paletteFor(key: string): string {
-  let h = 0
-  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0
-  return PALETTE[h % PALETTE.length]
-}
-
 export function DelegateBlock({ block }: DelegateBlockProps) {
   const info = useSubagentInfo(block.subagentName)
   const label = info?.name || block.subagentName || '成员'
-  const palette = paletteFor(block.subagentName || label)
+  const palette = softPalette(block.subagentName || label)
   const running = block.status === 'running'
 
   const [collapsed, setCollapsed] = useState(false)

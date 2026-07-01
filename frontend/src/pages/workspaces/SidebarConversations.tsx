@@ -3,6 +3,8 @@ import { useNavigate } from '@tanstack/react-router'
 import { Check, ChevronsUpDown, Layers, MessageSquarePlus } from 'lucide-react'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { softPalette } from '@/lib/avatar-color'
+import { cn } from '@/lib/utils'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -140,11 +142,20 @@ export function SidebarConversations() {
   )
 }
 
-function WorkspaceAvatar({ workspace }: { workspace: { name: string; avatar_url: string } }) {
+function WorkspaceAvatar({
+  workspace,
+}: {
+  workspace: { id: string; name: string; avatar_url: string }
+}) {
   return (
     <Avatar className="size-6 rounded-md">
       <AvatarImage src={workspace.avatar_url || undefined} alt={workspace.name} />
-      <AvatarFallback className="rounded-md text-[11px]">
+      <AvatarFallback
+        className={cn(
+          'rounded-md text-[11px] font-medium',
+          softPalette(workspace.id),
+        )}
+      >
         {workspace.name.slice(0, 1).toUpperCase()}
       </AvatarFallback>
     </Avatar>

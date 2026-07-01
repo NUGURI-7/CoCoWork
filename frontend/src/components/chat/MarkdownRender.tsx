@@ -81,7 +81,7 @@ export function MarkdownRender({
   return (
     <div
       className={cn(
-        'prose prose-sm dark:prose-invert max-w-none',
+        'prose prose-base dark:prose-invert max-w-none',
         // prose 默认正文是它自带的灰，接上主题 --foreground（near-black）才是标准对话正文色
         '[--tw-prose-body:var(--foreground)] [--tw-prose-headings:var(--foreground)] [--tw-prose-bold:var(--foreground)]',
         'prose-p:leading-relaxed prose-pre:p-0 prose-pre:m-0 prose-pre:bg-transparent prose-pre:text-foreground',
