@@ -78,7 +78,17 @@ function toRenderBlocks(content: Record<string, unknown>[]): RenderBlock[] {
   const root: RenderBlock[] = []
   let idx = 0
 
-  const findDelegate = (subagent: string): DelegateBlock | undefined => {
+  // 新数据：按 delegate_id ↔ callId 精确匹配（同名成员并发也分得清）
+  const findByCallId = (callId: string): DelegateBlock | undefined => {
+    for (let i = root.length - 1; i >= 0; i--) {
+      const b = root[i]
+      if (b.type === 'delegate' && b.callId === callId) return b
+    }
+    return undefined
+  }
+  // 老数据（无 delegate_id 戳）：回退到成员名匹配 —— 单派活能正确还原，
+  // 同名并发的老消息保持既有行为（不因本次改动更糟）
+  const findByName = (subagent: string): DelegateBlock | undefined => {
     for (let i = root.length - 1; i >= 0; i--) {
       const b = root[i]
       if (b.type === 'delegate' && b.subagentName === subagent) return b
@@ -109,6 +119,7 @@ function toRenderBlocks(content: Record<string, unknown>[]): RenderBlock[] {
       root.push({
         type: 'delegate',
         index: idx++,
+        callId: typeof b.id === 'string' ? b.id : '',
         status: b.status === 'error' ? 'error' : 'done',
         subagentName,
         task,
@@ -121,8 +132,15 @@ function toRenderBlocks(content: Record<string, unknown>[]): RenderBlock[] {
 
     const rb = translateOne(b, idx++)
     if (!rb) continue
-    // 带 subagent 戳的块归对应派活块内部，否则落主流
-    const target = subagent ? (findDelegate(subagent)?.blocks ?? root) : root
+    // 归属：新数据用 delegate_id→callId 精确匹配；老数据回退成员名；都没有则落主流
+    const delegateId =
+      typeof b.delegate_id === 'string' ? b.delegate_id : undefined
+    const delegate = delegateId
+      ? findByCallId(delegateId)
+      : subagent
+        ? findByName(subagent)
+        : undefined
+    const target = delegate?.blocks ?? root
     target.push(rb)
   }
 

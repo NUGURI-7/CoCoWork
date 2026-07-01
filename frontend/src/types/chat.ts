@@ -52,6 +52,11 @@ export interface ChatStreamRequest {
  */
 export interface SubagentScoped {
   subagent?: string
+  /**
+   * 归属哪次派活的戳 = 对应 task 工具的 tool_call_id（call_xxx）。adapter 主循环按
+   * 泳道盖上。同名成员被并发派活时，靠它（而非成员名）把子块归进正确的派活卡片。
+   */
+  delegate_id?: string
 }
 
 export interface MessageStartPayload {
@@ -176,6 +181,8 @@ export interface ToolUseBlock {
 export interface DelegateBlock {
   type: 'delegate'
   index: number
+  /** 本次 task 工具的 tool_call_id（call_xxx）；子块靠 delegate_id 与它匹配来归卡片 */
+  callId: string
   status: 'running' | 'done' | 'error'
   subagentName: string
   task: string

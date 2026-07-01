@@ -74,6 +74,9 @@ class MessageCollector:
         subagent = payload.get("subagent")
         if subagent:
             block["subagent"] = subagent
+        delegate_id = payload.get("delegate_id")
+        if delegate_id:
+            block["delegate_id"] = delegate_id
         self._blocks[index] = block
 
     def _append_delta(self, payload: dict[str, Any]) -> None:
@@ -106,6 +109,9 @@ class MessageCollector:
         subagent = payload.get("subagent")
         if subagent:
             block["subagent"] = subagent
+        delegate_id = payload.get("delegate_id")
+        if delegate_id:
+            block["delegate_id"] = delegate_id
         self._blocks[index] = block
 
     def _append_tool_json(self, payload: dict[str, Any]) -> None:

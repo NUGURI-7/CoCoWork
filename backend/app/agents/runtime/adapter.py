@@ -98,13 +98,34 @@ class ToolRegistry:
 
 
 @dataclass
-class StreamState:
-    """所有活块状态 + 全局单调编号。"""
+class LaneState:
+    """一条"泳道"的活块状态 —— 一次 task 派发(及其子 agent 全程)独占一条。
 
-    next_index: int = 0
+    只是把原有的 text / thinking 单例槽 + ToolRegistry 打包进来，按道各持一份：
+    并发两路子 agent 各走各的道，各自的 chunk.index 0 互不相撞
+    （修掉工具入参串块、正文串段的 bug）。三个成员的类型全是原样复用。
+    """
+
     text: SingletonSlot = field(default_factory=SingletonSlot)
     thinking: SingletonSlot = field(default_factory=SingletonSlot)
     tools: ToolRegistry = field(default_factory=ToolRegistry)
+
+
+@dataclass
+class StreamState:
+    """全流状态：全局块编号 + 各泳道的活块。
+
+    next_index 仍全局单调 —— 块编号跨道唯一，前端拿 index 当 key 不会撞。
+    原来的 text / thinking / tools 三个平铺字段，下沉进各条 LaneState；本级只留
+    全局计数 + 泳道表（按 _lane_key() 懒建）。
+    """
+
+    next_index: int = 0
+    lanes: dict[str, "LaneState"] = field(default_factory=dict)
+    # 第 2 步：把子 agent 的块归到正确的派活卡片
+    task_call_by_pos: dict[int, str] = field(default_factory=dict)  # supervisor 第几个 task 调用 → call_id
+    lane_to_delegate: dict[str, str] = field(default_factory=dict)  # 泳道键 → 它归属的 task call_id
+
 
     def allocate(self) -> int:
         """领一个新的块编号。"""
@@ -112,13 +133,46 @@ class StreamState:
         self.next_index += 1
         return idx
 
+    def lane(self, key: str) -> "LaneState":
+        """取（懒建）某条泳道的状态。"""
+        return self.lanes.setdefault(key, LaneState())
+
+LANE_MAIN = "main"
+
+def _lane_key(metadata: dict[str, Any]) -> str:
+    """事件归属的"泳道"键。
+
+    langgraph 给每次 task 派发一个独立的 checkpoint_ns 段 `tools:<uuid>`，该次派发
+    衍生的所有子孙事件（子 agent 的多轮 model、各次 tool）都继承它。取 ns 里**第一个**
+    `tools:` 段作键：它在一整条子 agent 执行期间保持稳定（更深的 `model:` / 嵌套
+    `tools:` 段每轮都换），于是把整条子 agent 归到同一条道。supervisor 自身事件
+    的 ns 不含 `tools:` 段 → 主道 LANE_MAIN。
+    """
+    ns = metadata.get("langgraph_checkpoint_ns") or ""
+    for seg in ns.split("|"):
+        if seg.startswith("tools:"):
+            return seg
+    return LANE_MAIN
+
+
+def _push_pos(metadata: dict[str, Any]) -> int | None:
+    """取这次 task 是"第几个"被派发的。
+
+    on_tool_start 的 metadata.langgraph_path 形如 ["__pregel_push", <pos>, false]，
+    <pos> 正是该 task 在 supervisor 消息里的排位，跟 task_call_by_pos 的键对得上。
+    """
+    path = metadata.get("langgraph_path") or []
+    if len(path) >= 2 and isinstance(path[1], int):
+        return path[1]
+    return None
+
 
 # ============ Dispatch 表 ============
 
 # adapter 对外吐的事件原料：(事件类型, payload dict)。粘成 SSE 字符串是 runner 的活。
 AdapterEvent = tuple[EventType, dict[str, Any]]
 
-Handler = Callable[[StreamState, dict[str, Any]], AsyncIterator[AdapterEvent]]
+Handler = Callable[[StreamState, "LaneState", dict[str, Any]], AsyncIterator[AdapterEvent]]
 _HANDLERS: dict[str, Handler] = {}
 
 
@@ -255,9 +309,13 @@ async def _emit_singleton_stop(slot: SingletonSlot) -> AsyncIterator[AdapterEven
 # ============ tool 流处理（结构特殊，单独写） ============
 
 async def _emit_tool_call_chunk(
-        state: StreamState, tc: Any,
+        state: StreamState, lane: LaneState, tc: Any,
 ) -> AsyncIterator[AdapterEvent]:
-    """处理单个 ToolCallChunk：首条带 name + id 时开块、后续 args 流式 delta。"""
+    """处理单个 ToolCallChunk：首条带 name + id 时开块、后续 args 流式 delta。
+
+    chunk.index 按**泳道**索引（lane.tools）：并发子 agent 各自的 index 0 互不干扰；
+    block 编号仍走全局 state.allocate()，跨道唯一。
+    """
     chunk_index = _tc_field(tc, "index")
     if chunk_index is None:
         return
@@ -266,11 +324,14 @@ async def _emit_tool_call_chunk(
     tc_args = _tc_field(tc, "args")
 
     # 首条：开块（必须同时拿到 name + id）
-    if chunk_index not in state.tools.chunk_to_block:
+    if chunk_index not in lane.tools.chunk_to_block:
         if not tc_name or not tc_id:
             return  # 等首条带齐 name + id
         block_idx = state.allocate()
-        state.tools.register(chunk_index, block_idx, tc_id)
+        lane.tools.register(chunk_index, block_idx, tc_id)
+        # 第 2 步：记下 supervisor 第几个 task 调用 → call_id（回头按"第几个"查回它）
+        if tc_name == "task":
+            state.task_call_by_pos[chunk_index] = tc_id
         yield EventType.TOOL_USE_START, {
             "index": block_idx,
             "id": tc_id,
@@ -280,8 +341,8 @@ async def _emit_tool_call_chunk(
 
     # args 流式 delta（partial JSON 串增量；前端自己累积解析）
     if tc_args:
-        block_idx = state.tools.chunk_to_block[chunk_index]
-        tool_id = state.tools.block_to_id.get(block_idx, "")
+        block_idx = lane.tools.chunk_to_block[chunk_index]
+        tool_id = lane.tools.block_to_id.get(block_idx, "")
         yield EventType.TOOL_USE_DELTA, {
             "index": block_idx,
             "id": tool_id,
@@ -292,19 +353,19 @@ async def _emit_tool_call_chunk(
 
 # ============ 关块共用逻辑（不变式：唯一关块入口） ============
 
-async def _close_open_blocks(state: StreamState) -> AsyncIterator[AdapterEvent]:
-    """关掉所有还活着的块、发 *_STOP 事件。
+async def _close_lane(lane: LaneState) -> AsyncIterator[AdapterEvent]:
+    """关掉**某一条道**上还活着的块、发 *_STOP。
 
-    **唯一关块入口** —— 正常路径（_on_chat_model_end）和异常兜底共用，避免漂移。
+    一轮 model 收尾（_on_chat_model_end，只关本道）与异常兜底（_close_all 遍历各道）
+    共用，逻辑与原 _close_open_blocks 一致，只是作用域缩到单道。
     """
-
-    async for ev in _emit_singleton_stop(state.text):
+    async for ev in _emit_singleton_stop(lane.text):
         yield ev
-    async for ev in _emit_singleton_stop(state.thinking):
+    async for ev in _emit_singleton_stop(lane.thinking):
         yield ev
 
-    for chunk_index in list(state.tools.chunk_to_block.keys()):
-        released = state.tools.release(chunk_index)
+    for chunk_index in list(lane.tools.chunk_to_block.keys()):
+        released = lane.tools.release(chunk_index)
         if released is None:
             continue
         block_idx, tool_id = released
@@ -314,65 +375,68 @@ async def _close_open_blocks(state: StreamState) -> AsyncIterator[AdapterEvent]:
         }
 
 
+async def _close_all(state: StreamState) -> AsyncIterator[AdapterEvent]:
+    """关掉所有道的活块（异常兜底用）。"""
+    for lane in state.lanes.values():
+        async for ev in _close_lane(lane):
+            yield ev
+
+
 # ============ Handler ============
 
 @_register("on_chat_model_stream")
 async def _on_chat_model_stream(
-        state: StreamState, data: dict[str, Any],
+        state: StreamState, lane: LaneState, data: dict[str, Any],
 ) -> AsyncIterator[AdapterEvent]:
-    """一个 AIMessageChunk 可能同时带 text / reasoning / tool_call_chunks，各自分流。"""
+    """一个 AIMessageChunk 可能同时带 text / reasoning / tool_call_chunks，各自分流到本道。"""
     chunk = data.get("chunk")
     if chunk is None:
         return
 
     async for ev in _emit_singleton_delta(
-            state, state.text, BLOCK_TEXT, DELTA_TYPE_TEXT, DELTA_KEY_TEXT, _extract_text(chunk),
+            state, lane.text, BLOCK_TEXT, DELTA_TYPE_TEXT, DELTA_KEY_TEXT, _extract_text(chunk),
     ):
         yield ev
     async for ev in _emit_singleton_delta(
-            state, state.thinking, BLOCK_THINKING, DELTA_TYPE_THINKING, DELTA_KEY_THINKING, _extract_reasoning(chunk),
+            state, lane.thinking, BLOCK_THINKING, DELTA_TYPE_THINKING, DELTA_KEY_THINKING, _extract_reasoning(chunk),
     ):
         yield ev
     for tc in getattr(chunk, "tool_call_chunks", None) or []:
-        async for ev in _emit_tool_call_chunk(state, tc):
+        async for ev in _emit_tool_call_chunk(state, lane, tc):
             yield ev
 
 
 @_register("on_chat_model_end")
 async def _on_chat_model_end(
-        state: StreamState, data: dict[str, Any],
+        state: StreamState, lane: LaneState, data: dict[str, Any],
 ) -> AsyncIterator[AdapterEvent]:
-    """模型一轮 chat 完事：关所有活块 + 发 message_delta(usage)。"""
-    async for ev in _close_open_blocks(state):
+    """模型一轮 chat 完事：关**本道**活块 + 发 message_delta(usage)。"""
+    async for ev in _close_lane(lane):
         yield ev
-
-    output = data.get("output")
-    usage = getattr(output, "usage_metadata", None) if output else None
-    input_tokens = usage.get("input_tokens", 0) if usage else 0
-    output_tokens = usage.get("output_tokens", 0) if usage else 0
-
-    yield EventType.MESSAGE_DELTA, {
-        "stop_reason": DEFAULT_STOP_REASON,
-        "usage": {
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-        },
-    }
 
 
 @_register("on_tool_end")
 async def _on_tool_end(
-        state: StreamState, data: dict[str, Any],
+        state: StreamState, lane: LaneState, data: dict[str, Any],
 ) -> AsyncIterator[AdapterEvent]:
-    """工具执行完成：从 ToolMessage.tool_call_id 反查 block、发 tool_result。"""
+    """工具执行完成：从 ToolMessage.tool_call_id 反查 block、发 tool_result。
+
+    id 反查遍历各道：task 派活块在主道注册、其结果事件却落在子道，所以本事件的 lane
+    未必是注册时那条；tool_call_id 全局唯一，扫一遍各道的 id_to_block 即可命中。
+    """
     output = data.get("output")
-    output = _unwrap_tool_output(output) # ← 新增：Command → 内部 ToolMessage
+    output = _unwrap_tool_output(output)  # Command → 内部 ToolMessage
     if output is None:
         return
     tool_call_id = getattr(output, "tool_call_id", None)
     if not tool_call_id:
         return
-    block_idx = state.tools.id_to_block.get(tool_call_id)
+
+    block_idx = None
+    for ln in state.lanes.values():
+        if tool_call_id in ln.tools.id_to_block:
+            block_idx = ln.tools.id_to_block[tool_call_id]
+            break
     if block_idx is None:
         return
 
@@ -403,20 +467,36 @@ async def adapt_chat_stream(
 
     try:
         async for ev in events:
+            meta = ev.get("metadata") or {}
+            # 第 2 步 · 登记：task 一开始 → 记「本泳道 → 这次 task 的 call_id」。
+            # 必须抢在下面 handler 判断之前 —— on_tool_start 无注册 handler，会被 continue 跳过。
+            if ev.get("event") == "on_tool_start" and ev.get("name") == "task":
+                pos = _push_pos(meta)
+                call_id = state.task_call_by_pos.get(pos) if pos is not None else None
+                if call_id is not None:
+                    state.lane_to_delegate[_lane_key(meta)] = call_id
+
             handler = _HANDLERS.get(ev.get("event", ""))
             if handler is None:
                 continue
-            agent_name = (ev.get("metadata") or {}).get("lc_agent_name")
-            async for evt_type, payload in handler(state, ev.get("data", {})):
+            agent_name = meta.get("lc_agent_name")
+            lane_key = _lane_key(meta)
+            lane = state.lane(lane_key)  # 按 ns 把事件归到对应泳道
+            delegate_id = state.lane_to_delegate.get(lane_key)  # 第 2 步 · 盖戳：本道归属哪次派活
+            async for evt_type, payload in handler(state, lane, ev.get("data", {})):
                 if agent_name is not None:
                     payload = {**payload, "subagent": agent_name}
+                # 不给"派活块自己"的事件盖戳（其 id == delegate_id，如 task 的 tool_result）——
+                # 那类事件要落到主流的派活块本体上，而非被路由进它的子块里。
+                if delegate_id is not None and payload.get("id") != delegate_id:
+                    payload = {**payload, "delegate_id": delegate_id}
                 yield evt_type, payload
     except Exception:
         # 内部异常完整 log 给后端；对前端只发通用文案，防细节外泄（栈 / 路径 / SQL）
         logger.exception("adapt_chat_stream failed; emitting cleanup + error event")
         # 兜底自包 try：清理 / 发错误事件各自再炸也不让 generator 二次失败
         try:
-            async for out in _close_open_blocks(state):
+            async for out in _close_all(state):
                 yield out
         except Exception:
             logger.exception("failed to close open blocks during error cleanup")

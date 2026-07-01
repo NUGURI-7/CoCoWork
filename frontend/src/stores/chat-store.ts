@@ -91,21 +91,21 @@ export function previewFromPartialJson(partial: string): string | null {
 }
 
 /**
- * 事件落点容器 —— 带 subagent 戳的块进对应「还在 running 的派活块」内部 blocks，
- * 否则进主流 blocks。从后往前找，匹配最近一个该成员的活跃派活块。
+ * 事件落点容器 —— 带 delegate_id 戳的块进对应派活块（DelegateBlock）内部 blocks，
+ * 否则进主流 blocks。
+ *
+ * 按 callId 精确匹配（delegate_id 是 task 的 tool_call_id，全局唯一）：同名成员被
+ * 并发派活时，两张卡片的 callId 不同，据此把各自的子块分得清清楚楚 —— 不再靠
+ * 「成员名 + running」去猜（那会把两路都塞进最后一张卡，导致文字串卡）。
  */
 function containerFor(
   blocks: RenderBlock[],
-  subagent: string | undefined,
+  delegateId: string | undefined,
 ): RenderBlock[] {
-  if (subagent) {
+  if (delegateId) {
     for (let i = blocks.length - 1; i >= 0; i--) {
       const b = blocks[i]
-      if (
-        b.type === 'delegate' &&
-        b.subagentName === subagent &&
-        b.status === 'running'
-      ) {
+      if (b.type === 'delegate' && b.callId === delegateId) {
         return b.blocks
       }
     }
@@ -191,7 +191,7 @@ export function createChatStore({
                       status: 'active',
                       content: '',
                     }
-              containerFor(m.blocks, p.subagent).push(block)
+              containerFor(m.blocks, p.delegate_id).push(block)
             })
             return
           }
@@ -200,7 +200,7 @@ export function createChatStore({
             set((s) => {
               const m = s.messages[s.messages.length - 1]
               if (m?.role !== 'assistant') return
-              const b = containerFor(m.blocks, p.subagent).find(
+              const b = containerFor(m.blocks, p.delegate_id).find(
                 (x) => x.index === p.index,
               )
               if (!b) return
@@ -221,7 +221,7 @@ export function createChatStore({
             set((s) => {
               const m = s.messages[s.messages.length - 1]
               if (m?.role !== 'assistant') return
-              const b = containerFor(m.blocks, p.subagent).find(
+              const b = containerFor(m.blocks, p.delegate_id).find(
                 (x) => x.index === p.index,
               )
               if (!b) return
@@ -243,6 +243,7 @@ export function createChatStore({
                 const delegate: DelegateBlock = {
                   type: 'delegate',
                   index: p.index,
+                  callId: p.id,
                   status: 'running',
                   subagentName: '',
                   task: '',
@@ -265,7 +266,7 @@ export function createChatStore({
                 resultData: null,
                 collapsed: false,
               }
-              containerFor(m.blocks, p.subagent).push(block)
+              containerFor(m.blocks, p.delegate_id).push(block)
             })
             return
           }
@@ -274,7 +275,7 @@ export function createChatStore({
             set((s) => {
               const m = s.messages[s.messages.length - 1]
               if (m?.role !== 'assistant') return
-              const b = containerFor(m.blocks, p.subagent).find(
+              const b = containerFor(m.blocks, p.delegate_id).find(
                 (x) => x.index === p.index,
               )
               if (b?.type === 'delegate') b.argsJson += p.partial_json
@@ -288,7 +289,7 @@ export function createChatStore({
             set((s) => {
               const m = s.messages[s.messages.length - 1]
               if (m?.role !== 'assistant') return
-              const b = containerFor(m.blocks, p.subagent).find(
+              const b = containerFor(m.blocks, p.delegate_id).find(
                 (x) => x.index === p.index,
               )
               if (b?.type === 'delegate') {
@@ -318,7 +319,7 @@ export function createChatStore({
             set((s) => {
               const m = s.messages[s.messages.length - 1]
               if (m?.role !== 'assistant') return
-              const b = containerFor(m.blocks, p.subagent).find(
+              const b = containerFor(m.blocks, p.delegate_id).find(
                 (x) => x.index === p.index,
               )
               if (b?.type === 'delegate') {
