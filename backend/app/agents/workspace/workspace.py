@@ -23,7 +23,7 @@ from deepagents.middleware.subagents import CompiledSubAgent, DEFAULT_SUBAGENT_P
 from deepagents import SubAgentMiddleware
 from deepagents.backends import StateBackend
 from langchain_core.messages import BaseMessage, HumanMessage
-from app.models import User, Workspace, WorkspaceMember, Message
+from app.models import User, Workspace, WorkspaceMember, Message, KnowledgeBase, MCPServer
 from app.agents.workspace.view_context_assembler import ViewContextAssembler, Viewer, SPEAKER_SUPERVISOR
 from app.models import SenderKind
 from app.agents.runtime.runner import (
@@ -35,6 +35,7 @@ from app.core.exceptions import ValidationException
 from app.models import User, Workspace, WorkspaceMember
 from app.schemas.agent.chat_schema import ChatStreamRequest
 from app.schemas.agent.config_schema import AgentConfig
+from app.tools import resolve_tools
 
 
 def _workspace_base_prompt(
@@ -99,9 +100,11 @@ async def _member_to_subagent(
 
     base_prompt = member_cfg.system_prompt
     system_prompt = (
-        f"{base_prompt}\n\n{DEFAULT_SUBAGENT_PROMPT}"  # ← \n\n 隔开
+        f"{base_prompt}\n\n{DEFAULT_SUBAGENT_PROMPT}"
         if base_prompt else DEFAULT_SUBAGENT_PROMPT
     )
+
+    profile = await build_capability_profile(member_cfg, user)
 
     runnable = create_agent(
         model=model,
@@ -109,11 +112,39 @@ async def _member_to_subagent(
         system_prompt=system_prompt,
     )
 
+    desc = f"{agent.name}：{agent.description}" if agent.description else agent.name
     return {
         "name": f"member_{member.id.hex[:8]}",
-        "description": f"{agent.name}：{agent.description or '无描述'}",
+        "description": f"{desc}\n能力 · {profile}",
         "runnable": runnable,
     }
+
+async def build_capability_profile(cfg: AgentConfig, user: User) -> str:
+    """从 config 派生一行能力画像 —— 供 Supervisor 按能力路由。
+
+    只取 MCP/KB/内置工具的「名字标签」，不碰工具 schema：
+    路由层要的是「这成员挂了高德地图」，不是工具的参数细节。
+    画像长度随挂载项数增长，与单个 MCP 暴露多少工具无关。
+    """
+    tags: list[str] = []
+
+    builtin = [t.name for t in resolve_tools(cfg.builtin_tools)]
+    if builtin:
+        tags.append(f"内置[{','.join(builtin)}]")
+
+    if cfg.knowledge:
+        kbs = await KnowledgeBase.filter(id__in=cfg.knowledge, created_by=user)
+        if kbs:
+            tags.append(f"知识库[{','.join(kb.name for kb in kbs)}]")
+
+    if cfg.mcp_servers:
+        servers = await MCPServer.filter(
+            id__in=cfg.mcp_servers, created_by=user, enabled=True
+        )
+        if servers:
+            tags.append(f"MCP[{','.join(s.name for s in servers)}]")
+
+    return " · ".join(tags) if tags else "无挂载工具"
 
 
 async def build_workspace_graph(
