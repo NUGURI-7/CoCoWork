@@ -17,6 +17,15 @@ import { ToolUseBlock } from './blocks/ToolUseBlock'
 import { useChat } from './ChatProvider'
 import { useSubagentInfo } from './SubagentDirectory'
 import { MarkdownRender } from './MarkdownRender'
+import { MessageActions, copyAction } from './MessageActions'
+
+/** assistant 消息 → 只取可见正文（text blocks）拼成纯文本，供复制。 */
+function assistantBlocksToText(blocks: AssistantMessageType['blocks']): string {
+  return blocks
+    .filter((b) => b.type === 'text')
+    .map((b) => ('content' in b ? b.content : ''))
+    .join('')
+}
 
 /** 触底容差 —— 离底部多少 px 内算"在底"。 */
 const NEAR_BOTTOM_THRESHOLD = 20
@@ -145,11 +154,13 @@ const UserMessageRow = memo(function UserMessageRow({
 }: {
   message: UserMessageType
 }) {
+  const text = apiContentToText(message.content)
   return (
-    <div className="flex flex-col items-end gap-1">
+    <div className="group flex flex-col items-end gap-1">
       <div className="bg-muted text-foreground max-w-[80%] rounded-2xl px-4 py-2.5">
-        <MarkdownRender content={apiContentToText(message.content)} isUser />
+        <MarkdownRender content={text} isUser />
       </div>
+      <MessageActions actions={[copyAction(() => text)]} align="right" />
     </div>
   )
 })
@@ -202,9 +213,21 @@ const AssistantMessageRow = memo(function AssistantMessageRow({
     </>
   )
 
+  const actions = !isStreaming && (
+    <MessageActions
+      actions={[copyAction(() => assistantBlocksToText(message.blocks))]}
+      align="left"
+    />
+  )
+
   // 没有身份信息（如 Playground 沙盒）→ 裸渲染，ChatGPT 风
   if (!identity) {
-    return <div className="flex flex-col gap-2">{body}</div>
+    return (
+      <div className="group flex flex-col gap-2">
+        {body}
+        {actions}
+      </div>
+    )
   }
 
   // 群聊风：左侧头像 gutter + 发送者名 + 内容（user 仍是右气泡）
@@ -221,11 +244,12 @@ const AssistantMessageRow = memo(function AssistantMessageRow({
           <User size={16} />
         )}
       </span>
-      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+      <div className="group flex min-w-0 flex-1 flex-col gap-1.5">
         <span className="text-foreground text-sm font-medium">
           {identity.name}
         </span>
         <div className="flex flex-col gap-2">{body}</div>
+        {actions}
       </div>
     </div>
   )
