@@ -24,7 +24,13 @@ from deepagents import SubAgentMiddleware
 from deepagents.backends import StateBackend
 from langchain_core.messages import BaseMessage, HumanMessage
 from app.models import User, Workspace, WorkspaceMember, Message, KnowledgeBase, MCPServer
-from app.agents.workspace.view_context_assembler import ViewContextAssembler, Viewer, SPEAKER_SUPERVISOR
+from app.agents.workspace.view_context_assembler import (
+    SPEAKER_SUPERVISOR,
+    ViewContextAssembler,
+    Viewer,
+    member_key,
+    member_label,
+)
 from app.models import SenderKind
 from app.agents.runtime.runner import (
     assemble_tools,
@@ -39,20 +45,27 @@ from app.tools import resolve_tools
 
 
 def _workspace_base_prompt(
-    workspace_name: str, member_names: list[str], self_name: str
+    workspace_name: str, member_names: list[str], self_name: str, self_alias: str
 ) -> str:
     """workspace 协作框架 —— supervisor / member 共享的出场底座。
 
-    拼在应答者自己的人设之前。含空间名 / 成员名单 / 日期、应答者自我身份
-    (self_name 与 assembler 打的 <msg from> 标签同名，应答者据此认出对自己的引用)，
-    以及读 / 写 <msg> 标签的约定。
+    拼在应答者自己的人设之前。核心是发言者协议：历史里所有发言统一带
+    <msg from> 标签(人类用户 = "User")，唯一无标签的是当前轮输入；应答者
+    自我身份给全称(与 from 标签同源)和别称(用户 @ 时的裸名)两个形态。
     """
     roster = "、".join(member_names) if member_names else "（暂无其他成员）"
     today = date.today().isoformat()
+    alias_note = (
+        f"，平时也被叫「{self_alias}」——这两个名字都指你"
+        if self_alias != self_name else ""
+    )
     return (
-        f"你在多成员协作的工作空间「{workspace_name}」，成员：{roster}。今天是 {today}。\n"
-        f'你在这里的身份是「{self_name}」——别人提到 {self_name}、或标 <msg from="{self_name}"> 时，指的就是你。\n'
-        '历史里 <msg from="X">…</msg> 是 X 的发言，无标签的是人类用户的发言。\n'
+        f"你在多成员协作的工作空间「{workspace_name}」，今天是 {today}。成员：{roster}。\n"
+        "对话发言者约定：\n"
+        '- <msg from="User">…</msg> 是人类用户的发言；无标签的最新消息也是他此刻对你说的。'
+        "User 是人，不是任何成员。\n"
+        '- <msg from="名字#id">…</msg> 是其他 agent 的发言；〔…派活给 X…〕行动痕迹里的 X 也是 agent。\n'
+        f"- 你是「{self_name}」{alias_note}。\n"
         "回复时直接正常说话，不要自己带 <msg> 标签。\n"
     )
 
@@ -114,7 +127,7 @@ async def _member_to_subagent(
 
     desc = f"{agent.name}：{agent.description}" if agent.description else agent.name
     return {
-        "name": f"member_{member.id.hex[:8]}",
+        "name": member_key(member.id),
         "description": f"{desc}\n能力 · {profile}",
         "runnable": runnable,
     }
@@ -178,6 +191,8 @@ async def build_workspace_graph(
     ).select_related("agent")
 
     member_names = {m.id: m.agent.name for m in members}
+    # 花名册 / 自我身份用唯一标签(名字#id8),与 <msg from> 标签、行动痕迹三头同源
+    member_roster = [member_label(m.id, m.agent.name) for m in members]
 
     # 根据 responder 定三件事:用谁的 config、什么视角、能不能派活
 
@@ -186,11 +201,13 @@ async def build_workspace_graph(
         viewer = Viewer(sender_kind=SenderKind.SUPERVISOR)
         can_delegate = True
         self_name = SPEAKER_SUPERVISOR # 与 assembler 打的 from 标签同源
+        self_alias = SPEAKER_SUPERVISOR
     else:
         cfg = AgentConfig.model_validate(responder.agent.config)
         viewer = Viewer(sender_kind=SenderKind.MEMBER, member_id=responder.id)
         can_delegate = False # @直连成员不派活
-        self_name = responder.agent.name # 成员用 agent.name，同样与 from 标签同源
+        self_name = member_label(responder.id, responder.agent.name) # 与 from 标签同源
+        self_alias = responder.agent.name # 用户 @ 时用的裸名
 
     if cfg.models.chat is None:
         raise ValidationException("应答者未配置 chat 模型")
@@ -199,7 +216,7 @@ async def build_workspace_graph(
     tools = await assemble_tools(cfg, user)
 
     # base 框架(协议说明 + 名单 + 日期 + 应答者自我身份)+ 应答者自己的人设
-    base = _workspace_base_prompt(workspace.name, list(member_names.values()), self_name)
+    base = _workspace_base_prompt(workspace.name, member_roster, self_name, self_alias)
 
     system_prompt = f"{base}\n{cfg.system_prompt}" if cfg.system_prompt else base
 

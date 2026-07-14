@@ -8,19 +8,32 @@ LangChain messages。核心是「视角化」——同一段历史,从不同成�
 身份语义,所以独立成一层。进图前一次性构建(每轮对话重新拉历史拼),不是
 loop 内的 middleware。
 """
-
 from dataclasses import dataclass
 from uuid import UUID
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
+from app.agents.runtime.blocks import ContentBlock, TextBlock, ToolUseBlock, parse_blocks
 from app.models import Message, SenderKind
 
 # 非成员说话人的固定显示名(成员名字走 names map)
 _SPEAKER_USER = "User"
 SPEAKER_SUPERVISOR = "Supervisor"  # 公开：workspace.py 用作 supervisor 自我名，与下方 from 标签同源
 _SPEAKER_MEMBER_FALLBACK = "Member"
+
+# tool 块结局 → 痕迹里的人话（None = 流被掐断没结局）
+_STATUS_LABELS = {"success": "完成", "error": "出错"}
+
+
+def member_key(member_id: UUID) -> str:
+    """成员在派活协议里的机器键(task 的 subagent_type / 块上的 subagent 戳)。"""
+    return f"member_{member_id.hex[:8]}"
+
+
+def member_label(member_id: UUID, name: str) -> str:
+    """成员的唯一显示标签(<msg from> / 花名册 / 行动痕迹共用) —— 名字#id8。"""
+    return f"{name}#{member_id.hex[:8]}"
 
 
 @dataclass(frozen=True)
@@ -39,8 +52,9 @@ class ViewContextAssembler:
     """把 workspace 对话历史按「谁在应答」的视角组装成 LLM messages。
 
     视角化:viewer 自己说过的 → AIMessage(「我」);其他人(用户 / Supervisor / 别的
-    成员) → HumanMessage,内容包一层 <msg from="名字"> 身份标签,让应答者分得清
-    谁说了什么。
+    成员) → HumanMessage,内容统一包 <msg from="名字"> 身份标签(user = "User")——
+    所有说话人具名,身份靠读取不靠推断;唯一无标签的是当前轮输入(天然 = 正在
+    对应答者说话的人)。
 
     无状态:不持有 DB 连接、不拥有注入的 model,可跨请求复用,无需销毁 / 清理。
     model 仅为未来「AI 驱动的历史裁剪 / 压缩」预留,v1 不使用。
@@ -66,17 +80,35 @@ class ViewContextAssembler:
 
         out: list[BaseMessage] = []
 
+        # task 派活块入参里的 subagent_type（member_xxxx）→ 显示标签（名字#id8）
+        member_labels = {
+            member_key(mid): member_label(mid, name)
+            for mid, name in names.items()
+        }
+
+        # viewer 若是成员,其 member_xxx 键 —— 用于把「派给我的活」翻成第二人称
+        viewer_key = member_key(viewer.member_id) if viewer.member_id else ""
+
         for m in messages:
-            text = self._text_of(m)
-            if not text:
-                continue
+            blocks = parse_blocks(m.content)
             if self._is_me(m, viewer):
-                out.append(AIMessage(text))  # 「我」说的
-            elif m.sender_kind == SenderKind.USER:
-                out.append(HumanMessage(text)) # 人类用户,无标签(默认对话方)
-            else:
-                speaker = self._speaker_name(m, names)
+                text = self._render_blocks(blocks, "我", viewer_key, member_labels)
+                if text:
+                    out.append(AIMessage(text))  # 「我」说的 + 我干过的事
+                continue
+            if m.sender_kind == SenderKind.USER:
+                text = self._text_of(blocks)
+                if text:
+                    # 历史里 user 也具名 —— 身份靠读取不靠推断,不留「负空间」
+                    out.append(
+                        HumanMessage(f'<msg from="{_SPEAKER_USER}">{text}</msg>')
+                    )
+                continue
+            speaker = self._speaker_name(m, names)
+            text = self._render_blocks(blocks, speaker, viewer_key, member_labels)
+            if text:
                 out.append(HumanMessage(f'<msg from="{speaker}">{text}</msg>'))
+
         return out
 
     @staticmethod
@@ -89,12 +121,62 @@ class ViewContextAssembler:
         return True
 
     @staticmethod
-    def _text_of(m: Message) -> str:
-        """从消息 content blocks 拼纯文本(只取 text 块,跳过 thinking / tool)。"""
+    def _render_blocks(
+            blocks: list[ContentBlock],
+            actor: str,
+            viewer_key: str,
+            member_labels: dict[str, str],
+    ) -> str:
+        """一条消息的按块翻译：说过的话原样，干过的事一行痕迹。
+
+        actor = 这条消息的主语(「我」或第三方名字)，痕迹跟着换人称。
+        带 subagent 戳的块 = 成员执行过程，跳过 —— 最终产出已在
+        task 块的 result_data 里，过程重复渲染只会撑大上下文。
+        """
+        parts: list[str] = []
+        for b in blocks:
+            if b.subagent:
+                continue
+            if isinstance(b, TextBlock) and b.text:
+                parts.append(b.text)
+            elif isinstance(b, ToolUseBlock):
+                parts.append(
+                    ViewContextAssembler._render_tool(
+                        b, actor, viewer_key, member_labels
+                    )
+                )
+        return "\n\n".join(parts)
+
+    @staticmethod
+    def _render_tool(
+            b: ToolUseBlock,
+            actor: str,
+            viewer_key: str,
+            member_labels: dict[str, str],
+    ) -> str:
+        """一个 tool_use 块 → 一行行动痕迹（task 派活块额外带成员产出）。"""
+        status = _STATUS_LABELS.get(b.status, "中断")
+        if b.name != "task":
+            return f"〔{actor} 调用了工具 {b.name or '?'} → {status}〕"
+        # task 派活块：入参里挖 派给谁 + 任务描述，结果 = 成员产出。
+        # 派活对象是 viewer 本人时用第二人称 —— 成员由此认出自己受过的委派
+        args = b.input_args
+        target = args.get("subagent_type") or ""
+        who = (
+            "你" if target and target == viewer_key
+            else member_labels.get(target, target or "成员")
+        )
+        desc = args.get("description") or "（任务描述缺失）"
+        header = f"〔{actor} 派活给 {who}：{desc} → {status}〕"
+        if isinstance(b.result_data, str) and b.result_data.strip():
+            return f"{header}\n{who} 返回：\n{b.result_data}"
+        return header
+
+    @staticmethod
+    def _text_of(blocks: list[ContentBlock]) -> str:
+        """拼纯文本(只取 text 块) —— user 消息用,人类输入本来就只有 text。"""
         return "".join(
-            b["text"]
-            for b in m.content
-            if b.get("type") == "text" and b.get("text")
+            b.text for b in blocks if isinstance(b, TextBlock) and b.text
         )
 
     @staticmethod
@@ -105,5 +187,7 @@ class ViewContextAssembler:
         if m.sender_kind == SenderKind.SUPERVISOR:
             return SPEAKER_SUPERVISOR
         if m.sender_member_id is not None:
-            return names.get(m.sender_member_id, _SPEAKER_MEMBER_FALLBACK)
+            name = names.get(m.sender_member_id)
+            if name:
+                return member_label(m.sender_member_id, name)
         return _SPEAKER_MEMBER_FALLBACK
