@@ -42,7 +42,9 @@ class VectorRetriever(Retriever):
         t0 = time.perf_counter()
 
         # 1. query 向量化（一条文本 → 一条向量）
-        #    注：BGE/E5 等模型需 query 前缀（query: ...）才最优，v1 暂未加（known gap）。
+        #    注：BGE query 指令前缀已实测（2026-07-17，Multi-CPR 1 万段 ×1000 题）：
+        #    v1.5 仅 +0.2pt recall@10 / +1pt MRR@10，决策不加（省掉按模型维护指令表，
+        #    与 Dify/RAGFlow 取舍一致）。档案见 benchmarks/results/2026-07-17_00*.json。
         vectors = await ModelClient.create_embedding(kb.embedding_model, [params.query.strip()])
         query_literal = _to_vector_literal(vectors[0])
         t1 = time.perf_counter()

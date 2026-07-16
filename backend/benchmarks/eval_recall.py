@@ -41,6 +41,10 @@ from app.services.knowledge.retrieval.vector import (
 from app.services.model import ModelClient
 from benchmarks.import_corpus import _resolve_kb
 
+# BGE v1/v1.5 官方检索指令（query 侧专用，语料侧不加）；
+# 官方称 v1.5 不加也只轻微下降——本脚本 --query-prefix 就是来实测这个「轻微」的
+BGE_QUERY_INSTRUCTION = "为这个句子生成表示以用于检索相关文章："
+
 
 def _load_queries(path: Path) -> dict[str, str]:
     """dev.query.txt：``qid⇥text`` → {qid: text}。"""
@@ -168,7 +172,9 @@ async def run_eval(args: argparse.Namespace) -> None:
     start_at = time.monotonic()
 
     for i, qid in enumerate(qids, start=1):
-        params = RetrievalParams(query=queries[qid], top_k=args.top_k)
+        params = RetrievalParams(
+            query=args.query_prefix + queries[qid], top_k=args.top_k,
+        )
         result = await retriever.retrieve(kb, params)
         run_dict[qid] = {
             pid_of[str(hit.paragraph_id)]: hit.score for hit in result.hits
@@ -197,7 +203,11 @@ async def run_eval(args: argparse.Namespace) -> None:
         "ran_at": datetime.now().isoformat(timespec="seconds"),
         "note": args.note,
         "env": await _snapshot_env(kb),
-        "params": {"top_k": args.top_k, "queries_evaluated": len(qids)},
+        "params": {
+            "top_k": args.top_k,
+            "queries_evaluated": len(qids),
+            "query_prefix": args.query_prefix,
+        },
         "scores": {name: round(value, 4) for name, value in scores.items()},
         "latency_ms": {
             "search": _percentiles(search_ms),
@@ -225,6 +235,10 @@ def main() -> None:
     parser.add_argument(
         "--explain", type=int, default=0,
         help="对前 N 条 query 额外跑 EXPLAIN ANALYZE，采服务端纯执行时间",
+    )
+    parser.add_argument(
+        "--query-prefix", nargs="?", const=BGE_QUERY_INSTRUCTION, default="",
+        help="query 侧检索指令前缀；裸给此参数 = BGE 官方指令，也可自定义字符串",
     )
     args = parser.parse_args()
 

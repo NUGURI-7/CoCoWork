@@ -1,0 +1,41 @@
+{
+  "ran_at": "2026-07-17T00:17:27",
+  "note": "B组:BGE官方前缀,1000题,有索引",
+  "env": {
+    "kb_name": "医疗检索基准",
+    "kb_id": "019f6557-07f6-7562-8f89-79662490b257",
+    "paragraphs": 10000,
+    "chunks": 10798,
+    "embedding_dim": 1024,
+    "chunk_config": {
+      "overlap": 50,
+      "strategy": "recursive",
+      "chunk_size": 256
+    },
+    "indexes": [
+      "CREATE INDEX embeddings_hnsw_medical ON public.embeddings USING hnsw (((embedding)::vector(1024)) vector_cosine_ops) WHERE (knowledge_base_id = '019f6557-07f6-7562-8f89-79662490b257'::uuid)"
+    ]
+  },
+  "params": {
+    "top_k": 10,
+    "queries_evaluated": 1000,
+    "query_prefix": "为这个句子生成表示以用于检索相关文章："
+  },
+  "scores": {
+    "recall@10": 0.799,
+    "mrr@10": 0.6861
+  },
+  "latency_ms": {
+    "search": {
+      "p50": 318.3,
+      "p95": 437.3,
+      "p99": 607.6
+    },
+    "embed": {
+      "p50": 201.5,
+      "p95": 422.7,
+      "p99": 5667.9
+    },
+    "search_server": "未采样（--explain N 开启）"
+  }
+}
