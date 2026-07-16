@@ -1,0 +1,37 @@
+{
+  "ran_at": "2026-07-15T21:08:33",
+  "note": "1万段无索引基线",
+  "env": {
+    "kb_name": "医疗检索基准",
+    "kb_id": "019f6557-07f6-7562-8f89-79662490b257",
+    "paragraphs": 10000,
+    "chunks": 10798,
+    "embedding_dim": 1024,
+    "chunk_config": {
+      "overlap": 50,
+      "strategy": "recursive",
+      "chunk_size": 256
+    },
+    "indexes": "无向量索引（顺扫）"
+  },
+  "params": {
+    "top_k": 10,·
+    "queries_evaluated": 1000
+  },
+  "scores": {
+    "recall@10": 0.799,
+    "mrr@10": 0.6778
+  },
+  "latency_ms": {
+    "search": {
+      "p50": 262.2,
+      "p95": 312.9,
+      "p99": 389.6
+    },
+    "embed": {
+      "p50": 196.9,
+      "p95": 234.7,
+      "p99": 1415.3
+    }
+  }
+}
