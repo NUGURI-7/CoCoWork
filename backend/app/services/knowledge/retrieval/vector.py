@@ -1,12 +1,12 @@
 """向量检索（v1 默认 mode）。
 
-query 向量化 → pgvector 余弦距离排序 → 按段去重（DISTINCT ON）
-→ 阈值过滤 → top_k。Tortoise 不支持 pgvector 算子，核心查询走原生 SQL。
+query 向量化 → HNSW 按距离捞候选池（内层 LIMIT，索引唯一出力点）
+→ 按段去重（DISTINCT ON）→ 阈值过滤 → top_k。
+Tortoise 不支持 pgvector 算子，核心查询走原生 SQL（sql/vector_search.sql）。
 """
 import time
 
-from tortoise import connections
-
+from tortoise.transactions import in_transaction
 from app.models import KnowledgeBase
 from app.schemas.knowledge import RetrievalHit
 from app.services.knowledge.retrieval.base import (
@@ -15,7 +15,12 @@ from app.services.knowledge.retrieval.base import (
     RetrievalResult,
     Retriever,
 )
+from app.services.knowledge.retrieval.sql import load_sql
 from app.services.model import ModelClient
+
+# 内层 ANN 候选池 = top_k × 此倍数：同段多块挤占名额 + 阈值过滤都要备胎；
+# 本质是「召回换延迟」的旋钮，调参基准实验的对象
+CANDIDATE_FACTOR = 5
 
 
 def _to_vector_literal(vec: list[float]) -> str:
@@ -42,36 +47,27 @@ class VectorRetriever(Retriever):
         query_literal = _to_vector_literal(vectors[0])
         t1 = time.perf_counter()
 
-        # 2. 原生 SQL 检索：
-        #    - 内层 DISTINCT ON (paragraph_id) 按段去重，每段取最近子块
-        #    - 外层按距离重排、阈值过滤、取 top_k
-        #    - {dim} 是类型修饰符（不能参数化），用本库锁定维度 f-string 拼入；
-        #      其余 query 向量 / kb_id / 阈值 / top_k 全走 $ 参数（防注入）。
-        #      cast 写法须与将来按库建的 HNSW 部分索引表达式一致才命中索引。
+        # 2. 原生 SQL 检索（sql/vector_search.sql）：
+        #    HNSW 捞候选（内层 LIMIT 候选池）→ 按段去重 → 阈值 → top_k。
+        #    {dim} 是类型修饰符（不能参数化），format 拼入；其余值全走 $ 参数（防注入）。
+        #    SQL 里 ORDER BY 的 cast 表达式须与按库建的 HNSW 部分索引定义一致才命中索引。
         dim = kb.embedding_dim
-        sql = f"""
-            SELECT sub.paragraph_id, sub.document_id, sub.doc_name,
-                sub.content, sub.chunk_text, sub.distance
-            FROM (
-                SELECT DISTINCT ON (e.paragraph_id)
-                e.paragraph_id, e.document_id, e.text AS chunk_text,
-                e.embedding::vector({dim}) <=> $1::vector({dim}) AS distance,
-                p.content, d.name AS doc_name
-                FROM embeddings e
-                JOIN paragraphs p ON p.id = e.paragraph_id
-                JOIN documents d ON d.id = e.document_id
-                WHERE e.knowledge_base_id = $2 AND e.source_type = 'content'
-                ORDER BY e.paragraph_id, distance
-            ) sub
-            WHERE (1 - sub.distance) >= $3
-            ORDER BY sub.distance
-            LIMIT $4
-        """
+        pool = params.top_k * CANDIDATE_FACTOR
 
-        conn = connections.get("default")
-        rows = await conn.execute_query_dict(
-            sql, [query_literal, kb.id, params.similarity_threshold, params.top_k],
-        )
+        sql = load_sql("vector_search").format(dim=dim)
+
+        # SET LOCAL 只在事务内生效；ef_search 是 HNSW 的候选名单深度：
+        # 低于候选池会截胡池子，低于默认 40 会让搜索变浅——取两者较大值
+        async with in_transaction() as conn:
+            # 规划器对 1024 维距离计算的成本严重低估，小表上会误选顺扫
+            # （实测 10k 行：顺扫 176ms vs HNSW 3ms）；把顺扫标成天价强制走索引，
+            # 无索引的库 PG 仍会顺扫兜底不报错。SET LOCAL 出事务自动还原。
+            await conn.execute_query("SET LOCAL enable_seqscan = off")
+            await conn.execute_query(f"SET LOCAL hnsw.ef_search = {max(int(pool), 40)}")
+            rows = await conn.execute_query_dict(
+                sql,
+                [query_literal, kb.id, params.similarity_threshold, params.top_k, pool],
+            )
         t2 = time.perf_counter()
 
         # 3. 组装：score = 1 - 余弦距离
