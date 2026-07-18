@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from pathlib import Path
 
+import jieba
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -29,6 +30,7 @@ async def lifespan(app: FastAPI):
         app.state.redis = redis_conn
         await seed_admin()
         langfuse_on = init_langfuse()
+        jieba.initialize()  # 预热分词词典（~1s），开门前付掉，别让首个检索请求付
         logger.info(
             "🚀 %s v%s 启动完成 (Langfuse: %s)",
             settings.APP_NAME, settings.APP_VERSION,

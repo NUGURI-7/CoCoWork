@@ -6,7 +6,7 @@
 
 from tortoise import fields
 
-from app.db.fields import VectorField
+from app.db.fields import VectorField, TSVectorField
 from app.models.base import TimestampMixin, UUIDBaseModel
 from enum import StrEnum
 
@@ -113,6 +113,10 @@ class Paragraph(UUIDBaseModel, TimestampMixin):
     title = fields.CharField(max_length=256, default="", description="段 / 章节标题")
     position = fields.IntField(default=0, description="段在文档中的顺序")
     char_length = fields.IntField(default=0, description="字符数")
+    search_vector = TSVectorField(
+        null=True, description="全文检索词料（jieba 分词 → tsvector，建 GIN 索引）",
+    )
+
 
     class Meta:
         table = "paragraphs"

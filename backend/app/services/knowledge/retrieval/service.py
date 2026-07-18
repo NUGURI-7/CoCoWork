@@ -14,6 +14,7 @@ from app.services.knowledge.retrieval.base import (
     RetrievalResult,
     Retriever,
 )
+from app.services.knowledge.retrieval.keyword import KeywordRetriever
 from app.services.knowledge.retrieval.vector import VectorRetriever
 
 
@@ -25,6 +26,7 @@ class RetrievalService:
 
     _RETRIEVERS: dict[RetrievalMode, Retriever] = {
         VectorRetriever.mode: VectorRetriever(),
+        KeywordRetriever.mode: KeywordRetriever(),
     }
 
     async def retrieve(

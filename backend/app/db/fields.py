@@ -7,8 +7,10 @@ Tortoise 无原生 pgvector 支持，这里提供 ``VectorField`` 用于声明 p
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
+from tortoise import Model
 from tortoise.fields import Field
 
 
@@ -40,3 +42,47 @@ class VectorField(Field):
         if not text:
             return []
         return [float(x) for x in text.split(",")]
+
+class TSVectorField(Field):
+    """PG ``tsvector`` 列（全文检索的倒排索引物料）。
+
+    Python 侧用 ``list[str]``（已分好的词序列，分词由上层 tokenizer 负责）；
+    与 DB 之间用带位置的 tsvector 字面量 ``'词':1 '词':2`` 互转——位置信息
+    是 ``ts_rank`` 排序的依据，裸文本入库会丢位置。与 ``VectorField`` 同款
+    分工：本字段只负责「建列 + 值转换」，检索走原生 SQL。
+    """
+
+    SQL_TYPE = "tsvector"
+
+    _LEXEME_RE = re.compile(r"'((?:''|[^'])*)':([\d,]+)")
+
+    def to_db_value(self, value: list[str] | None, instance: Any) -> str | None:
+        if value is None:
+            return None
+        parts: list[str] = []
+        position = 0
+        for token in value:
+            token = token.strip()
+            if not token:
+                continue
+            position += 1
+            escaped = token.replace("\\", "\\\\").replace("'", "''")
+            parts.append(f"'{escaped}':{position}")
+        return " ".join(parts)
+
+    def to_python_value(self, value: Any) -> list[str] | None:
+        if value is None or isinstance(value, list):
+            return value
+        # DB 返回形如 "'大便':2,5 '单纯':1"（按词典序），还原成按位置排序的词序列
+        positioned: list[tuple[int, str]] = []
+        for lexeme, positions in self._LEXEME_RE.findall(str(value)):
+            token = lexeme.replace("''", "'").replace("\\\\", "\\")
+            for pos in positions.split(","):
+                positioned.append((int(pos), token))
+        return [token for _, token in sorted(positioned)]
+
+
+
+
+
+

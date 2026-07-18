@@ -1,8 +1,8 @@
 """检索策略抽象：mode + Retriever ABC + 统一参数/结果契约。
 
-策略模式 + dispatch：新增检索模式（keyword/hybrid）= 新建实现文件
+策略模式 + dispatch：新增检索模式 = 新建实现文件
 + enum 加一行 + service 调度表加一行，调用方零改动。
-v1 只实装 vector；keyword/hybrid 留待 v2。
+已实装 vector / keyword；hybrid 留待 v2。
 """
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -15,8 +15,9 @@ from app.schemas.knowledge import RetrievalHit
 
 
 class RetrievalMode(StrEnum):
-    """检索模式（v1 仅 vector，扩 mode 时此处加值）。"""
+    """检索模式（扩 mode 时此处加值）。"""
     VECTOR = "vector"
+    KEYWORD = "keyword"
 
 
 class RetrievalParams(BaseModel):

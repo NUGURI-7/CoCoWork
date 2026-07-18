@@ -19,6 +19,7 @@ from app.models.knowledge import SourceType
 from app.models.knowledge import Document, DocStage, DocStatus, Embedding, Paragraph
 from app.schemas.knowledge import ChunkConfig
 from app.services.knowledge.splitter import splitter
+from app.services.knowledge.tokenization import tokenize
 from app.services.model.model_client import ModelClient
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,7 @@ async def process_document(doc_id: UUID) -> None:
                 content=p,
                 position=i,
                 char_length=len(p),
+                search_vector=tokenize(p),
             )
             for i,p in enumerate(para_texts)
         ]

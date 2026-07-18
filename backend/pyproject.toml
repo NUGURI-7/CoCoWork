@@ -28,6 +28,7 @@ dependencies = [
     "langgraph>=1.2.4",
     "langfuse>=4.11.0",
     "langchain-mcp-adapters>=0.3.0",
+    "jieba>=0.42.1",
 ]
 
 [dependency-groups]
