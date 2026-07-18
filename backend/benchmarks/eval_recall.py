@@ -35,6 +35,7 @@ from tortoise.transactions import in_transaction
 from app.db.postgresql import pg_client
 from app.models.knowledge import Paragraph
 from app.services.knowledge.retrieval.base import RetrievalMode, RetrievalParams
+from app.services.knowledge.retrieval.hybrid import HybridRetriever
 from app.services.knowledge.retrieval.keyword import (
     KeywordRetriever,
     _to_tsquery_literal,
@@ -197,6 +198,7 @@ async def run_eval(args: argparse.Namespace) -> None:
     retriever = {
         RetrievalMode.VECTOR: VectorRetriever(),
         RetrievalMode.KEYWORD: KeywordRetriever(),
+        RetrievalMode.HYBRID: HybridRetriever(),
     }[mode]
     run_dict: dict[str, dict[str, float]] = {}
     embed_ms: list[float] = []
@@ -215,6 +217,7 @@ async def run_eval(args: argparse.Namespace) -> None:
         async with sem:
             params = RetrievalParams(
                 query=args.query_prefix + queries[qid], top_k=args.top_k, mode=mode,
+                vector_weight=args.vector_weight,
             )
             # 单条超时兜底：远端连接半死（TCP 断了没通知）会让 await 永远等下去，
             # 与其无声卡死不如记败继续；连续多条失败 = 连接大概率已死，熔断止损
@@ -286,6 +289,7 @@ async def run_eval(args: argparse.Namespace) -> None:
             "mode": mode.value,
             "top_k": args.top_k,
             "workers": args.workers,
+            "vector_weight": args.vector_weight,
             "queries_evaluated": len(scored_qids),
             "queries_failed": len(failed),
             "query_prefix": args.query_prefix,
@@ -323,6 +327,10 @@ def main() -> None:
         help="单条 query 检索超时秒数（防远端连接半死无声卡死，默认 30）",
     )
     parser.add_argument("--top-k", type=int, default=10, help="召回深度（默认 10）")
+    parser.add_argument(
+        "--vector-weight", type=float, default=0.5,
+        help="hybrid 专用：向量路票权（默认 0.5 = 等权），其他 mode 忽略",
+    )
     parser.add_argument("--limit", type=int, default=None, help="只跑前 N 条 query")
     parser.add_argument("--note", default="", help="本次实验备注（改了什么变量）")
     parser.add_argument(
