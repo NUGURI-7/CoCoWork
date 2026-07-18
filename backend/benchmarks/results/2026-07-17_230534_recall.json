@@ -1,0 +1,45 @@
+{
+  "ran_at": "2026-07-17T23:05:34",
+  "note": "query 侧 extract_tags top10：TF-IDF 关键词提取补偿无 IDF 打分",
+  "env": {
+    "kb_name": "医疗检索基准",
+    "kb_id": "019f6557-07f6-7562-8f89-79662490b257",
+    "paragraphs": 10000,
+    "chunks": 10798,
+    "embedding_dim": 1024,
+    "chunk_config": {
+      "overlap": 50,
+      "strategy": "recursive",
+      "chunk_size": 256
+    },
+    "indexes": [
+      "CREATE INDEX embeddings_hnsw_medical ON public.embeddings USING hnsw (((embedding)::vector(1024)) vector_cosine_ops) WHERE (knowledge_base_id = '019f6557-07f6-7562-8f89-79662490b257'::uuid)",
+      "CREATE INDEX idx_paragraphs_search_vector ON public.paragraphs USING gin (search_vector)"
+    ],
+    "tokenizer": {
+      "stopwords": 682
+    }
+  },
+  "params": {
+    "mode": "keyword",
+    "top_k": 10,
+    "workers": 2,
+    "queries_evaluated": 200,
+    "queries_failed": 0,
+    "query_prefix": ""
+  },
+  "scores": {
+    "recall@10": 0.19,
+    "mrr@10": 0.0834
+  },
+  "latency_ms": {
+    "search": "未采（workers=2 并发跑，以 search_server 为准）",
+    "embed": "未采（workers=2 并发跑）",
+    "search_server": {
+      "sample": 10,
+      "p50": 120.3,
+      "p95": 1233.3,
+      "p99": 1469.5
+    }
+  }
+}

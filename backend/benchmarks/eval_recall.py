@@ -1,9 +1,9 @@
 """检索召回 / 延迟评测脚本（检索基准配套，不进产品）。
 
-拿 Multi-CPR 的 dev query + qrels 考产品检索链路（VectorRetriever 原样复用，
+拿 Multi-CPR 的 dev query + qrels 考产品检索链路（产品 Retriever 原样复用，
 测的就是产品真实路径）：每条 query 走一次检索 → 命中段查回 pid → 与 qrels
 对分。指标交给 ranx（recall@k / MRR@k），延迟取 retriever 自带的
-embed_ms / search_ms 埋点分位数。
+timings 埋点分位数。
 
 用法（在 backend/ 目录下）::
 
@@ -11,10 +11,13 @@ embed_ms / search_ms 埋点分位数。
         --queries ../data/medical/dev.query.txt \\
         --qrels ../data/medical/qrels.dev.tsv
 
+- ``--mode``：检索模式 vector（默认）/ keyword，与产品 RetrievalMode 同名对齐
+- ``--workers``：并发数（默认 1 = 顺序）。质量分数不受并发影响；客户端延迟
+  分位数只在顺序跑时采集（并发互相挤占、耗时测的是排队不是查询），并发跑时
+  延迟以 ``--explain`` 的服务端采样为准（它始终独立顺序执行、不受污染）
 - ``--limit``：只跑前 N 条 query（快速冒烟）
 - ``--top-k``：召回深度（默认 10，即 recall@10 / mrr@10）
 - 标准答案不在库里的 query 自动跳过并报数（小规模导入时防止分数被冤枉拉低）
-- 顺序执行不并发：并发会互相挤占，把延迟分位数搞脏
 """
 
 import argparse
@@ -31,13 +34,19 @@ from tortoise.transactions import in_transaction
 
 from app.db.postgresql import pg_client
 from app.models.knowledge import Paragraph
-from app.services.knowledge.retrieval.base import RetrievalParams
+from app.services.knowledge.retrieval.base import RetrievalMode, RetrievalParams
+from app.services.knowledge.retrieval.keyword import (
+    KeywordRetriever,
+    _to_tsquery_literal,
+)
 from app.services.knowledge.retrieval.sql import load_sql
 from app.services.knowledge.retrieval.vector import (
     CANDIDATE_FACTOR,
     VectorRetriever,
     _to_vector_literal,
 )
+from app.services.knowledge.stopwords import STOPWORDS
+from app.services.knowledge.tokenization import tokenize_query
 from app.services.model import ModelClient
 from benchmarks.import_corpus import _resolve_kb
 
@@ -75,19 +84,25 @@ def _percentiles(values: list[float]) -> dict[str, float]:
 
 
 async def _snapshot_env(kb) -> dict:
-    """抓当次实验的环境变量：库规模 + embeddings 表上现有的索引。
+    """抓当次实验的环境变量：库规模 + 两张表上现有的检索索引 + 分词口径。
 
-    索引清单直接问 PG 的系统表——「有没有建 HNSW」是本基准最关键的
-    实验变量，靠人肉记忆容易记错，让档案自己带上最保险。
+    索引清单直接问 PG 的系统表——「有没有建 HNSW / GIN」是本基准最关键的
+    实验变量，靠人肉记忆容易记错，让档案自己带上最保险。停用词表规模同理：
+    keyword 模式的分数随词表口径漂移，档案必须记下当时的口径。
     """
     conn = connections.get("default")
     idx_rows = await conn.execute_query_dict(
-        "SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'embeddings'",
+        "SELECT indexname, indexdef FROM pg_indexes "
+        "WHERE tablename IN ('embeddings', 'paragraphs')",
     )
     para_count = await Paragraph.filter(knowledge_base_id=kb.id).count()
     chunk_count = await conn.execute_query_dict(
         "SELECT count(*) AS n FROM embeddings WHERE knowledge_base_id = $1", [kb.id],
     )
+    retrieval_indexes = [
+        r["indexdef"] for r in idx_rows
+        if "hnsw" in r["indexdef"].lower() or "gin" in r["indexdef"].lower()
+    ]
     return {
         "kb_name": kb.name,
         "kb_id": str(kb.id),
@@ -95,17 +110,25 @@ async def _snapshot_env(kb) -> dict:
         "chunks": chunk_count[0]["n"],
         "embedding_dim": kb.embedding_dim,
         "chunk_config": kb.chunk_config,
-        "indexes": [
-            r["indexdef"] for r in idx_rows if "hnsw" in r["indexdef"].lower()
-        ] or "无向量索引（顺扫）",
+        "indexes": retrieval_indexes or "无检索索引（顺扫）",
+        "tokenizer": {"stopwords": len(STOPWORDS)},
     }
 
 
-async def _explain_search(kb, query_text: str, top_k: int, show_plan: bool) -> float:
-    """EXPLAIN ANALYZE 一次检索 SQL，返回服务端纯执行时间（ms，不含网络）。
+def _extract_exec_ms(rows: list[dict], show_plan: bool) -> float:
+    """EXPLAIN ANALYZE 结果行 → 服务端纯执行时间（ms）；show_plan 时打完整计划。"""
+    lines = [r["QUERY PLAN"] for r in rows]
+    if show_plan:
+        print("\n----- 执行计划（样例 1 条）-----")
+        print("\n".join(lines))
+        print("-----\n")
+    # 最后一行形如 "Execution Time: 123.456 ms"
+    exec_line = next(l for l in reversed(lines) if l.startswith("Execution Time:"))
+    return float(exec_line.split(":")[1].strip().removesuffix(" ms"))
 
-    show_plan=True 时把完整执行计划打到控制台（看顺扫/索引扫用）。
-    """
+
+async def _explain_search(kb, query_text: str, top_k: int, show_plan: bool) -> float:
+    """EXPLAIN ANALYZE 一次向量检索 SQL（与产品同事务同会话参数）。"""
     vectors = await ModelClient.create_embedding(kb.embedding_model, [query_text.strip()])
     sql = "EXPLAIN (ANALYZE, FORMAT TEXT) " + load_sql("vector_search").format(
         dim=kb.embedding_dim,
@@ -118,14 +141,19 @@ async def _explain_search(kb, query_text: str, top_k: int, show_plan: bool) -> f
         rows = await conn.execute_query_dict(
             sql, [_to_vector_literal(vectors[0]), kb.id, 0.0, top_k, pool],
         )
-    lines = [r["QUERY PLAN"] for r in rows]
-    if show_plan:
-        print("\n----- 执行计划（样例 1 条）-----")
-        print("\n".join(lines))
-        print("-----\n")
-    # 最后一行形如 "Execution Time: 123.456 ms"
-    exec_line = next(l for l in reversed(lines) if l.startswith("Execution Time:"))
-    return float(exec_line.split(":")[1].strip().removesuffix(" ms"))
+    return _extract_exec_ms(rows, show_plan)
+
+
+async def _explain_search_keyword(kb, query_text: str, top_k: int, show_plan: bool) -> float:
+    """EXPLAIN ANALYZE 一次全文检索 SQL（产品 keyword 路径无事务无会话参数，同款）。"""
+    tokens = tokenize_query(query_text)
+    if not tokens:
+        return 0.0
+    sql = "EXPLAIN (ANALYZE, FORMAT TEXT) " + load_sql("keyword_search")
+    rows = await connections.get("default").execute_query_dict(
+        sql, [kb.id, _to_tsquery_literal(tokens), 0.0, top_k],
+    )
+    return _extract_exec_ms(rows, show_plan)
 
 
 def _save_report(report: dict) -> Path:
@@ -165,53 +193,106 @@ async def run_eval(args: argparse.Namespace) -> None:
         qids = qids[: args.limit]
     print(f"待评 {len(qids):,} 条 query（top_k={args.top_k}）\n")
 
-    retriever = VectorRetriever()
+    mode = RetrievalMode(args.mode)
+    retriever = {
+        RetrievalMode.VECTOR: VectorRetriever(),
+        RetrievalMode.KEYWORD: KeywordRetriever(),
+    }[mode]
     run_dict: dict[str, dict[str, float]] = {}
     embed_ms: list[float] = []
     search_ms: list[float] = []
     start_at = time.monotonic()
+    done = 0
+    failed: dict[str, str] = {}
+    consec_fail = 0
 
-    for i, qid in enumerate(qids, start=1):
-        params = RetrievalParams(
-            query=args.query_prefix + queries[qid], top_k=args.top_k,
-        )
-        result = await retriever.retrieve(kb, params)
+    # 信号量限流 + 全量 gather（流水式：谁完成谁让位，并发位永远坐满；
+    # 分批 gather 会让每批等最慢一条，慢尾巴拖空并发位）
+    sem = asyncio.Semaphore(args.workers)
+
+    async def _eval_one(qid: str) -> None:
+        nonlocal done, consec_fail
+        async with sem:
+            params = RetrievalParams(
+                query=args.query_prefix + queries[qid], top_k=args.top_k, mode=mode,
+            )
+            # 单条超时兜底：远端连接半死（TCP 断了没通知）会让 await 永远等下去，
+            # 与其无声卡死不如记败继续；连续多条失败 = 连接大概率已死，熔断止损
+            try:
+                result = await asyncio.wait_for(
+                    retriever.retrieve(kb, params), timeout=args.timeout,
+                )
+            except Exception as e:  # noqa: BLE001 —— 实验设施，记案底不挑错型
+                failed[qid] = f"{type(e).__name__}: {e}"
+                consec_fail += 1
+                print(f"[warn] qid={qid} 检索失败：{failed[qid]}", flush=True)
+                if consec_fail >= 5:
+                    raise SystemExit(
+                        "连续 5 条失败——数据库连接大概率已死，中止本次评测"
+                    ) from e
+                done += 1
+                return
+        consec_fail = 0
         run_dict[qid] = {
             pid_of[str(hit.paragraph_id)]: hit.score for hit in result.hits
         }
-        embed_ms.append(result.timings["embed_ms"])
+        # timings 形态随 mode 不同（keyword 无 embed），有哪段收哪段
+        if "embed_ms" in result.timings:
+            embed_ms.append(result.timings["embed_ms"])
         search_ms.append(result.timings["search_ms"])
-        if i % 20 == 0 or i == len(qids):
-            rate = i / (time.monotonic() - start_at)
-            print(f"[eval] {i:,}/{len(qids):,} — {rate:.1f} 条/秒", flush=True)
+        done += 1
+        if done % 20 == 0 or done == len(qids):
+            rate = done / (time.monotonic() - start_at)
+            print(f"[eval] {done:,}/{len(qids):,} — {rate:.1f} 条/秒", flush=True)
+
+    await asyncio.gather(*(_eval_one(qid) for qid in qids))
+    if failed:
+        print(f"\n[warn] {len(failed)} 条 query 检索失败，已从评分中剔除：{sorted(failed, key=int)}")
 
     # 服务端纯执行时间采样（EXPLAIN ANALYZE，不含网络往返）
     server_ms: list[float] = []
+    explain_fn = (
+        _explain_search if mode is RetrievalMode.VECTOR else _explain_search_keyword
+    )
     if args.explain:
         n = min(args.explain, len(qids))
         print(f"\n[explain] 采样 {n} 条 query 的服务端执行时间…")
         for i, qid in enumerate(qids[:n]):
             server_ms.append(
-                await _explain_search(kb, queries[qid], args.top_k, show_plan=(i == 0))
+                await explain_fn(kb, queries[qid], args.top_k, show_plan=(i == 0))
             )
 
     metrics = [f"recall@{args.top_k}", f"mrr@{args.top_k}"]
+    scored_qids = [qid for qid in qids if qid in run_dict]  # 失败的不计分也不算分母
     scores = evaluate(
-        Qrels({qid: evaluable[qid] for qid in qids}), Run(run_dict), metrics,
+        Qrels({qid: evaluable[qid] for qid in scored_qids}), Run(run_dict), metrics,
     )
+    # 客户端延迟只在顺序跑时可信：并发下每条耗时混入排队时间，测的是拥挤不是查询
+    if args.workers == 1:
+        client_latency = {
+            "search": _percentiles(search_ms),
+            "embed": _percentiles(embed_ms) or "无（keyword 模式不调 embedding）",
+        }
+    else:
+        client_latency = {
+            "search": f"未采（workers={args.workers} 并发跑，以 search_server 为准）",
+            "embed": f"未采（workers={args.workers} 并发跑）",
+        }
     report = {
         "ran_at": datetime.now().isoformat(timespec="seconds"),
         "note": args.note,
         "env": await _snapshot_env(kb),
         "params": {
+            "mode": mode.value,
             "top_k": args.top_k,
-            "queries_evaluated": len(qids),
+            "workers": args.workers,
+            "queries_evaluated": len(scored_qids),
+            "queries_failed": len(failed),
             "query_prefix": args.query_prefix,
         },
         "scores": {name: round(value, 4) for name, value in scores.items()},
         "latency_ms": {
-            "search": _percentiles(search_ms),
-            "embed": _percentiles(embed_ms),
+            **client_latency,
             "search_server": {
                 "sample": len(server_ms), **_percentiles(server_ms),
             } if server_ms else "未采样（--explain N 开启）",
@@ -229,6 +310,18 @@ def main() -> None:
     parser.add_argument("--kb", required=True, help="知识库 UUID 或库名")
     parser.add_argument("--queries", required=True, help="dev.query.txt 路径")
     parser.add_argument("--qrels", required=True, help="qrels.dev.tsv 路径")
+    parser.add_argument(
+        "--mode", choices=[m.value for m in RetrievalMode], default="vector",
+        help="检索模式（默认 vector）",
+    )
+    parser.add_argument(
+        "--workers", type=int, default=1,
+        help="并发数（默认 1 = 顺序跑并采集客户端延迟；>1 只出质量分，提防 API 限流别开太大）",
+    )
+    parser.add_argument(
+        "--timeout", type=float, default=30.0,
+        help="单条 query 检索超时秒数（防远端连接半死无声卡死，默认 30）",
+    )
     parser.add_argument("--top-k", type=int, default=10, help="召回深度（默认 10）")
     parser.add_argument("--limit", type=int, default=None, help="只跑前 N 条 query")
     parser.add_argument("--note", default="", help="本次实验备注（改了什么变量）")
@@ -241,6 +334,11 @@ def main() -> None:
         help="query 侧检索指令前缀；裸给此参数 = BGE 官方指令，也可自定义字符串",
     )
     args = parser.parse_args()
+    if args.mode == RetrievalMode.KEYWORD.value and args.query_prefix:
+        raise SystemExit(
+            "--query-prefix 是 vector 模式的 BGE 指令实验参数；"
+            "keyword 模式下前缀会被当正文分词进查询，禁止混用"
+        )
 
     async def _run() -> None:
         await pg_client.connect()
