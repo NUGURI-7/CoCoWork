@@ -48,7 +48,7 @@
 - **知识库文档上传 + CRUD 后端齐全（片4 完工）**：8 个端点全挂 `/knowledge-bases/{kb_id}/documents/*` 下。上传 3 个：`upload-init` 按 `supports_presigned` 返 `strategy=presign|passthrough` / `upload-passthrough`（仅 Local）/ `upload-complete`（仅 R2 + head 验对象在）；CRUD 4 个：list / detail / delete（联动清 storage）/ download-url（统一接口，R2 返 presigned GET 带 RFC 6266 filename / Local 返 raw 路径）；下载 1 个：`/raw`（仅 Local，StreamingResponse 吐字节）。Storage 扩 `stat_size` 复校真实大小，超限自动清干净。扩展名 md/txt + 大小上限 50MB。
 - **知识库前端文档全流程接通**：`api/knowledge.ts` 7 函数（含裸 XHR 真进度的 `uploadDocumentToR2` + axios `onUploadProgress` 的 `uploadDocumentPassthrough`）；DocumentList 接 `Document` 真类型、`<a download>` 触发下载、AlertDialog 删除；UploadDocumentSheet 真上传状态机（Promise.allSettled 并发 + setQueue 函数式更新 + 单文件失败不影响其他）；R2 桶 CORS + Object R&W token 配妥。**上传 / 列表 / 下载 / 删除全链路 OK**。
 - **知识库处理管线（片5 完工）全栈打通**：后端 Splitter 抽象层（`Splitter` ABC + `LangChainSplitter` 包 langchain `RecursiveCharacterTextSplitter`，v2 自研对照 swap 业务零改动）+ `process_document(doc_id)` 入口（解析→切段（双换行）→ 切块→批量 embed，状态机 status/stage 推进、try/except 兜底 failed、重入清旧 paragraphs FK CASCADE 自动连带清 embeddings）+ 触发端点 `POST /documents/{id}/process`（service 状态校验 uploaded/failed 可触发、`BackgroundTasks.add_task` 异步跑）；模型层 enum 改造（`KBStatus / DocStatus / DocStage / SourceType` StrEnum + `CharEnumField`，迁移 0007/0008 no-op SQL）；前端三点菜单加「向量化/重试向量化」入口 + 1.5s setTimeout 单次轮询自动续 + 乐观更新（点击立即 setDocs 标 processing，避开 BackgroundTasks 启动 race）。**上传 → 待向量化 → 触发 → 处理中 → 就绪 端到端 OK**。
-- **知识库检索 + 命中测试（片6 完工）全栈打通**：后端检索 service（query 向量化 → 原生 SQL 余弦距离检索；**2026-07-16 重构为 CTE 候选池方案命中 HNSW**：nearest 按距离 LIMIT 候选池 → dedup 按段去重 → JOIN/阈值/top_k，SQL 摘至 `retrieval/sql/vector_search.sql` + `load_sql()` 缓存加载器，事务内 `SET LOCAL hnsw.ef_search` + `enable_seqscan=off`；`{dim}` f-string 拼类型修饰符、其余值走 `$` 参数防注入）+ 端点 `POST /knowledge-bases/{kb_id}/retrieval-test`（归属校验 + query/top_k/similarity_threshold）；schema `RetrievalTestIn`/`RetrievalHit`（父子块：返整段 content + 命中子块 chunk_text + score=1-距离）；前端 `runMockRetrieval` → `retrievalTest` 真接口、检索 mock 删净。**端到端 OK**。**命中测试首次暴露切块问题**：双换行段切分对 list-heavy md 失效（一整天行程挤成一巨段、命中返整段过长）→ 留 v2 heading 感知切块当对照案例。**RAG v1 六片整片收官。**
+- **知识库检索 + 命中测试（片6 完工）全栈打通**：后端检索 service（query 向量化 → 原生 SQL 余弦距离检索；**2026-07-16 重构为 CTE 候选池方案命中 HNSW**：nearest 按距离 LIMIT 候选池 → dedup 按段去重 → JOIN/阈值/top_k，SQL 摘至 `retrieval/sql/vector_search.sql` + `load_sql()` 缓存加载器，事务内 `SET LOCAL hnsw.ef_search` + `enable_seqscan=off`；`{dim}` f-string 拼类型修饰符、其余值走 `$` 参数防注入）+ 端点 `POST /knowledge-bases/{kb_id}/retrieval-test`（归属校验 + query/top_k/similarity_threshold）；schema `RetrievalTestIn`/`RetrievalHit`（父子块：返整段 content + 命中子块 chunk_text + score=1-距离）；前端 `runMockRetrieval` → `retrievalTest` 真接口、检索 mock 删净。**端到端 OK**。**命中测试首次暴露切块问题**：双换行段切分对 list-heavy md 失效（一整天行程挤成一巨段、命中返整段过长）→ 留 v2 heading 感知切块当对照案例。**RAG v1 六片整片收官。****2026-07-18 检索已扩 keyword mode**（全文检索整片：tsvector + GIN + jieba + 停用词 + TF-IDF 查询提纯，详见最近迭代）。
 - **前端 admin 用户管理页（mock）**：`/admin/users` 表格（用户/邮箱/角色 badge/状态 switch/创建时间/删除）+ 搜索过滤 + 角色筛选 + AlertDialog 二次确认；自己的行禁用 switch 和删除；纯前端 mock，后端 user 管理接口齐了再换。
 - **Agent 模块设计 spec 定稿**：`docs/design/agent-module-v1.md`（14 节产品+架构 spec）+ `agent-module-frontend-v1.md`（前端画法指南）。
 - **Agent 模块前后端整片打通（CRUD 接真接口）**：列表 / 创建 / 详情 / 保存 / 删除 5 端点全栈联通。列表页三带式（模板池 2 张：真 loop `general` + graph 占位 disabled / 我的 Agent 网格 / ldrs l-ring loader）+ 创建弹窗（`template + config` payload）+ 详情页（左 ConfigPanel 40% / 右 Playground 沙盒 60%）。**ConfigPanel 显式保存模式**：本地 form state + Sticky 顶栏「橙点·有未保存改动」+ 整体 PUT；`agentToForm` 摊平 / `save()` 时打包回 config jsonb；mock-store 退役。配置里 chat 模型 + 知识库选择器接真 `listAllModels({modelType:'chat',enabledOnly:true})` + `listKnowledgeBases()`；AgentCard meta 行真显模型名（父级一次拉 model map 避 N+1）。工具仍 mock（后端 tool 模块未起）；Playground 沙盒回复仍是 500ms 假回复待接 LLM。**砍掉「正式对话」**——详情页只做沙盒，正式对话归 workspace。
@@ -71,7 +71,7 @@
 ## 下一步
 - **知识库 / RAG 模块 v1 整片完工（片1-6 收官）+ 收尾增强**：数据层 + KB CRUD + 存储抽象 + 文档上传/下载 + 处理管线 + 检索/命中测试全栈打通；**增强**：文档批量向量化/删除（部分成功语义）、命中测试检索耗时展示、文档列表段数展示、触发同步置 processing 修「刷新后轮询丢失」。
   - **方案见** `docs/design/knowledge-rag-v1.md`（spec + §13 切片清单全部勾掉）+ `knowledge-rag-decisions.md`（决策/权衡）。六片：VectorField + pgvector + 4 表迁移 0005 + AIModel.meta 0006 + KB CRUD + 存储抽象 R2/Local + Document 上传 CRUD 下载 8 端点 + Splitter 抽象层 + `process_document()` + 触发端点 + enum 化迁移 0007/0008 + 检索 service + 命中测试端点。详见最近迭代。
-  - **v2 方向**：混合检索 / FTS / RRF / rerank / 多向量；切块优化（heading 感知——命中测试已暴露双换行段切分对 list-heavy md 失效，留作自研切块器 A/B 对照案例）；评估体系（Recall@k/MRR + LLM 自动造测试集）。
+  - **v2 方向**：~~FTS（keyword mode）~~ ✅（2026-07-18 整片收官，sparse 基线 recall@10=0.19 已定档）→ **当前主线 = hybrid（RRF 融合）**，三个设计题待拍板：①每路候选深度（top_k×N）②RRF 分数量纲（similarity_threshold 建议只在子路内生效；前端 score 展示口径）③合并字段取舍（chunk_text 向量优先、是否加 matched_by 调试字段）。之后：rerank / 多向量；切块优化（heading 感知——命中测试已暴露双换行段切分对 list-heavy md 失效，留作自研切块器 A/B 对照案例）；sparse 根治 = pg_search/ES BM25 挂账（容器手术级，医疗域真 BM25 也仅 MRR≈0.19，不阻塞 hybrid）。
   - **检索性能 / 召回基准（阶段 0 已完成，2026-07-16）**：专项文档 `docs/design/knowledge-rag-benchmark-v1.md`。1 万段链路全通：导入两阶段脚本 + ranx 评测 + 档案（`benchmarks/results/`）+ HNSW partial 索引命中（**服务端 p50 237ms → 11.8ms、召回无损**，详见最近迭代）。**待**：扩规模前先解决服务器磁盘（50G 剩 ~10G，96 万全量向量+索引 ≈ 5-8G，或降目标 20-30 万）；阶段 2-5（无索引对照 / 规模曲线 / 调参矩阵）降级为顺手实验。
   - 既有决策：embedding 每库锁一个模型、rerank 先阿里、全文检索先 Postgres 原生 FTS（不够再上 ParadeDB pg_search，不上 ES）、切块默认（递归~512token+50overlap）+ 可配；混合检索/FTS/RRF/rerank/多向量 = v2；文档编辑用自封装 tiptap（后做）。
 - **Agent 模块（CRUD + Playground + 工具装配 全打通）**：架构地基见 `docs/architecture.md`（11 节战略 + 附录 A），产品形态（双入口 / 三层资源 / L1-L3 记忆 / @直连 vs 管家）保留为待迭代区。Hybrid Schema（核心列 + jsonb 扩展，AgentConfig 嵌套 schema 强类型契约 Pydantic + `extra="forbid"`）+ 模板层 1+N（1 个可配置 loop 引擎 `general` + N 个 graph 模板首批 0）。**已完成**：后端 5 端点 + 模板层 + LoopTemplate.build() 真实装配（共享 create_agent 工厂 + base_prompt 追加 system_prompt 不覆盖）+ Playground 对话流整片（runtime/runner + route + 前端通用对话层）+ 字段对齐（types/agent.ts + ConfigPanel + AgentCard 嵌套 schema）+ 头像统一默认 gopher 不暴露上传 UI + **工具装配链路全栈（见最近迭代「工具模块第一刀」）**。**接下来候选**：~~(a) MCP 工具接入~~（已完成，见 2026-06-28 迭代）/ ~~(b) KB-as-tool~~（已完成，见 2026-06-08 迭代）/ (c) 有 key 内置工具的凭据层（抄 Model Provider 那套，Fernet 加密 + 运行时工厂装配）/ (d) workspace 真对话片（chat 层全复用零工作量，仅后端 Conversation + Redis cache-aside）/ (e) **KB-as-tool v2 增强**（hybrid/keyword 模式实装 + KB slug 字段 + 多 KB rerank + 命中测试 UI 加 mode 选择器 + LangChain `create_retriever_tool` 工厂收口）。详情页砍「正式对话」——归 workspace。
@@ -95,6 +95,18 @@
 - 如果某次改动不足以影响项目理解，就不要把噪音写进来。
 
 ## 最近迭代
+
+### 2026-07-18 — 混合检索第一刀：keyword 全文检索整片 + sparse 基线定档（commits 8e66df7 / faed03a）
+
+**数据侧**：`Paragraph.search_vector`（自定义 `TSVectorField`——Python 拼**带位置**的 tsvector 字面量直写；Tortoise 包不了 SQL 函数，绕过 `to_tsvector('simple')` 的代价 = 归一化自担，小写在 tokenizer 补齐防 CT 类大写词查不到）+ GIN 索引（迁移 0013/0014；**空壳先建、随写随入**，与 HNSW「先灌后建」相反——逐条插入单价决定姿势）+ 分词收口 `tokenization.py`（**索引侧 `cut_for_search` 求全 / 查询侧 `extract_tags` TF-IDF top10 求精**，不对称是刻意口径）+ `stopwords.py` 682 词（Dify 表去重 680 + 实测补「好/很」）+ `process_document` 一行接入 + lifespan jieba 预热 + 回填脚本 `scripts/backfill_search_vector.py`（IS NULL = 待办清单断点续传；改口径重灌同款入口）。
+
+**检索侧**：`KeywordRetriever`（OR tsquery + `ts_rank_cd(...,32)` 归一化进 0~1 对齐向量分量纲；chunk_text 空串；无事务无 SET LOCAL）+ `sql/keyword_search.sql`；enum + 调度表各一行、**端点零改动**（RetrievalParams.mode 早备好，策略模式承诺三度兑现）。
+
+**三轮实测（停用词教学现场）**：裸奔前五 0/5 相关（口水词「了/好/怎么」霸榜）1301ms → Dify 表 1/5 375ms → 补「好/很」**5/5 满堂红 93ms（14 倍）**。**基准双档案**：OR 全量 recall@10=0.205 / MRR=0.093；extract_tags top10 = 0.19 / 0.083——**不涨分但 3 倍速**（jieba 通用 IDF 与医疗域失配 + 打分侧依旧大锅饭）→ **定为产品口径**（hybrid 的 RRF 只吃名次，1.5pt 分差换 3 倍速划算）。**根因结论**：PG `ts_rank` 家族无 IDF = sparse 质量天花板；查询侧 TF-IDF 只能代偿「筛词」半边，代不了「打分加权」半边。
+
+**eval 升级**：`--mode`（从产品 enum 自动生成）/ `--workers` 信号量并发（**分数走人群、秒表走单跑**：客户端延迟仅顺序跑采集，服务端 explain 采样恒干净）/ `--timeout` + 失败记名续跑 + 连败熔断（治远端 TCP 半死的无声卡死——曾顺序跑到 460/1000 无声消失）。
+
+**五项目横评（全部本地源码实证）**：MaxKB（AND + ts_rank_cd 无 IDF、cut_all、零停用词、词性过滤表是死代码、拼 SQL 串）/ Dify（TF-IDF 词表 + 停用词、加权分数融合）/ RAGFlow（ES/Infinity 原生 BM25、OR、向量权重 0.95）/ runify（Lucene 10 默认 BM25 白捡 IDF；但 StandardAnalyzer 中文逐字 + 零停用词 + 索引 fire-and-forget/rename 不同步两真 bug）。沉淀三原则：**全文索引建在「返回单元」上**（五家验证）；**引擎选型一票顶配件层十票**；**组合拳不能拆开抄**（OR 语义的成立前提是打分器有 IDF）。
 
 ### 2026-07-16 — RAG 检索基准阶段 0 全线打通：两阶段导入 + 评测档案 + HNSW 实战（20 倍提速、召回无损）
 
@@ -180,22 +192,8 @@
 
 **收尾**：实时露脸 + 回放 + 真名 + 并发全测通。小尾巴：成员头像 lucide `User` 占位（gopher 待 `MemberAgentInfo` 带 avatar 字段）。
 
-### 2026-06-15 — Workspace 成员招募 CRUD 全栈 + 临时成员 A/B 决策
-
-**招募 CRUD 整片打通（前后端，commit c7839a6）**
-
-- 后端：`WorkspaceMember` 招募 3 端点 nested 在 `/workspaces/{wid}/members`（recruit / list / remove）；schema（`MemberRecruitIn` 只收 agent_id + `MemberOut` 内嵌 `MemberAgentInfo`）+ service（双归属校验 workspace & agent、`try/IntegrityError` 撞 unique → 409、list `prefetch_related("agent")`、踢人 JOIN 校验）。**复用 d-1 既有范式**（nested URL / `.exists()` 归属 / Anemic service），机制层无新东西。
-- 新增 `Conflict409` 异常（响应体 `code=409`，handler 仍恒返 HTTP 200）—— 重复招募同一 agent 的语义码。
-- 前端：`api/workspace.ts` 3 函数 + 类型对齐；招募弹窗「从我的 Agent」接真 `listAgents` + 已招募置灰（前端拦 + 后端 409 兜底）；通讯录接真 `listMembers` + agent 行 hover-X 二次确认踢人，管家是合成行（`roster.ts` 的 `SUPERVISOR_ROSTER`）置顶不可踢；`mock.ts` 退役、收敛成精简 view-model `RosterMember`（合成管家 + 真成员）。「从模板」tab 暂禁用。
-
-**关键决策：成员建模 + 临时成员 A/B**
-
-- **成员 = 对 agent 的不可变引用（非快照）**：招募存 agent FK，改 agent 这侧自动跟随；workspace 侧无覆盖配置（要变去 agent 那侧 / 要变体另建 agent）。「它在这空间干啥」靠派活时 delegate 的 task 动态给、不挂静态字段。业界 Slack 加 bot / Discord 加机器人同款。`WorkspaceMember.config` 列保留为预留位（不暴露 API）。
-- **临时成员只走 B、不要 A**（澄清前端「从模板」的别扭）：A = 持久成员、无 agents 行（需 FK 可空 + config 存 AgentConfig）；B = 用完即销毁、**不进任何表**、靠 stream 事件驱动通讯录临时露脸、对话结束即消失。决策只做 B → **`WorkspaceMember` 硬 FK 就是最终形态、以后不用回头改**；runtime 的 `AgentSpec.from_jsonb` 早支持 ephemeral run（同 supervisor 套路）。「从模板」招募（= A）暂禁用、留待真要时再定。
-
-**下一步**：单元 2 的肉 = 派活——用 deepagents `SubAgentMiddleware`（不手搓；2026-06-15 推翻旧「手搓」决策，理由见行 119 注脚，方案见行 72「下一步」）。
-
 ## 历史摘要
+- **2026-06-15 — Workspace 成员招募 CRUD 全栈 + 临时成员 A/B 决策（commit c7839a6）**：3 端点 nested + `Conflict409`（重复招募语义码）+ 前端接真（已招募置灰 / hover 踢人 / 合成管家行置顶不可踢）。决策：成员 = 对 agent 的**不可变 FK 引用**（非快照，Slack bot 同款）；临时成员只走 B（用完即销毁、不进任何表、事件驱动露脸）→ 硬 FK 定型不回头；「从模板」tab 暂禁用。
 - **2026-06-14 — Workspace MVU 落地（流穿外层图跑通）+ 架构决策定调**：`agents/workspace/workspace.py`（`WorkspaceState` 仅 messages + `WorkspaceContextMiddleware` 透传占位 + `build_workspace_graph` 绕模板直拼 supervisor 套外层 StateGraph）、`stream.py` ④ 换装配、UI 验证流穿外层图（adapter 按事件名 dispatch 不看嵌套，子图事件递归冒泡）；runner `_assemble_tools`/`_to_lc_messages` 转正公开。决策：workspace_id 归 context 不归 state；checkpointer 真价值 = HITL + 非消息状态跨轮（d-1 未挂、每轮 DB 重放）；deepagents StateBackend/文件系统 v1 用不上，真·执行产物走沙箱持久卷不进 state 不走 R2（R2 只留 KB 静态 blob）；外层图上限 = workspace 级编排节点、不是塞更多 agent。（当日「手搓 agent-as-tool」决策 06-15 已推翻，改用 SubAgentMiddleware。）
 - **2026-06-25 — Langfuse 可观测接入 + max_tokens 修复；KB 数据生成尝试放弃**：后端接 Langfuse v4 LangChain CallbackHandler（新增 `app/core/observability.py`：`TraceContext` 归因 + handler 单例 + 降级「没配 key 全链路 no-op」；`init_langfuse` 启动时把 settings 的 key 桥接进 `os.environ`、`shutdown_langfuse` 关闭兜底 flush；`run_chat_stream` 加 `trace` 参数挂 callback，trace 名/user/session/tags 走 `config.metadata`；workspace 与 playground 两流端点各传 `TraceContext` 做区分 + 会话聚合）；config 加 `LANGFUSE_PUBLIC_KEY/SECRET_KEY/HOST`。**v4 踩坑**：凭证只认环境变量（`Langfuse(...)` 构造参数绑不上 `get_client()` 单例，实测 `c is g==False`）；trace 名走 `langfuse_trace_name` metadata 键（`run_name` 只设 span 名、设不了 trace 名 → 列表 Name 空白）；handler 必须在 env 就绪后建（否则永久 disabled）；token 截断（`max_completion_tokens` 太小）会「白烧 token 0 产出」。顺带修 OpenAI 兼容端点 `max_tokens` 被 langchain-openai 改名 `max_completion_tokens` 而被兼容端点丢弃（`runtime/param_adapter.py` 走 `extra_body` 透传）。**放弃的支线**：曾想用 MiMo 文本模型加工维基/HF 语料造「企业级多领域 KB」（`scripts/gen_kb_data.py`，已删含 key），因①无 embedding 额度（向量 RAG 这条堵死）②MiMo Token Plan 限流（429）③维基 API 限流，ROI 太低放弃；RAGAS 评测也随之搁置（结论：RAGAS 价值≈简历关键词，技术很薄）。Langfuse 留作「可观测 + debug + 以后评测分的家」。
 - **2026-06-14 — Workspace d-2 设计敲定（多 Agent 编排地基）**：deepagents 0.6.10 入 pyproject + middleware 归属钉死（AgentMiddleware 机制在 langchain、只作用于 create_agent loop 不作用于外层图节点）；brain = create_agent + 按需摘 middleware、不用 create_deep_agent（太重）；supervisor 不走模板链；外层图只 workspace 走、Playground 不套；MVU 计划定型（stream.py 第④步换 build_workspace_graph、其余零改）。
