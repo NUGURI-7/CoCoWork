@@ -22,6 +22,8 @@ from langchain_core.language_models import BaseChatModel
 from deepagents.middleware.subagents import CompiledSubAgent, DEFAULT_SUBAGENT_PROMPT
 from deepagents import SubAgentMiddleware
 from deepagents.backends import StateBackend
+from deepagents.middleware.filesystem import FilesystemState
+from deepagents.middleware.summarization import SummarizationMiddleware
 from langchain_core.messages import BaseMessage, HumanMessage
 from app.models import User, Workspace, WorkspaceMember, Message, KnowledgeBase, MCPServer
 from app.agents.workspace.view_context_assembler import (
@@ -90,6 +92,27 @@ class WorkspaceContextMiddleware(AgentMiddleware):
     """
 
 
+class FilesShelfMiddleware(AgentMiddleware):
+    """只为摘要 offload 提供 state 里的 files 货架,不注册任何工具。"""
+
+    state_schema = FilesystemState
+
+
+def _summarization_middleware(model: BaseChatModel) -> list[AgentMiddleware]:
+    """层 A 保险丝:单次 run 内上下文膨胀时就地压缩(run 结束即弃,跨轮压缩归层 B)。"""
+    return [
+        FilesShelfMiddleware(),
+        SummarizationMiddleware(
+            model=model,  # 摘要用应答者自己的模型
+            backend=StateBackend(),
+            # 绝对 token 阈值 —— fraction 依赖 model profile,兼容端点拿不到会静默永不触发
+            trigger=("tokens", 200_000),
+            keep=("messages", 20),
+            trim_tokens_to_summarize=None,  # 类默认 4000 只摘尾部,显式关掉
+        )
+    ]
+
+
 async def _member_to_subagent(
         member: WorkspaceMember,
         user: User,
@@ -123,6 +146,7 @@ async def _member_to_subagent(
         model=model,
         tools=tools,
         system_prompt=system_prompt,
+        middleware=_summarization_middleware(model),
     )
 
     desc = f"{agent.name}：{agent.description}" if agent.description else agent.name
@@ -221,7 +245,10 @@ async def build_workspace_graph(
     system_prompt = f"{base}\n{cfg.system_prompt}" if cfg.system_prompt else base
 
     # 派活 middleware 只有 supervisor 挂
-    middleware: list[AgentMiddleware] = [WorkspaceContextMiddleware()]
+    middleware: list[AgentMiddleware] = [
+        WorkspaceContextMiddleware(),
+        *_summarization_middleware(chat_model),
+    ]
     if can_delegate:
         subagents = [
             await _member_to_subagent(member, user, chat_model)

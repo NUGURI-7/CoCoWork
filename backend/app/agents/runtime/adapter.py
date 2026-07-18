@@ -468,6 +468,10 @@ async def adapt_chat_stream(
     try:
         async for ev in events:
             meta = ev.get("metadata") or {}
+            # 摘要中间件的内部 LLM 调用会冒进事件流（dump 实证：token 级泄漏、
+            # 与主模型同 ns）—— 按官方 lc_source 戳整体拦下，不渲染不落库
+            if meta.get("lc_source") == "summarization":
+                continue
             # 第 2 步 · 登记：task 一开始 → 记「本泳道 → 这次 task 的 call_id」。
             # 必须抢在下面 handler 判断之前 —— on_tool_start 无注册 handler，会被 continue 跳过。
             if ev.get("event") == "on_tool_start" and ev.get("name") == "task":
