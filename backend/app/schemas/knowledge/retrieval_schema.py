@@ -5,6 +5,7 @@ v1 纯向量检索：embed 子块搜得准、命中后返回整段（父子块�
 不落库（即时查询），是 RAG 检索的第一个消费方，不依赖 LLM / Agent。
 """
 
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -23,7 +24,10 @@ class RetrievalHit(BaseModel):
     doc_name: str = Field(description="来源文档名")
     content: str = Field(description="命中段全文（返回给模型的单元）")
     chunk_text: str = Field(description="实际命中的子块原文")
-    score: float = Field(description="相似度 0~1（1 - 余弦距离）")
+    score: float = Field(description="相似度 0~1（vector=1-余弦距离；keyword=归一化 ts_rank；hybrid=RRF 共识分）")
+    matched_by: Literal["vector", "keyword", "both"] | None = Field(
+        default=None, description="hybrid 模式命中来源路；单模式检索为 None",
+    )
 
 class RetrievalTestOut(BaseModel):
     """命中测试响应：命中列表 + 耗时（不落库，仅本次响应展示）。

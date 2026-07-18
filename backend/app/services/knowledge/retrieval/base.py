@@ -18,6 +18,7 @@ class RetrievalMode(StrEnum):
     """检索模式（扩 mode 时此处加值）。"""
     VECTOR = "vector"
     KEYWORD = "keyword"
+    HYBRID = "hybrid"
 
 
 class RetrievalParams(BaseModel):
@@ -33,6 +34,11 @@ class RetrievalParams(BaseModel):
         description="相似度阈值，低于此分的命中不返回；默认 0 = 不过滤",
     )
     mode: RetrievalMode = Field(default=RetrievalMode.VECTOR, description="检索模式")
+    vector_weight: float = Field(
+        default=0.9, ge=0.0, le=1.0,
+        description="hybrid 专用：向量路票权（关键词路 = 1-此值），其他 mode 忽略；"
+                    "默认 0.9 = 基准五点扫描最优（2026-07-18，recall@10 0.804 唯一超纯向量点）",
+    )
 
 @dataclass(slots=True)
 class RetrievalResult:
