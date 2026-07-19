@@ -55,9 +55,8 @@ class AIModelService:
         api_key = data.api_key or decrypt(provider.api_key_encrypted)
 
         # 3. 连通性验证（顺带探测固有信息，如 embedding 维度）
-        client = ModelClient.build_client(base_url, api_key)
         validator = get_validator(provider.provider_type, data.model_type)
-        probed_meta = await validator.validate(client, data.model_name)
+        probed_meta = await validator.validate(base_url, api_key, data.model_name)
 
         # 4. 验证通过，入库
         model = await AIModel.create(
@@ -110,9 +109,8 @@ class AIModelService:
             model_name = update_fields.get("model_name", model.model_name)
             model_type = update_fields.get("model_type", model.model_type)
 
-            client = ModelClient.build_client(base_url, api_key)
             validator = get_validator(provider.provider_type, model_type)
-            await validator.validate(client, model_name)
+            await validator.validate(base_url, api_key, model_name)
 
         await AIModel.filter(id=model_id).update(**update_fields)
         return await AIModel.filter(id=model_id).first()

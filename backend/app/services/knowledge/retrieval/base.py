@@ -7,6 +7,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import StrEnum
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -39,6 +40,12 @@ class RetrievalParams(BaseModel):
         description="hybrid 专用：向量路票权（关键词路 = 1-此值），其他 mode 忽略；"
                     "默认 0.9 = 基准五点扫描最优（2026-07-18，recall@10 0.804 唯一超纯向量点）",
     )
+    rerank_model_id: UUID | None = Field(
+        default=None,
+        description="精排模型 id；非空即开启两级管线（粗排窗口放大+阈值移交精排），"
+                    "None = 单级检索、行为与既往完全一致",
+    )
+
 
 @dataclass(slots=True)
 class RetrievalResult:

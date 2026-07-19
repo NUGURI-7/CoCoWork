@@ -32,15 +32,19 @@ class RetrievalHit(BaseModel):
 class RetrievalTestOut(BaseModel):
     """命中测试响应：命中列表 + 耗时（不落库，仅本次响应展示）。
 
-    耗时拆三段，定位是 embedding 慢还是 SQL 慢：
+    耗时拆四段，定位是 embedding 慢、SQL 慢还是精排慢：
     - embed_ms：query 向量化耗时（调 embedding 模型，网络请求，通常占大头）
     - search_ms：pgvector 检索 SQL 耗时（本地 DB，通常很快）
+    - rerank_ms：精排打分耗时（调 rerank 模型，网络请求；未开启为 0）
     - total_ms：service 内总耗时
     """
 
     hits: list[RetrievalHit] = Field(description="命中段列表")
     embed_ms: float = Field(description="query 向量化耗时（毫秒）")
     search_ms: float = Field(description="检索 SQL 耗时（毫秒）")
+    rerank_ms: float = Field(default=0.0, description="精排耗时（毫秒），未开启 rerank 时为 0")
     total_ms: float = Field(description="总耗时（毫秒）")
+    rerank_ms: float = Field(default=0.0, description="精排耗时（毫秒），未开启 rerank 时为 0")
+    
 
 

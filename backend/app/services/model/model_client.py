@@ -32,7 +32,7 @@ class ModelClient:
         )
 
     @staticmethod
-    def _resolve_credentials(model: AIModel) -> tuple[str, str]:
+    def resolve_credentials(model: AIModel) -> tuple[str, str]:
         """解析实际使用的 base_url 和 api_key（Model 级优先，fallback Provider 级）。"""
         base_url = model.base_url or model.provider.base_url
         api_key_encrypted = model.api_key_encrypted or model.provider.api_key_encrypted
@@ -41,7 +41,7 @@ class ModelClient:
     @classmethod
     def get_model_client(cls, model: AIModel) -> AsyncOpenAI:
         """从 AIModel 构造客户端（含 fallback 逻辑）。"""
-        base_url, api_key = cls._resolve_credentials(model)
+        base_url, api_key = cls.resolve_credentials(model)
         return cls.build_client(base_url, api_key)
 
     @classmethod

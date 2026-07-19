@@ -17,6 +17,8 @@ from app.services.knowledge.retrieval.base import (
 from app.services.knowledge.retrieval.hybrid import HybridRetriever
 from app.services.knowledge.retrieval.keyword import KeywordRetriever
 from app.services.knowledge.retrieval.vector import VectorRetriever
+from app.models import AIModel
+from app.services.knowledge.retrieval.reranker import rerank_hits, rerank_window
 
 
 class RetrievalService:
@@ -63,10 +65,50 @@ class RetrievalService:
 
         # 3. 执行 + 外圈总耗时（不含归属校验，跟老代码 total_ms 语义对齐）
         t0 = time.perf_counter()
-        result = await retriever.retrieve(kb, params)
+        if params.rerank_model_id is None:
+            # 单级：行为与既往完全一致
+            result = await retriever.retrieve(kb, params)
+        else:
+            # 两级：粗排（窗口放大 + 阈值置 0，过滤权移交精排）→ 精排
+            rerank_model = await self._get_rerank_model(user, params.rerank_model_id)
+
+            coarse_params = params.model_copy(update={
+                "top_k": rerank_window(params.top_k),
+                "similarity_threshold": 0.0,
+            })
+            result = await retriever.retrieve(kb, coarse_params)
+
+            t_rerank = time.perf_counter()
+            result.hits = await rerank_hits(
+                model=rerank_model,
+                query=params.query,
+                hits=result.hits,
+                top_k=params.top_k,
+                similarity_threshold=params.similarity_threshold,
+            )
+            result.timings["rerank_ms"] = round((time.perf_counter() - t_rerank) * 1000, 1)
+
         t1 = time.perf_counter()
         result.timings["total_ms"] = round((t1 - t0) * 1000, 1)
         return result
+
+    @staticmethod
+    async def _get_rerank_model(user: User, model_id: UUID) -> AIModel:
+        """取 rerank 模型：归属 + 类型 + 启用三重校验，带 provider 供解析凭证。"""
+        model = await (
+            AIModel
+            .filter(
+                id=model_id,
+                model_type="rerank",
+                is_enabled=True,
+                provider__created_by=user,
+            )
+            .prefetch_related("provider")
+            .first()
+        )
+        if model is None:
+            raise NotFound404("Rerank 模型不存在或不可用")
+        return model
 
 
 async def get_retrieval_service() -> RetrievalService:

@@ -4,12 +4,15 @@ from app.services.model.validators.openai_validators import (
     OpenAIChatValidator,
     OpenAIEmbeddingValidator,
 )
+from app.services.model.rerank import CohereRerankClient
+from app.services.model.validators.rerank_validator import RerankValidator
 
 _defaults: dict[str, BaseModelValidator] = {
     "chat": OpenAIChatValidator(),
     "embedding": OpenAIEmbeddingValidator(),
     "vision": OpenAIChatValidator(),
     "multimodal": OpenAIChatValidator(),
+    "rerank": RerankValidator(CohereRerankClient()),
 }
 
 _overrides: dict[tuple[str, str], BaseModelValidator] = {

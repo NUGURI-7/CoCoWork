@@ -93,5 +93,6 @@ async def retrieval_test(
         hits=result.hits,
         embed_ms=result.timings.get("embed_ms", 0.0),
         search_ms=result.timings.get("search_ms", 0.0),
+        rerank_ms=result.timings.get("rerank_ms", 0.0),
         total_ms=result.timings.get("total_ms", 0.0),
     ))
