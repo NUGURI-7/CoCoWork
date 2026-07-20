@@ -44,7 +44,6 @@ class RetrievalTestOut(BaseModel):
     search_ms: float = Field(description="检索 SQL 耗时（毫秒）")
     rerank_ms: float = Field(default=0.0, description="精排耗时（毫秒），未开启 rerank 时为 0")
     total_ms: float = Field(description="总耗时（毫秒）")
-    rerank_ms: float = Field(default=0.0, description="精排耗时（毫秒），未开启 rerank 时为 0")
-    
+
 
 
