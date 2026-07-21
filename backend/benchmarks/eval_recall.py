@@ -12,6 +12,8 @@ timings 埋点分位数。
         --qrels ../data/medical/qrels.dev.tsv
 
 - ``--mode``：检索模式 vector（默认）/ keyword，与产品 RetrievalMode 同名对齐
+- ``--rerank-model``：给了就走两级管线（粗排窗口放大 → 精排重打分 → 阈值 →
+  截 top_k），不给 = 单级检索，与既往档案同口径可直接对照
 - ``--workers``：并发数（默认 1 = 顺序）。质量分数不受并发影响；客户端延迟
   分位数只在顺序跑时采集（并发互相挤占、耗时测的是排队不是查询），并发跑时
   延迟以 ``--explain`` 的服务端采样为准（它始终独立顺序执行、不受污染）
@@ -27,25 +29,21 @@ import statistics
 import time
 from datetime import datetime
 from pathlib import Path
+from uuid import UUID
 
 from ranx import Qrels, Run, evaluate
 from tortoise import connections
 from tortoise.transactions import in_transaction
 
 from app.db.postgresql import pg_client
+from app.models import AIModel, User
 from app.models.knowledge import Paragraph
 from app.services.knowledge.retrieval.base import RetrievalMode, RetrievalParams
-from app.services.knowledge.retrieval.hybrid import HybridRetriever
-from app.services.knowledge.retrieval.keyword import (
-    KeywordRetriever,
-    _to_tsquery_literal,
-)
+from app.services.knowledge.retrieval.keyword import _to_tsquery_literal
+from app.services.knowledge.retrieval.reranker import rerank_window
+from app.services.knowledge.retrieval.service import RetrievalService
 from app.services.knowledge.retrieval.sql import load_sql
-from app.services.knowledge.retrieval.vector import (
-    CANDIDATE_FACTOR,
-    VectorRetriever,
-    _to_vector_literal,
-)
+from app.services.knowledge.retrieval.vector import CANDIDATE_FACTOR, _to_vector_literal
 from app.services.knowledge.stopwords import STOPWORDS
 from app.services.knowledge.tokenization import tokenize_query
 from app.services.model import ModelClient
@@ -74,6 +72,37 @@ def _load_qrels(path: Path) -> dict[str, dict[str, int]]:
             qid, _, pid, rel = line.split()
             qrels.setdefault(qid, {})[pid] = int(rel)
     return qrels
+
+
+async def _resolve_rerank_model(model_ref: str) -> AIModel:
+    """按 UUID 或模型名找 rerank 模型（同名多个时报错让用户改用 UUID）。
+
+    与 `_resolve_kb` 同款双形态解析——跑实验时记名字比记 UUID 现实。
+    只在 rerank 类型里找：拿错类型的模型上游会 400，不如在这里就撞墙。
+    """
+    try:
+        model_id = UUID(model_ref)
+    except ValueError:
+        model_id = None
+
+    base = AIModel.filter(model_type="rerank")
+    if model_id is not None:
+        model = await base.filter(id=model_id).first()
+        if model is None:
+            raise SystemExit(f"rerank 模型不存在或类型不符：{model_ref}")
+        return model
+
+    models = await base.filter(model_name=model_ref) or await base.filter(
+        display_name=model_ref,
+    )
+    if not models:
+        raise SystemExit(f"rerank 模型不存在：{model_ref}")
+    if len(models) > 1:
+        ids = "\n".join(f"  {m.id}  {m.model_name}" for m in models)
+        raise SystemExit(
+            f"同名 rerank 模型有 {len(models)} 个，请改用 --rerank-model <UUID>：\n{ids}"
+        )
+    return models[0]
 
 
 def _percentiles(values: list[float]) -> dict[str, float]:
@@ -195,14 +224,25 @@ async def run_eval(args: argparse.Namespace) -> None:
     print(f"待评 {len(qids):,} 条 query（top_k={args.top_k}）\n")
 
     mode = RetrievalMode(args.mode)
-    retriever = {
-        RetrievalMode.VECTOR: VectorRetriever(),
-        RetrievalMode.KEYWORD: KeywordRetriever(),
-        RetrievalMode.HYBRID: HybridRetriever(),
-    }[mode]
+    # 走产品调度层而非直连 retriever：rerank 的四步编排（粗排放大 → 精排 →
+    # 阈值 → 截断）住在调度层，绕过去就考不到真实管线。代价 = 每条 query 多一次
+    # KB 主键查询，换「脚本与产品同源、零漂移」这条基准铁律，值。
+    # 不传 rerank_model_id 时调度层原样调用 retriever，与改造前同一行代码。
+    service = RetrievalService()
+    user = await User.get(id=kb.created_by_id)  # 调度层归属校验要
+    rerank_model = (
+        await _resolve_rerank_model(args.rerank_model) if args.rerank_model else None
+    )
+    if rerank_model:
+        print(
+            f"精排开启：{rerank_model.model_name}"
+            f"（粗排交货 {rerank_window(args.top_k)} 条 → 精排截 {args.top_k} 条）\n"
+        )
+
     run_dict: dict[str, dict[str, float]] = {}
     embed_ms: list[float] = []
     search_ms: list[float] = []
+    rerank_ms: list[float] = []
     start_at = time.monotonic()
     done = 0
     failed: dict[str, str] = {}
@@ -218,12 +258,13 @@ async def run_eval(args: argparse.Namespace) -> None:
             params = RetrievalParams(
                 query=args.query_prefix + queries[qid], top_k=args.top_k, mode=mode,
                 vector_weight=args.vector_weight,
+                rerank_model_id=rerank_model.id if rerank_model else None,
             )
             # 单条超时兜底：远端连接半死（TCP 断了没通知）会让 await 永远等下去，
             # 与其无声卡死不如记败继续；连续多条失败 = 连接大概率已死，熔断止损
             try:
                 result = await asyncio.wait_for(
-                    retriever.retrieve(kb, params), timeout=args.timeout,
+                    service.retrieve(user, kb.id, params), timeout=args.timeout,
                 )
             except Exception as e:  # noqa: BLE001 —— 实验设施，记案底不挑错型
                 failed[qid] = f"{type(e).__name__}: {e}"
@@ -242,6 +283,8 @@ async def run_eval(args: argparse.Namespace) -> None:
         # timings 形态随 mode 不同（keyword 无 embed），有哪段收哪段
         if "embed_ms" in result.timings:
             embed_ms.append(result.timings["embed_ms"])
+        if "rerank_ms" in result.timings:
+            rerank_ms.append(result.timings["rerank_ms"])
         search_ms.append(result.timings["search_ms"])
         done += 1
         if done % 20 == 0 or done == len(qids):
@@ -260,9 +303,11 @@ async def run_eval(args: argparse.Namespace) -> None:
     if args.explain:
         n = min(args.explain, len(qids))
         print(f"\n[explain] 采样 {n} 条 query 的服务端执行时间…")
+        # 开精排时粗排真实交货量 = 放大后的窗口，EXPLAIN 照这个口径测才对得上
+        explain_top_k = rerank_window(args.top_k) if rerank_model else args.top_k
         for i, qid in enumerate(qids[:n]):
             server_ms.append(
-                await explain_fn(kb, queries[qid], args.top_k, show_plan=(i == 0))
+                await explain_fn(kb, queries[qid], explain_top_k, show_plan=(i == 0))
             )
 
     metrics = [f"recall@{args.top_k}", f"mrr@{args.top_k}"]
@@ -275,11 +320,13 @@ async def run_eval(args: argparse.Namespace) -> None:
         client_latency = {
             "search": _percentiles(search_ms),
             "embed": _percentiles(embed_ms) or "无（keyword 模式不调 embedding）",
+            "rerank": _percentiles(rerank_ms) or "无（未开精排）",
         }
     else:
         client_latency = {
             "search": f"未采（workers={args.workers} 并发跑，以 search_server 为准）",
             "embed": f"未采（workers={args.workers} 并发跑）",
+            "rerank": f"未采（workers={args.workers} 并发跑）",
         }
     report = {
         "ran_at": datetime.now().isoformat(timespec="seconds"),
@@ -290,6 +337,8 @@ async def run_eval(args: argparse.Namespace) -> None:
             "top_k": args.top_k,
             "workers": args.workers,
             "vector_weight": args.vector_weight,
+            "rerank_model": rerank_model.model_name if rerank_model else None,
+            "rerank_window": rerank_window(args.top_k) if rerank_model else None,
             "queries_evaluated": len(scored_qids),
             "queries_failed": len(failed),
             "query_prefix": args.query_prefix,
@@ -330,6 +379,11 @@ def main() -> None:
     parser.add_argument(
         "--vector-weight", type=float, default=0.5,
         help="hybrid 专用：向量路票权（默认 0.5 = 等权），其他 mode 忽略",
+    )
+    parser.add_argument(
+        "--rerank-model", default=None,
+        help="精排模型 UUID 或模型名；给了走两级管线（粗排窗口放大 → 精排重打分 → "
+             "阈值 → 截 top_k），不给 = 单级检索，与既往档案同口径可直接对照",
     )
     parser.add_argument("--limit", type=int, default=None, help="只跑前 N 条 query")
     parser.add_argument("--note", default="", help="本次实验备注（改了什么变量）")

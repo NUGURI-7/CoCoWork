@@ -1,0 +1,53 @@
+{
+  "ran_at": "2026-07-20T17:47:29",
+  "note": "冒烟：脚本改走 service 后的单级回归",
+  "env": {
+    "kb_name": "电商检索基准",
+    "kb_id": "019f7abd-5e60-7102-bc50-91de371a3311",
+    "paragraphs": 10000,
+    "chunks": 10000,
+    "embedding_dim": 1024,
+    "chunk_config": {
+      "overlap": 50,
+      "strategy": "recursive",
+      "chunk_size": 256
+    },
+    "indexes": [
+      "CREATE INDEX embeddings_hnsw_medical ON public.embeddings USING hnsw (((embedding)::vector(1024)) vector_cosine_ops) WHERE (knowledge_base_id = '019f6557-07f6-7562-8f89-79662490b257'::uuid)",
+      "CREATE INDEX idx_paragraphs_search_vector ON public.paragraphs USING gin (search_vector)",
+      "CREATE INDEX embeddings_hnsw_ecom ON public.embeddings USING hnsw (((embedding)::vector(1024)) vector_cosine_ops) WHERE (knowledge_base_id = '019f7abd-5e60-7102-bc50-91de371a3311'::uuid)"
+    ],
+    "tokenizer": {
+      "stopwords": 682
+    }
+  },
+  "params": {
+    "mode": "vector",
+    "top_k": 3,
+    "workers": 1,
+    "vector_weight": 0.5,
+    "rerank_model": null,
+    "rerank_window": null,
+    "queries_evaluated": 20,
+    "queries_failed": 0,
+    "query_prefix": ""
+  },
+  "scores": {
+    "recall@3": 0.8,
+    "mrr@3": 0.7167
+  },
+  "latency_ms": {
+    "search": {
+      "p50": 247.6,
+      "p95": 703.1,
+      "p99": 727.8
+    },
+    "embed": {
+      "p50": 192.7,
+      "p95": 363.5,
+      "p99": 2091.1
+    },
+    "rerank": "无（未开精排）",
+    "search_server": "未采样（--explain N 开启）"
+  }
+}
