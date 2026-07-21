@@ -12,6 +12,7 @@ import type {
   KnowledgeBaseCreatePayload,
   KnowledgeBaseUpdatePayload,
   PageData,
+  RetrievalMode,
   RetrievalTestResult,
   UploadInitOut,
 } from '@/types'
@@ -192,10 +193,26 @@ export function uploadDocumentToR2(
 // 检索 / 命中测试
 // ============================================================================
 
-/** 命中测试（语义检索）：返回命中段 + 相似度 + 三段耗时，不落库。 */
-export function retrievalTest(kbId: string, query: string, topK: number) {
+/** 命中测试（语义检索）：返回命中段 + 相似度 + 四段耗时，不落库。
+ *
+ * 检索参数由调用方给全 —— **后端不会去读知识库上配的默认值**：
+ * `mode` 不传按 vector 走、`rerankModelId` 不传就是不做精排。
+ * 要复现「agent 实际拿到什么」，得把库上配的值显式传进来。
+ */
+export function retrievalTest(
+  kbId: string,
+  params: {
+    query: string
+    topK: number
+    mode?: RetrievalMode
+    /** 传模型 id = 开精排；不传 / null = 不开 */
+    rerankModelId?: string | null
+  },
+) {
   return post<RetrievalTestResult>(`/knowledge-bases/${kbId}/retrieval-test`, {
-    query,
-    top_k: topK,
+    query: params.query,
+    top_k: params.topK,
+    ...(params.mode && { mode: params.mode }),
+    ...(params.rerankModelId && { rerank_model_id: params.rerankModelId }),
   })
 }

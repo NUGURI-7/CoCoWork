@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Lock, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { listAllModels } from '@/api/model'
 import { deleteKnowledgeBase, updateKnowledgeBase } from '@/api/knowledge'
 import {
   AlertDialog,
@@ -17,9 +18,20 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { RETRIEVAL_MODE_LABEL } from '@/lib/retrieval'
 import { useWorkspaceTabsStore } from '@/stores/tab-store'
-import type { KnowledgeBase } from '@/types'
+import type { AIModel, KnowledgeBase, RetrievalMode } from '@/types'
+
+/** Radix Select 的 value 不允许空字符串，用哨兵值表示「不配精排模型」 */
+const SENTINEL_NONE = '__none__'
 
 interface KnowledgeSettingsProps {
   kb: KnowledgeBase
@@ -27,7 +39,7 @@ interface KnowledgeSettingsProps {
   onUpdated?: (kb: KnowledgeBase) => void
 }
 
-/** 设置 tab —— 三分区：基本信息(可编辑) / 向量化配置(只读锁定) / 危险操作 */
+/** 设置 tab —— 四分区：基本信息 / 检索设置 / 向量化配置(只读) / 危险操作 */
 export function KnowledgeSettings({ kb, onUpdated }: KnowledgeSettingsProps) {
   const navigate = useNavigate()
   const [name, setName] = useState(kb.name)
@@ -35,6 +47,26 @@ export function KnowledgeSettings({ kb, onUpdated }: KnowledgeSettingsProps) {
   const [saving, setSaving] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+
+  // 检索设置
+  const [retrievalMode, setRetrievalMode] = useState<RetrievalMode>(kb.retrieval_mode)
+  const [rerankModelId, setRerankModelId] = useState<string>(kb.rerank_model_id ?? SENTINEL_NONE)
+  const [rerankModels, setRerankModels] = useState<AIModel[]>([])
+  const [rerankModelsLoading, setRerankModelsLoading] = useState(false)
+  const [retrievalSaving, setRetrievalSaving] = useState(false)
+
+  const retrievalDirty =
+    retrievalMode !== kb.retrieval_mode ||
+    (rerankModelId === SENTINEL_NONE ? kb.rerank_model_id !== null : rerankModelId !== kb.rerank_model_id)
+
+  // 加载精排模型列表
+  useEffect(() => {
+    setRerankModelsLoading(true)
+    listAllModels({ modelType: 'rerank', enabledOnly: true })
+      .then(setRerankModels)
+      .catch(() => {})
+      .finally(() => setRerankModelsLoading(false))
+  }, [])
 
   const dirty =
     name.trim() !== kb.name || description.trim() !== kb.description
@@ -61,6 +93,22 @@ export function KnowledgeSettings({ kb, onUpdated }: KnowledgeSettingsProps) {
   function handleReset() {
     setName(kb.name)
     setDescription(kb.description)
+  }
+
+  async function handleRetrievalSave() {
+    setRetrievalSaving(true)
+    try {
+      const updated = await updateKnowledgeBase(kb.id, {
+        retrieval_mode: retrievalMode,
+        rerank_model_id: rerankModelId === SENTINEL_NONE ? null : rerankModelId,
+      })
+      toast.success('检索设置已保存')
+      onUpdated?.(updated)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '保存检索设置失败')
+    } finally {
+      setRetrievalSaving(false)
+    }
   }
 
   async function handleDelete() {
@@ -119,7 +167,71 @@ export function KnowledgeSettings({ kb, onUpdated }: KnowledgeSettingsProps) {
         </div>
       </Section>
 
-      {/* 分区2 · 向量化配置（只读锁定） */}
+      {/* 分区2 · 检索设置 */}
+      <Section
+        title="检索设置"
+        desc="agent 调用本知识库（KB-as-tool）时使用的检索配置；命中测试面板可临时换模式试，不影响这里。"
+      >
+        <div className="grid gap-2">
+          <Label className="text-xs">检索模式</Label>
+          <Select value={retrievalMode} onValueChange={(v) => setRetrievalMode(v as RetrievalMode)}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(RETRIEVAL_MODE_LABEL).map(([k, label]) => (
+                <SelectItem key={k} value={k}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-muted-foreground text-xs">
+            向量检索按语义找、关键词检索按词面找、混合检索两路并发后融合排名。
+            词面精确查询（编号 / 型号 / 专有名词）多的库才值得开混合。
+          </p>
+        </div>
+        <div className="grid gap-2">
+          <Label className="text-xs">精排模型</Label>
+          <Select
+            value={rerankModelId}
+            onValueChange={setRerankModelId}
+            disabled={rerankModelsLoading}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue
+                placeholder={rerankModelsLoading ? '加载中…' : '选择精排模型'}
+              />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={SENTINEL_NONE}>关闭（单级检索）</SelectItem>
+              {rerankModels.map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  <span>{m.display_name}</span>
+                  <span className="text-muted-foreground ml-2 font-mono text-xs">
+                    {m.model_name}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-muted-foreground text-xs">
+            配了就启用：先放大候选窗口粗排，再由精排模型逐条重打分、截断返回。
+            排序更准，代价是每次检索多一次模型调用。
+          </p>
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
+          <Button
+            size="sm"
+            onClick={handleRetrievalSave}
+            disabled={!retrievalDirty || retrievalSaving}
+          >
+            {retrievalSaving ? '保存中…' : '保存检索设置'}
+          </Button>
+        </div>
+      </Section>
+
+      {/* 分区3 · 向量化配置（只读锁定） */}
       <Section
         title="向量化配置"
         desc="建库后锁定。更换 embedding 模型或切块参数需重新向量化全部文档（后续支持）。"
@@ -136,7 +248,7 @@ export function KnowledgeSettings({ kb, onUpdated }: KnowledgeSettingsProps) {
         <ReadonlyField label="切分策略" value="递归切分" />
       </Section>
 
-      {/* 分区3 · 危险操作 */}
+      {/* 分区4 · 危险操作 */}
       <Section
         title="危险操作"
         tone="destructive"

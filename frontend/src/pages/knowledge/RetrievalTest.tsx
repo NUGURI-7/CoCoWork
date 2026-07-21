@@ -1,9 +1,11 @@
 import { useState } from 'react'
-import { FileText, Search, Timer } from 'lucide-react'
+import { FileText, Layers, Search, Timer } from 'lucide-react'
 import { ring } from 'ldrs'
 
+import { retrievalTest } from '@/api/knowledge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -11,32 +13,58 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { retrievalTest } from '@/api/knowledge'
-import type { RetrievalTestResult } from '@/types'
+import { RETRIEVAL_MODE_LABEL } from '@/lib/retrieval'
+import type { RetrievalMode, RetrievalTestResult } from '@/types'
 
 ring.register()
 
 interface RetrievalTestProps {
   kbId: string
+  /** 本库设置里配的检索模式，作为面板的初值 */
+  kbMode: RetrievalMode
+  /** 本库配置的精排模型；null = 没配，精排开关不可用 */
+  rerankModelId: string | null
+  rerankModelName: string | null
 }
 
 /**
- * 检索测试 tab：输入 query → 命中片段列表 + 相似度 + 来源文档 + 检索耗时。
- * 走真实后端语义检索（pgvector），不落库。
+ * 检索测试 tab = 实验台：输入 query → 命中片段 + 相似度 + 来源 + 分段耗时，不落库。
+ *
+ * 两个旋钮的形态刻意不同，判据是「枚举参数就地试，资源引用只在一处绑」：
+ * - **检索模式**是枚举参数，面板上直接换（**仅本次生效、不改库设置**），
+ *   实验台不能就地换参数就没有存在价值；
+ * - **精排模型**是资源引用，只在设置页绑定，这里只给开关——两处都能选具体模型
+ *   会让「我改了到底存没存」变得含糊。关 = 不化妆的原始召回（索引体检，默认）；
+ *   开 = 用库上配好的模型，预览 agent 实际会拿到什么。
  */
-export function RetrievalTest({ kbId }: RetrievalTestProps) {
+export function RetrievalTest({
+  kbId,
+  kbMode,
+  rerankModelId,
+  rerankModelName,
+}: RetrievalTestProps) {
   const [query, setQuery] = useState('')
   const [topK, setTopK] = useState('5')
   const [results, setResults] = useState<RetrievalTestResult | null>(null)
   const [loading, setLoading] = useState(false)
+  const [mode, setMode] = useState<RetrievalMode>(kbMode)
+  const [rerankOn, setRerankOn] = useState(false)
+
+  const rerankAvailable = rerankModelId !== null
 
   async function handleSearch() {
     const q = query.trim()
     if (!q) return
     setLoading(true)
     try {
-      const res = await retrievalTest(kbId, q, parseInt(topK, 10))
+      const res = await retrievalTest(kbId, {
+        query: q,
+        topK: parseInt(topK, 10),
+        mode,
+        rerankModelId: rerankOn && rerankAvailable ? rerankModelId : undefined,
+      })
       setResults(res)
     } finally {
       setLoading(false)
@@ -63,26 +91,72 @@ export function RetrievalTest({ kbId }: RetrievalTestProps) {
           className="min-h-20 resize-none text-sm"
         />
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span className="text-muted-foreground text-xs">topK</span>
-            <Select value={topK} onValueChange={setTopK}>
-              <SelectTrigger className="h-8 w-20">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {['3', '5', '10', '20'].map((n) => (
-                  <SelectItem key={n} value={n}>
-                    {n}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground text-xs">模式</span>
+              <Select value={mode} onValueChange={(v) => setMode(v as RetrievalMode)}>
+                <SelectTrigger className="h-8 w-32">
+                  {/* 显式给 children：否则 Radix 会把选中项的全部内容（含「· 库默认」标记）搬进触发器 */}
+                  <SelectValue>{RETRIEVAL_MODE_LABEL[mode]}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(RETRIEVAL_MODE_LABEL).map(([k, label]) => (
+                    <SelectItem key={k} value={k}>
+                      {label}
+                      {k === kbMode && (
+                        <span className="text-muted-foreground ml-1 text-xs">· 库默认</span>
+                      )}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground text-xs">topK</span>
+              <Select value={topK} onValueChange={setTopK}>
+                <SelectTrigger className="h-8 w-20">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {['3', '5', '10', '20'].map((n) => (
+                    <SelectItem key={n} value={n}>
+                      {n}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                id="retrieval-rerank"
+                checked={rerankOn}
+                onCheckedChange={setRerankOn}
+                disabled={!rerankAvailable}
+              />
+              <Label
+                htmlFor="retrieval-rerank"
+                className="text-muted-foreground text-xs font-normal"
+              >
+                精排
+              </Label>
+            </div>
           </div>
           <Button size="sm" disabled={!query.trim() || loading} onClick={handleSearch}>
             <Search className="size-4" />
             检索
           </Button>
         </div>
+        <p className="text-muted-foreground text-xs">
+          面板上的模式仅本次检索生效，不会改动库设置 ·{' '}
+          {rerankAvailable ? (
+            <>
+              精排模型：{rerankModelName}
+              {rerankOn ? '（已开启，预览 agent 实际拿到的结果）' : '（关闭中，看不化妆的原始召回）'}
+            </>
+          ) : (
+            <>本库未配置精排模型，可在「设置」tab 配置后开启</>
+          )}
+        </p>
       </div>
 
       {/* 结果区 */}
@@ -126,13 +200,19 @@ function ResultsArea({
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-muted-foreground text-xs">命中 {results.hits.length} 条片段</span>
+      {/* 命中数 / 耗时两枚独立气泡，同排靠左 */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="bg-muted flex items-center gap-1.5 rounded-md px-2.5 py-1">
+          <Layers className="text-muted-foreground size-4" />
+          <span className="font-mono text-sm font-semibold">{results.hits.length}</span>
+          <span className="text-muted-foreground text-xs">条命中</span>
+        </div>
         <div className="bg-brand-subtle text-brand flex items-center gap-1.5 rounded-md px-2.5 py-1">
           <Timer className="size-4" />
           <span className="font-mono text-sm font-semibold">{results.total_ms} ms</span>
-          <span className="text-brand font-mono text-xs">
+          <span className="font-mono text-xs opacity-80">
             · 向量化 {results.embed_ms} · 检索 {results.search_ms}
+            {results.rerank_ms > 0 ? ` · 精排 ${results.rerank_ms}` : ''}
           </span>
         </div>
       </div>

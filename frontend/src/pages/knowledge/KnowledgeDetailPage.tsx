@@ -158,7 +158,12 @@ export default function KnowledgeDetailPage() {
         </TabsContent>
 
         <TabsContent value="retrieval" className="mt-4">
-          <RetrievalTest kbId={kbId} />
+          <RetrievalTest
+            kbId={kbId}
+            kbMode={kb.retrieval_mode}
+            rerankModelId={kb.rerank_model_id}
+            rerankModelName={kb.rerank_model_name}
+          />
         </TabsContent>
 
         <TabsContent value="settings" className="mt-4">

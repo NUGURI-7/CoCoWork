@@ -28,6 +28,7 @@ export type {
 } from './model'
 export type {
   KnowledgeBaseStatus,
+  RetrievalMode,
   ChunkConfig,
   KnowledgeBase,
   KnowledgeBaseCreatePayload,

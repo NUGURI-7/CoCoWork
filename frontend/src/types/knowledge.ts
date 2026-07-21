@@ -5,6 +5,9 @@
 /** 库级状态（spec §3.1：换模型 reindexing） */
 export type KnowledgeBaseStatus = 'ready' | 'reindexing'
 
+/** 检索模式（对齐 backend RetrievalMode StrEnum） */
+export type RetrievalMode = 'vector' | 'keyword' | 'hybrid'
+
 /** 库级切块配置（一套，作用于库内所有文档） */
 export interface ChunkConfig {
   chunk_size: number
@@ -24,6 +27,9 @@ export interface KnowledgeBase {
   status: KnowledgeBaseStatus
   doc_count: number
   chunk_count: number
+  retrieval_mode: RetrievalMode
+  rerank_model_id: string | null
+  rerank_model_name: string | null
   created_at: string
   updated_at: string
 }
@@ -41,6 +47,9 @@ export interface KnowledgeBaseUpdatePayload {
   name?: string
   description?: string
   chunk_config?: ChunkConfig
+  retrieval_mode?: RetrievalMode
+  /** null = 关闭精排；不传 = 不变 */
+  rerank_model_id?: string | null
 }
 
 // ============================================================================
@@ -110,16 +119,18 @@ export interface RetrievalHit {
   score: number
 }
 
-/** 命中测试响应（对齐后端 RetrievalTestOut）：命中列表 + 三段耗时（毫秒）
+/** 命中测试响应（对齐后端 RetrievalTestOut）：命中列表 + 四段耗时（毫秒）
  *
  * - `embed_ms`：query 向量化耗时（调 embedding 模型，通常占大头）
  * - `search_ms`：检索 SQL 耗时
+ * - `rerank_ms`：精排耗时（未开启精排时为 0）
  * - `total_ms`：总耗时
  */
 export interface RetrievalTestResult {
   hits: RetrievalHit[]
   embed_ms: number
   search_ms: number
+  rerank_ms: number
   total_ms: number
 }
 
