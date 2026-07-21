@@ -12,14 +12,8 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from app.models import KnowledgeBase
+from app.models.knowledge import RetrievalMode
 from app.schemas.knowledge import RetrievalHit
-
-
-class RetrievalMode(StrEnum):
-    """检索模式（扩 mode 时此处加值）。"""
-    VECTOR = "vector"
-    KEYWORD = "keyword"
-    HYBRID = "hybrid"
 
 
 class RetrievalParams(BaseModel):

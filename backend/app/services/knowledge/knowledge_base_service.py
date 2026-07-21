@@ -38,8 +38,10 @@ class KnowledgeBaseService:
         if not kbs:
             return []
         model_ids = {kb.embedding_model_id for kb in kbs}
+        rerank_ids = {kb.rerank_model_id for kb in kbs if kb.rerank_model_id}
+        all_ids = model_ids | rerank_ids
         name_map = dict(
-            await AIModel.filter(id__in=model_ids).values_list("id", "display_name")
+            await AIModel.filter(id__in=all_ids).values_list("id", "display_name")
         )
         return [
             KnowledgeBaseOut(
@@ -55,6 +57,9 @@ class KnowledgeBaseService:
                 chunk_count=getattr(kb, "chunk_count", 0) or 0,
                 created_at=kb.created_at,
                 updated_at=kb.updated_at,
+                retrieval_mode=kb.retrieval_mode,
+                rerank_model_id=kb.rerank_model_id,
+                rerank_model_name=name_map.get(kb.rerank_model_id) if kb.rerank_model_id else None,
             )
             for kb in kbs
         ]
@@ -127,6 +132,21 @@ class KnowledgeBaseService:
             update_fields["description"] = data.description
         if data.chunk_config is not None:
             update_fields["chunk_config"] = data.chunk_config.model_dump()
+        if data.retrieval_mode is not None:
+            update_fields["retrieval_mode"] = data.retrieval_mode.value
+
+        if "rerank_model_id" in data.model_fields_set:
+            if data.rerank_model_id is None:
+                update_fields["rerank_model_id"] = None
+            else:
+                rerank_model = await AIModel.filter(
+                    id=data.rerank_model_id, provider__created_by=user,
+                ).first()
+                if rerank_model is None:
+                    raise NotFound404("精排模型不存在")
+                if rerank_model.model_type != "rerank":
+                    raise ValidationException("精排模型必须为 rerank 类型")
+                update_fields["rerank_model_id"] = data.rerank_model_id
 
         if update_fields:
             await KnowledgeBase.filter(id=kb_id).update(**update_fields)

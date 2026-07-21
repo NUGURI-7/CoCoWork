@@ -30,10 +30,19 @@ class DocStage(StrEnum):
     SPLITTING = "splitting"
     EMBEDDING = "embedding"
 
+
 class SourceType(StrEnum):
     CONTENT = "content"
     QUESTION = "question"  # v2 多向量留口子
-    TITLE = "title"        # v2 多向量留口子
+    TITLE = "title"  # v2 多向量留口子
+
+
+class RetrievalMode(StrEnum):
+    """检索模式（扩 mode 时此处加值；检索层 retrieval/base.py 从这里 re-export）。"""
+    VECTOR = "vector"
+    KEYWORD = "keyword"
+    HYBRID = "hybrid"
+
 
 class KnowledgeBase(UUIDBaseModel, TimestampMixin):
     """知识库：一组文档的集合，建库时锁定一个 embedding 模型。
@@ -41,6 +50,7 @@ class KnowledgeBase(UUIDBaseModel, TimestampMixin):
     - `embedding_model` / `embedding_dim`：锁定的向量化模型与维度（换模型 = 全库重建）
     - `chunk_config`：库级切块配置（chunk_size / overlap / strategy），改了需重切
     - `status`：库级状态（ready / reindexing，给换模型重建用）
+    - `retrieval_mode` / `rerank_model`：库级检索设置（默认 mode + 精排模型；rerank 无状态可热换，故 SET_NULL）
     """
 
     created_by = fields.ForeignKeyField(
@@ -58,9 +68,20 @@ class KnowledgeBase(UUIDBaseModel, TimestampMixin):
         KBStatus, max_length=20, default=KBStatus.READY,
         description="库级状态（换模型重建时切 reindexing）",
     )
+    retrieval_mode = fields.CharEnumField(
+        RetrievalMode, max_length=20, default=RetrievalMode.VECTOR,
+        db_default=RetrievalMode.VECTOR.value,
+        description="默认检索模式（KB tool 等无参调用方用；命中测试可请求级覆盖）",
+    )
+    rerank_model = fields.ForeignKeyField(
+        "models.AIModel", related_name="rerank_knowledge_bases", null=True,
+        on_delete=fields.SET_NULL,
+        description="精排模型；空 = 不开 rerank（选了即开，无独立开关）",
+    )
 
     class Meta:
         table = "knowledge_bases"
+
 
 class Document(UUIDBaseModel, TimestampMixin):
     """知识库下的文档。
@@ -116,7 +137,6 @@ class Paragraph(UUIDBaseModel, TimestampMixin):
     search_vector = TSVectorField(
         null=True, description="全文检索词料（jieba 分词 → tsvector，建 GIN 索引）",
     )
-
 
     class Meta:
         table = "paragraphs"

@@ -13,6 +13,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models import User
+from app.models.knowledge import RetrievalMode
 from app.schemas.knowledge import RetrievalHit
 from app.services.knowledge.retrieval import RetrievalParams, RetrievalService
 from app.tools.base import CoCoTool
@@ -42,9 +43,15 @@ class KnowledgeRetrievalTool(CoCoTool):
     kb_id: UUID
     user: User  # retrieval_service 归属校验需要
     default_top_k: int = 3
+    default_mode: RetrievalMode = RetrievalMode.VECTOR
+    default_rerank_model_id: UUID | None = None
 
     async def _execute(self, query: str) -> str:
-        params = RetrievalParams(query=query, top_k=self.default_top_k)
+        params = RetrievalParams(
+            query=query, top_k=self.default_top_k,
+            mode=self.default_mode,
+            rerank_model_id=self.default_rerank_model_id,
+        )
         result = await _retrieval_service.retrieve(self.user, self.kb_id, params)
 
         if not result.hits:

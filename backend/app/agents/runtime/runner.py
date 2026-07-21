@@ -191,9 +191,14 @@ async def assemble_tools(cfg: AgentConfig, user: User) -> list[BaseTool]:
         kbs = await KnowledgeBase.filter(
             id__in=cfg.knowledge,
             created_by=user
-        ).all()
+        ).prefetch_related("rerank_model").all()
 
         for kb in kbs:
+            # 精排模型被禁用时静默降级回单级检索：KB 上的是「默认值」，默认值失效
+            # 不该让整个库检索失灵（同 MCP 分支「禁用 id 自动过滤」的规矩）；
+            # 命中测试那条路显式传模型 id，仍然硬报错——那是用户的明确指令
+            rerank_model = kb.rerank_model
+
             tools.append(
                 KnowledgeRetrievalTool(
                     name=f"knowledge_{kb.id.hex[:8]}",
@@ -201,6 +206,10 @@ async def assemble_tools(cfg: AgentConfig, user: User) -> list[BaseTool]:
                     display_name=f"知识库《{kb.name}》",
                     kb_id=kb.id,
                     user=user,
+                    default_mode=kb.retrieval_mode,
+                    default_rerank_model_id=(
+                        rerank_model.id if rerank_model and rerank_model.is_enabled else None
+                    ),
                 )
             )
 

@@ -3,6 +3,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+from app.models.knowledge import RetrievalMode
 
 
 class ChunkConfig(BaseModel):
@@ -28,6 +29,8 @@ class KnowledgeBaseUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=150)
     description: str | None = Field(default=None, max_length=500)
     chunk_config: ChunkConfig | None = None
+    retrieval_mode: RetrievalMode | None = None
+    rerank_model_id: UUID | None = None
 
 
 class KnowledgeBaseOut(BaseModel):
@@ -43,6 +46,9 @@ class KnowledgeBaseOut(BaseModel):
     status: str
     doc_count: int = 0
     chunk_count: int = 0
+    retrieval_mode: str
+    rerank_model_id: UUID | None = None
+    rerank_model_name: str | None = None
     created_at: datetime
     updated_at: datetime
 
