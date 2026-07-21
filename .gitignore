@@ -16,6 +16,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+# 上面的 lib/ 来自 Python 打包模板，会误伤前端源码目录（shadcn 的 cn 等工具函数住这儿），放行
+!frontend/src/lib/
 parts/
 sdist/
 var/
