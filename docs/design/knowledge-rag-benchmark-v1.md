@@ -3,6 +3,8 @@
 > 范围：为 RAG **向量检索**建立一套可复现的**性能 + 召回**基准——量化检索延迟 / 召回随规模（N）的变化，并补齐挡在前面的三块缺口（HNSW 索引 / 批量导入 / 评测脚本）。
 > 不含：hybrid / FTS / RRF / rerank 的基准（v2）、parent-child 真实层级效果（需真实长文档线，Multi-CPR 给不了）、多领域横评、并发 QPS 压测（按需后置）、embedding 模型 fine-tune。
 > 本文是 `knowledge-rag-v1.md` 的专题延伸，聚焦"检索质量与性能的量化"，不改动既有 RAG 数据模型与检索逻辑。
+>
+> **本文只记「打算怎么搭这把尺子」。用它量出了什么、据此改了哪些决定 → `backend/benchmarks/FINDINGS.md`（实验发现录，与原始档案 `results/*.json` 同目录）。**
 
 ---
 
