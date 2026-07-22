@@ -2,7 +2,6 @@
 name = "cocowork-backend"
 version = "0.1.0"
 description = "CoCoWork backend — AI Agent management platform"
-readme = "../README.md"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi[all]>=0.128.0",
@@ -29,7 +28,14 @@ dependencies = [
     "langfuse>=4.11.0",
     "langchain-mcp-adapters>=0.3.0",
     "jieba>=0.42.1",
+    "saq>=0.26.4",
 ]
+
+# 进程入口：uv sync 时据此在 .venv/bin/ 生成同名可执行文件，
+# 之后 `uv run dev` 起 web、`uv run worker` 起任务队列
+[project.scripts]
+dev = "app.cli:dev"
+worker = "app.cli:worker"
 
 [dependency-groups]
 benchmarks = [
@@ -47,3 +53,13 @@ tortoise_orm = "app.db.postgresql.TORTOISE_CONFIG"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.uv]
+package = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]

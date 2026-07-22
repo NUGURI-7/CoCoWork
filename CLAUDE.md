@@ -37,7 +37,7 @@
 
 ```
 CoCoWork/
-├── backend/                  # FastAPI + Tortoise ORM + PostgreSQL + Redis + LangGraph + ARQ
+├── backend/                  # FastAPI + Tortoise ORM + PostgreSQL + Redis + LangGraph + SAQ
 │   ├── app/
 │   │   ├── __init__.py
 │   │   ├── main.py           # FastAPI 应用入口
@@ -53,7 +53,7 @@ CoCoWork/
 │   │   ├── db/
 │   │   │   └── postgresql.py # TORTOISE_CONFIG + PostgreSQLClient（非 FastAPI 上下文用）
 │   │   ├── agents/           # LangGraph Agent 定义
-│   │   └── tasks/            # ARQ 异步任务
+│   │   └── tasks/            # SAQ 异步任务
 │   ├── migrations/           # Tortoise ORM 迁移文件
 │   ├── tests/
 │   └── pyproject.toml        # 后端依赖管理（uv）

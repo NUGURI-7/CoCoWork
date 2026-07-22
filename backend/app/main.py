@@ -17,6 +17,7 @@ from app.core.logging import setup_logging
 from app.core.redis import RedisClient
 from app.db.postgresql import TORTOISE_CONFIG
 from app.scripts.seed_admin import seed_admin
+from app.tasks.queue import queue as task_queue
 from app.core.observability import init_langfuse, shutdown_langfuse
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -39,6 +40,7 @@ async def lifespan(app: FastAPI):
         try:
             yield
         finally:
+            await task_queue.disconnect()  # 队列自持一条 Redis 连接，与上面的 RedisClient 各自独立
             await redis_conn.close()
             shutdown_langfuse()
     logger.info("👋 应用已停止")
@@ -74,12 +76,8 @@ if _FRONTEND_DIST.is_dir():
 
 
 if __name__ == "__main__":
-    import uvicorn
+    # 转调 cli.dev()：IDE 直接跑 main.py 和终端 `uv run dev` 走同一个函数，
+    # 启动配置只有一处，不会漂移
+    from app.cli import dev
 
-    uvicorn.run(
-        "app.main:app",
-        host=settings.HOST,
-        port=settings.PORT,
-        reload=settings.RELOAD,
-        access_log=False,
-    )
+    dev()
