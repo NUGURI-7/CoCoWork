@@ -144,7 +144,7 @@ export default function KnowledgeDetailPage() {
               setPageData((prev) => ({
                 ...prev,
                 records: prev.records.map((d) =>
-                  d.id === docId ? { ...d, status: 'processing', stage: 'parsing' } : d,
+                  d.id === docId ? { ...d, status: 'processing', stage: 'queued' } : d,
                 ),
               }))
             }

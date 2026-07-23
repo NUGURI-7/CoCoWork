@@ -73,7 +73,7 @@
 - **知识库 / RAG 模块 v1 整片完工（片1-6 收官）+ 收尾增强**：数据层 + KB CRUD + 存储抽象 + 文档上传/下载 + 处理管线 + 检索/命中测试全栈打通；**增强**：文档批量向量化/删除（部分成功语义）、命中测试检索耗时展示、文档列表段数展示、触发同步置 processing 修「刷新后轮询丢失」。
   - **方案见** `docs/design/knowledge-rag-v1.md`（spec + §13 切片清单全部勾掉）+ `knowledge-rag-decisions.md`（决策/权衡）。六片：VectorField + pgvector + 4 表迁移 0005 + AIModel.meta 0006 + KB CRUD + 存储抽象 R2/Local + Document 上传 CRUD 下载 8 端点 + Splitter 抽象层 + `process_document()` + 触发端点 + enum 化迁移 0007/0008 + 检索 service + 命中测试端点。详见最近迭代。
   - **v2 方向**：~~FTS（keyword mode）~~ ✅（2026-07-18，sparse 基线 0.19 定档）→ ~~hybrid（RRF 融合）~~ ✅（2026-07-19 整片收官：加权 RRF w=0.9、recall@10 0.804 超纯向量 0.799，详见最近迭代）→ **当前主线 = rerank**（**前两题 ✅ 2026-07-20**：Model 接入 + 管线两级化，commit 34cb939，详见最近迭代；首发硅基流动 bge-reranker-v2-m3 免费——gte-rerank 已下线、「先阿里」改道；**第三题 ✅ 2026-07-20**：KB 库级检索设置 + 前端全栈，commits 215cb03 / e3134f7，详见最近迭代。**验收 ✅ 2026-07-20**：eval 入口上移调度层 + `--rerank-model`，双域四组 @3 跑完——医疗 **+2.5pt recall / +2.2pt MRR** ✅、电商 **−2.8pt / −2.4pt** ❌，**结论 = 二次打分的收益取决于域、不取决于模型：向量吃干净的域加什么都是噪音**（与 hybrid 双域结论合流，四域次一致）。原验收标准「hybrid+rerank 压过纯向量」开跑前已改——hybrid 被双域 @50 判出局，粗排定纯向量。**产品侧三题 + 验收全收官**）。~~hybrid 域依赖验证~~ ✅（2026-07-20 电商加餐收官：keyword 腿 ×2.7 确认域依赖，但 hybrid 增益反而消失、任何权重不敌纯向量——**互补性 > 腿强度**，详见最近迭代）。**RAG v2 至此收官**。
-  - **第三阶段 = 优化提优**（排在 Agent 第二阶段之后）：切块优化（含 PDF 结构化解析）→ ~~SAQ 异步任务~~（基建 ✅ 2026-07-22，业务迁移待做）→ 多向量（question/title）→ 生成端评测；**ES / 自定义词库 / Milvus 可插拔 = 永久挂账**。排期理由、已定决策（不换 dense 模型 / PDF 并入切块 / 生成端评测自己写不装 RAGAS / 异模型双腿）、已查证技术事实（BGE-M3 sparse 不做词项扩展 / 硅基流动 API 实测拿不到 sparse / `ts_rank` 无 IDF 是架构性的）、待验证假设（learned sparse 填「强腿+正交」那格）——**全部详见 `docs/design/knowledge-rag-phase3.md`**（该文档是待办队列，做完即迁走删除）。
+  - **第三阶段 = 优化提优**（排在 Agent 第二阶段之后）：切块优化（含 PDF 结构化解析）→ ~~SAQ 异步任务~~ ✅（基建 2026-07-22 + 文档处理业务迁移 2026-07-23，`tasks/` 三层定型：registry 契约 / `*_task.py` 实现 / worker 进程）→ 多向量（question/title）→ 生成端评测；**ES / 自定义词库 / Milvus 可插拔 = 永久挂账**。排期理由、已定决策（不换 dense 模型 / PDF 并入切块 / 生成端评测自己写不装 RAGAS / 异模型双腿）、已查证技术事实（BGE-M3 sparse 不做词项扩展 / 硅基流动 API 实测拿不到 sparse / `ts_rank` 无 IDF 是架构性的）、待验证假设（learned sparse 填「强腿+正交」那格）——**全部详见 `docs/design/knowledge-rag-phase3.md`**（该文档是待办队列，做完即迁走删除）。
   - **检索性能 / 召回基准（阶段 0 已完成，2026-07-16）**：设施设计 `docs/design/knowledge-rag-benchmark-v1.md`（打算怎么搭尺子）+ **实验发现录 `backend/benchmarks/FINDINGS.md`（量出了什么、据此改了什么决定——rerank 双域 / 电商加餐 / hybrid 权重 / 停用词 / BGE 前缀 / HNSW 六轮全在里面，context 不复述）**。1 万段链路全通：导入两阶段脚本 + ranx 评测 + 档案（`benchmarks/results/`）+ HNSW partial 索引命中（**服务端 p50 237ms → 11.8ms、召回无损**，详见最近迭代）。**磁盘已解套**（2026-07-19 清开发机 build cache 回收 16.5G、余 27G，96 万全量向量+索引 ≈ 5-8G 不再构成阻碍；两台服务器规格/容器/风险清单见 `docs/infra.md`）；**待**：阶段 2-5（无索引对照 / 规模曲线 / 调参矩阵）降级为顺手实验。
   - 既有决策：embedding 每库锁一个模型、rerank 首发硅基流动 bge-reranker-v2-m3（免费；gte-rerank 2026-05-30 已下线，付费对照实验挂账、预算 100-200 元内愿跑）、全文检索先 Postgres 原生 FTS（不够再上 ParadeDB pg_search，不上 ES）、切块默认（递归~512token+50overlap）+ 可配；混合检索/FTS/RRF/rerank/多向量 = v2；文档编辑用自封装 tiptap（后做）。
 - **Agent 模块（CRUD + Playground + 工具装配 全打通）**：架构地基见 `docs/architecture.md`（11 节战略 + 附录 A），产品形态（双入口 / 三层资源 / L1-L3 记忆 / @直连 vs 管家）保留为待迭代区。Hybrid Schema（核心列 + jsonb 扩展，AgentConfig 嵌套 schema 强类型契约 Pydantic + `extra="forbid"`）+ 模板层 1+N（1 个可配置 loop 引擎 `general` + N 个 graph 模板首批 0）。**已完成**：后端 5 端点 + 模板层 + LoopTemplate.build() 真实装配（共享 create_agent 工厂 + base_prompt 追加 system_prompt 不覆盖）+ Playground 对话流整片（runtime/runner + route + 前端通用对话层）+ 字段对齐（types/agent.ts + ConfigPanel + AgentCard 嵌套 schema）+ 头像统一默认 gopher 不暴露上传 UI + **工具装配链路全栈（见最近迭代「工具模块第一刀」）**。**接下来候选**：~~(a) MCP 工具接入~~（已完成，见 2026-06-28 迭代）/ ~~(b) KB-as-tool~~（已完成，见 2026-06-08 迭代）/ (c) 有 key 内置工具的凭据层（抄 Model Provider 那套，Fernet 加密 + 运行时工厂装配）/ (d) workspace 真对话片（chat 层全复用零工作量，仅后端 Conversation + Redis cache-aside）/ (e) **KB-as-tool v2 增强**（hybrid/keyword 模式实装 + KB slug 字段 + 多 KB rerank + 命中测试 UI 加 mode 选择器 + LangChain `create_retriever_tool` 工厂收口）。详情页砍「正式对话」——归 workspace。
@@ -97,6 +97,26 @@
 - 如果某次改动不足以影响项目理解，就不要把噪音写进来。
 
 ## 最近迭代
+
+### 2026-07-23 — 文档处理迁进 SAQ（P2 收官）+ `tasks/` 层定型
+
+**状态职责三分**（迁移的真正内容，不只是换个调用方式）：service 标 `queued`（已入队）/ `process_document` 推进 `parsing→splitting→embedding`（真在跑）/ tasks 层标 `failed`（终态）。原来三处都在写同一批字段、互相重复。**`process_document` 改为异常外抛**——它过去自己 try/except 全捕、标 failed 后正常返回，SAQ 看到的永远是「任务成功」，重试无从谈起。
+
+**重试语义 = 对前端透明**：失败先不声张，`ctx["job"].retryable` 为真就把 `stage` 退回 `queued` 等下一轮，三次用尽才标 `failed`。**中途绝不标 failed**，否则前端轮询会看到 processing→failed→processing 的抖动。新增 `DocStage.QUEUED`——`CharEnumField` 是 `CharField` 子类、落 PG 就是 `varchar(20)` 无 CHECK 约束，**加枚举值不需要迁移**（已查源码确认）。
+
+**`app/tasks/registry.py` 契约表（本片主要设计产出）**：`TaskSpec` frozen dataclass 持 `name` + `timeout/retries/retry_delay/retry_backoff` + `enqueue()` 方法；`registry` 管契约、`*_task.py` 管实现、`worker.py` 管进程。三个决定：**①任务名带域前缀**（`knowledge.process_document`，agent 侧任务铺开后日志/指标能分清归属）；**②策略挂 spec 上、`enqueue()` 是 spec 的方法**——调用方不可能忘传 timeout（SAQ 默认 10 秒是这库最大的坑）；**③spec 不持 handler 函数**，持了就把 registry 拖进业务依赖。
+
+**为什么不用装饰器**（Celery `@app.task` 式）：**①进程边界**——web 只需入队，装饰器天然让入队侧 import 实现模块，将来 MinerU 解析要拖几 GB 模型库、Skill 沙箱要拖 docker SDK，**这些绝不能进 web 进程**；**②多 worker 拆分**——重任务迟早要独占进程，`worker.py` 的显式 `functions` 清单直接按进程分组，全局装饰器注册是「全都注册进来」，反而挡路。代价（漏登记要跑起来才发现）落在 worker.py 那一行，是全项目最显眼的位置。**SAQ 自己不用装饰器同理**：它刻意不要全局 app 单例，且支持同一函数以不同名字登记。
+
+**入队放 service 不放 route**：「标 queued」和「入队」必须成对，拆两层中间有窗口（状态已落库、enqueue 炸了 → doc 永远卡 processing）。单个失败回滚标 failed + 抛 503；批量逐个入队、个别失败不牵连其余、失败的标 failed 并归入 `skipped` 回前端。`document_service` 本就 import `storage`，再引 `queue` 单例同级不破层。
+
+**读源码核准的三件事**：① `attempts` 在**执行前** +1，`retryable = retries > attempts`，故 `retries=3` 是**总次数**不是额外次数（默认 `retries=1` = 不重试）；② job kwargs 走 `json.dumps`，**UUID 传不过去**，入队侧转 str、任务函数里还原（脏东西只脏在边界一行）；③ 退避带 **jitter**——`base * 2^(attempts-1)` 算出上限后再乘 0~1 随机数，防批量任务失败后同时反扑（惊群）。
+
+**实测两条路径**：正常路径 `queued`(0.16s)→`parsing`(0.64s)→`splitting`(2.2s)→`embedding`(3.2s)→`completed`(4.1s)，3 段 3 子块；重试路径（storage_key 指向不存在对象）三次尝试间隔 3.9s / 9.8s（5s 基数×指数×抖动），**status 全程 processing 一次没闪 failed**，终态 `failed` 且 stage 停在 `parsing` 一眼看出挂在哪步。
+
+**前端**：`DocumentStage` 加 `'queued'`、展示态加「排队中」（warning 色系更淡的一档，与「向量化中」构成递进）。轮询判据是后端原始 `status==='processing'`，不受影响。**注意正常情况下 queued 只闪半秒**，要肉眼验就停掉 worker 再触发。
+
+**刻意没做**：状态记账（判 retryable → 回落 / 标终态）**不抽基类**——它写的是 `Document` 自己的三个字段，agent 侧任务的状态机长什么样还不知道，N=1 猜不出该共享什么。真正的横切点是 SAQ 的 `before_process` / `after_process`（P7 埋点用得上），不是这个。
 
 ### 2026-07-22 — SAQ 异步任务队列基建落地（纯基建，业务零改动）
 
@@ -172,53 +192,12 @@
 
 **调查沉淀（LlamaIndex 本地源码 + 复用前三家横评）**：`QueryFusionRetriever` 四融合模式并存全暴露（默认竟是 simple 原始分直比——框架卖选择、产品卖决定）；其 RRF 不吃权重、权重只进 relative_score 分数派 → 权重进融合两流派 = 乘名次倒数（LangChain EnsembleRetriever）vs 乘归一化分（LlamaIndex/Weaviate）；融合层无阈值（三种业界答案：融合后过滤 Dify/MaxKB/RAGFlow、不归融合层管 LlamaIndex、只卡子路无人采用——我们取子路内生效）。规律：**分数可信用分数、分数不可信退名次**（Weaviate 换默认分数融合的前提 = 两路分数都归引擎管）。RAG-Fusion（num_queries 多查询改写）记账为未来正交实验。
 
-### 2026-07-18 — 混合检索第一刀：keyword 全文检索整片 + sparse 基线定档（commits 8e66df7 / faed03a）
-
-**数据侧**：`Paragraph.search_vector`（自定义 `TSVectorField`——Python 拼**带位置**的 tsvector 字面量直写；Tortoise 包不了 SQL 函数，绕过 `to_tsvector('simple')` 的代价 = 归一化自担，小写在 tokenizer 补齐防 CT 类大写词查不到）+ GIN 索引（迁移 0013/0014；**空壳先建、随写随入**，与 HNSW「先灌后建」相反——逐条插入单价决定姿势）+ 分词收口 `tokenization.py`（**索引侧 `cut_for_search` 求全 / 查询侧 `extract_tags` TF-IDF top10 求精**，不对称是刻意口径）+ `stopwords.py` 682 词（Dify 表去重 680 + 实测补「好/很」）+ `process_document` 一行接入 + lifespan jieba 预热 + 回填脚本 `scripts/backfill_search_vector.py`（IS NULL = 待办清单断点续传；改口径重灌同款入口）。
-
-**检索侧**：`KeywordRetriever`（OR tsquery + `ts_rank_cd(...,32)` 归一化进 0~1 对齐向量分量纲；chunk_text 空串；无事务无 SET LOCAL）+ `sql/keyword_search.sql`；enum + 调度表各一行、**端点零改动**（RetrievalParams.mode 早备好，策略模式承诺三度兑现）。
-
-**三轮实测（停用词教学现场）**：裸奔前五 0/5 相关（口水词「了/好/怎么」霸榜）1301ms → Dify 表 1/5 375ms → 补「好/很」**5/5 满堂红 93ms（14 倍）**。**基准双档案**：OR 全量 recall@10=0.205 / MRR=0.093；extract_tags top10 = 0.19 / 0.083——**不涨分但 3 倍速**（jieba 通用 IDF 与医疗域失配 + 打分侧依旧大锅饭）→ **定为产品口径**（hybrid 的 RRF 只吃名次，1.5pt 分差换 3 倍速划算）。**根因结论**：PG `ts_rank` 家族无 IDF = sparse 质量天花板；查询侧 TF-IDF 只能代偿「筛词」半边，代不了「打分加权」半边。
-
-**eval 升级**：`--mode`（从产品 enum 自动生成）/ `--workers` 信号量并发（**分数走人群、秒表走单跑**：客户端延迟仅顺序跑采集，服务端 explain 采样恒干净）/ `--timeout` + 失败记名续跑 + 连败熔断（治远端 TCP 半死的无声卡死——曾顺序跑到 460/1000 无声消失）。
-
-**五项目横评（全部本地源码实证）**：MaxKB（AND + ts_rank_cd 无 IDF、cut_all、零停用词、词性过滤表是死代码、拼 SQL 串）/ Dify（TF-IDF 词表 + 停用词、加权分数融合）/ RAGFlow（ES/Infinity 原生 BM25、OR、向量权重 0.95）/ runify（Lucene 10 默认 BM25 白捡 IDF；但 StandardAnalyzer 中文逐字 + 零停用词 + 索引 fire-and-forget/rename 不同步两真 bug）。沉淀三原则：**全文索引建在「返回单元」上**（五家验证）；**引擎选型一票顶配件层十票**；**组合拳不能拆开抄**（OR 语义的成立前提是打分器有 IDF）。
-
-### 2026-07-16 — RAG 检索基准阶段 0 全线打通：两阶段导入 + 评测档案 + HNSW 实战（20 倍提速、召回无损）
-
-**基准设施（实验脚本，授权 Claude 直接落盘）**：`benchmarks/import_corpus.py` 两阶段——`import` 纯灌 Paragraph（TSV 逐行，pid 存 `Paragraph.title`，每批一事务）/ `embed` 复用产品 splitter 切块 + 分批调 embedding（批 32 对齐硅基流动上限、`--reset` 清重嵌、断点续传 =「没向量的段」天然待办清单）；`benchmarks/eval_recall.py`——1000 条 dev query 走产品 `VectorRetriever` → `ranx` 算 recall@10 / MRR@10，延迟三口径（embed / search 含网络 / **search_server = EXPLAIN ANALYZE 采样，报告一律以此为准**），每次自动存档 `benchmarks/results/<时间戳>_recall.json`（env 快照自动查 pg_indexes 记「有无 HNSW」+ `--note` 实验备注）。ranx 入 `benchmarks` 依赖分组。
-
-**数据与踩坑**：Multi-CPR corpus_split_1 前 1 万段入库（占位 Document、无真实文件/对象存储，检索只按 kb_id 不受影响）；1000 题标准答案恰好全在前 1 万条（数据集设计如此）。踩坑：bge-large-zh-v1.5 输入上限 512 token，超长 passage 硅基流动直接 400（数据毒药、重试无用）——先截断被用户否掉，改「embed 阶段复用产品 splitter 切块」与正式管线同款（一段 N 块，检索 `DISTINCT ON` 天然支持）。
-
-**HNSW 实战（手把手教学，用户 DataGrip 亲手建）**：partial 表达式索引（cast 与检索 SQL 逐字一致才命中；每库一索引——维度不同 + ANN 带过滤是硬理由）；1 万条建图 9.6s（建图慢查图快 → bulk 先灌后建）。**建完索引不被用，两个凶手（面试级素材）**：① SQL 形状——旧 SQL 内层 `DISTINCT ON` 按段 id 排序扫全量，HNSW 只接「ORDER BY 距离 LIMIT N」，重构为 CTE 三段（`nearest` 候选池 = top_k × `CANDIDATE_FACTOR`(5) → `dedup` → JOIN/阈值/top_k），SQL 摘出 `retrieval/sql/vector_search.sql` + `load_sql()` @cache 加载器（评测脚本读同一文件根除漂移）；`SET LOCAL hnsw.ef_search = max(pool, 40)`——默认 40 会静默截胡候选池（用户旧公司项目 LIMIT 500 实拿 40 的同款暗坑）。② 规划器成本误估——1024 维距离运算被估得太便宜、小表误选顺扫（估价 1480 vs 2553 但实测 176ms vs 3ms 倒挂），`SET LOCAL enable_seqscan = off`（pgvector 官方姿势；无索引的库仍顺扫兜底不炸）。
-
-**结果（四份档案）**：1 万段无索引基线 recall@10=0.799 / MRR@10=0.678 / search_server p50≈237ms → 命中索引后 **p50=11.8ms（20 倍）、单查 3ms、recall/MRR 一字不差 = 零召回损失**。客户端 search 不变的原因：事务 5 次网络往返（笔记本→远端 RTT）淹没 12ms，生产同机无此项——「基准砍网络、生产监控看全程」口径决策的实证。主线定位：这套基线是 v2 混合检索/rerank 出「提升数字」的尺子。
-
-**尺子首次实战（07-17，BGE query 指令 A/B）**：eval 加 `--query-prefix`（产品零改动），1000 题实测 v1.5 官方前缀仅 **+0.2pt recall / +1pt MRR** → **决策不进产品**（按模型维护指令表不划算，与 Dify/RAGFlow 取舍一致），vector.py known-gap 注释改记「已实测、主动关闭」（commit c5f7f23）。基准第一次走完「假设→实验→数据→决策」闭环，且是否决式结论。
-
-**问题**（两段实测翻车暴露）：assembler 回放历史有损——tool 块整段丢弃 → supervisor 不知道自己派过活（被追问时"真诚地"否认）；成员产出/过程块（带 subagent 戳）被拼进 supervisor 正文 → 把成员的话当自己说的；`agent.name` 标签不唯一 → 同名成员分不清；user 发言无标签"负空间" → 成员把 user 认成别的成员（@老二 实测翻车）。
-
-**修法**（全为死模板确定性翻译：cache 稳、零迁移、无戳老数据走 else 兜底；**刻意不重建 tool_use/tool_result 假转录本**——API 配对约束脆 + 上下文膨胀，成熟系统压历史全走文字痕迹）：
-1. `runtime/blocks.py`（新）：Message.content 块级类型层（TextBlock/ThinkingBlock/ToolUseBlock + `parse_blocks`；parse-don't-validate——未知类型/烂块跳过不炸、`input_args` property 消化断裂 JSON）。
-2. assembler 按块翻译管线：`_render_blocks/_render_tool(actor, viewer_key)`——自己的话原样；tool 块 → 一行行动痕迹 `〔actor 派活给 who：desc → 状态〕`（task 块附成员返回产出）；带戳过程块跳过（产出已在 task result_data）；派给 viewer 本人的活翻第二人称（"派活给 你…你 返回"）。
-3. 唯一标签：`member_key/member_label`（名字#id8）helper 收口——from 标签 / 花名册 / 自我身份三头同源。
-4. 发言者协议 v2：user 历史发言也具名 `<msg from="User">`（身份靠读取不靠推断，消灭负空间）；base prompt 重写三条发言者约定 + 自我身份全称/别称双形态（修 `@裸名` 对不上 `名字#id8` 的回归）。
-
-**决策与留口子**：按块翻译管线 = Compress 层 B 的地基（老轮次→摘要 = 同管线加档位），Compress 拆开另做（V2 P0 主线，spec 待出）；prompt 脚手架中文→英文挂账最后统一扫。
-
-### 2026-07-01 — 并发同名 subagent 串台修复（泳道隔离 + delegate_id 归卡）+ 空 api_key + 能力路由
-
-**主线 · 并发同名 subagent 串台修复（commit 2850b58）**：supervisor 在一条消息里并发派多个 task 给**同一个成员**时，流式输出串台（工具入参糊成 `{...}{...}`、正文串段）+ 前端串卡（子块跑进别人卡片 / 全堆最后一张）。根因：① adapter 状态机**全局共享**（text/thinking 单例 + tool 的 `chunk.index` 映射，每路模型流 chunk.index 从 0 重数 → 撞桶）；② 前端 `containerFor` / 回放 `toRenderBlocks` 按「成员名 + running」**猜**卡片，同名并发分不开。三步修：**①adapter 按「泳道」隔离状态**（一次 task 派发 = 一条泳道，键 = `checkpoint_ns` 第一个 `tools:<uuid>` 段；块编号 / `tool_call_id→block` 仍全局）；**②给子块盖 `delegate_id` 戳**（= 该次 task 的 tool_call_id，`on_tool_start` 时用 `langgraph_path` 位查回 call_id 提前建映射；护栏：派活块自身 result `id==delegate_id` 不盖戳）；**③前端按 `delegate_id ↔ callId` 精确归卡**（collector 落库同步存戳、老数据无戳回退成员名）。**关键发现（订正 06-17）**：deepagents 当前版本子 agent 事件 ns **带 `tools:` 段**（非「一模一样」）——`lc_agent_name` 解决「哪个成员」，同名并发得靠 ns 段；结论靠最小复现脚本 dump astream_events 验证、非推断。验证：单测（泳道隔离 + 盖戳）+ tsc + UI 实测通过。
-
-**顺带两后端 feat**：① **空 api_key**（commit 23afc92）——Provider api_key 改可空（无鉴权服务如本地 vLLM/Ollama）；SDK 构造拒空串，空时给占位符 + `default_headers` 覆盖 Authorization 为空，`build_client` + `init_chat_model` 两链路都兜；需鉴权服务填占位符 401 是正确拦截。② **成员能力路由**（commit f94cee6）——`build_capability_profile` 从 config 派生「内置/KB/MCP」名字标签，拼进成员 subagent 的 description，供 supervisor 按能力路由。
-
-**笔记**：泳道原理 / ns 段辨识 / delegate_id 时序坑 / 空 api_key / 唯一 id 归卡 已沉淀进 `notes/`（agent-runtime §30-32 + qa Q13、deepagents §8、model-module §10、chat-runtime §9；顺带订正旧 §22/§23/§3）。UI 打磨（字体 prose-base / 共享配色 softPalette / 消息复制按钮）按约定不入 context。
-
-### 2026-06-28 — MCP 工具接入全栈整片：CRUD → 运行时连接 → 测试连接 → 装进 agent
-
-五段全栈（详细形态见「当前已有功能」）。**底层祛魅**（陪用户从协议层理解）：MCP = JSON-RPC over stdio/HTTP，LLM 不在这条线上（只吐 tool_call、App 才连 server 执行）、server 内部 = 死路由、流式 tool_use 三段式（start 定 name、delta 拼 partial_json、stop 后 parse）；只做远端 HTTP（本地 stdio 对 Web 后端无意义 + spawn 是安全噩梦）、按 server 选非按工具选（Dify/Cursor 标准）。**三个实测踩坑**：① SSRF 误伤——`is_private` 把 `198.18/15` benchmark 也拦，而 Clash/Surge fake-ip 把 `mcp.amap.com` 映射到 198.18.x，改精确网段黑名单修复；② favicon 不可用——MCP 子域名命中率极低 + Google 无图标返丑地球（不 404、onError 失效），改首字母哈希彩块；③ key-in-URL（高德）——卡片砍 query 脱敏、DB 明文存可接受。**协作固化**：所有代码先审核后落盘（除非授权）+ 模板代码 Claude 写但仍过审核关（已记 memory）。
-
 ## 历史摘要
+- **2026-07-18 — 混合检索第一刀：keyword 全文检索整片**（commits 8e66df7 / faed03a）：`Paragraph.search_vector` 自定义 `TSVectorField`（Python 拼带位置 tsvector 字面量直写，绕过 Tortoise 包不了 SQL 函数，归一化自担）+ GIN 索引（迁移 0013/0014，**空壳先建、随写随入**，与 HNSW「先灌后建」相反）+ 分词收口 `tokenization.py`（**索引侧 `cut_for_search` 求全 / 查询侧 `extract_tags` 求精**，不对称是刻意口径）+ 682 停用词 + `KeywordRetriever`（OR tsquery + `ts_rank_cd` 归一化对齐向量量纲），端点零改动。停用词三轮实测：口水词霸榜 0/5 相关 1301ms → **5/5 满堂红 93ms（14 倍）**。**sparse 基线 recall@10 = 0.19~0.205 定档**，根因 = PG `ts_rank` 家族无 IDF（sparse 质量天花板），查询侧 TF-IDF 只代偿「筛词」代不了「打分加权」。五项目源码横评沉淀三原则：全文索引建在「返回单元」上 / 引擎选型一票顶配件层十票 / 组合拳不能拆开抄。详见 `benchmarks/FINDINGS.md`。
+- **2026-07-16 — RAG 检索基准阶段 0 全线打通**：两阶段导入脚本（`import` 纯灌段 / `embed` 复用产品 splitter 切块，断点续传 =「没向量的段」天然待办清单）+ `eval_recall.py` 走产品 retriever → ranx 算 recall@10 / MRR@10 + 结果自动存档（延迟以 `EXPLAIN ANALYZE` 服务端口径为准）。**HNSW 实战：search_server p50 237ms → 11.8ms（20 倍）、recall/MRR 一字不差**。建完索引不被用的两个凶手（面试级素材）：① **SQL 形状**——旧 `DISTINCT ON` 扫全量，HNSW 只接「ORDER BY 距离 LIMIT N」，重构为 CTE 三段（候选池 ×5 → dedup → 阈值/截断）+ SQL 摘成文件供评测脚本同源；`SET LOCAL hnsw.ef_search`（默认 40 会静默截胡候选池）；② **规划器成本误估**——1024 维距离估价过低致小表误选顺扫（估价倒挂、实测 176ms vs 3ms），`SET LOCAL enable_seqscan=off`（pgvector 官方姿势）。**07-17 尺子首次实战**：BGE query 指令前缀 A/B 仅 +0.2pt recall → **否决式结论，不进产品**（commit c5f7f23）。详见 `knowledge-rag-benchmark-v1.md` + `FINDINGS.md`。
+- **2026-07-14 — 行动痕迹按块翻译（多 Agent 回放保真）**：实测翻车暴露 assembler 回放有损——tool 块整段丢弃 → supervisor 不知自己派过活（被追问时「真诚地」否认）；成员产出被拼进 supervisor 正文（把成员的话当自己说的）；`agent.name` 不唯一同名分不清；user 发言无标签的「负空间」致成员把 user 认成别的成员。修法全为**死模板确定性翻译**（cache 稳、零迁移、无戳老数据走 else 兜底）：`runtime/blocks.py` 块级类型层（parse-don't-validate，未知类型跳过不炸）+ assembler 按块翻译（tool 块 → 一行行动痕迹 `〔actor 派活给 who：desc → 状态〕`、带戳过程块跳过、派给 viewer 本人翻第二人称）+ `member_key/member_label`（名字#id8）三头同源 + 发言者协议 v2（user 历史发言也具名，身份靠读取不靠推断）。**刻意不重建 tool_use/tool_result 假转录本**——API 配对约束脆 + 上下文膨胀，成熟系统压历史全走文字痕迹。此管线 = Compress 层 B 的地基。
+- **2026-07-01 — 并发同名 subagent 串台修复**（commit 2850b58）：supervisor 在一条消息里并发派多个 task 给**同一成员**时流式串台（工具入参糊成 `{...}{...}`）+ 前端串卡。根因 = adapter 状态机全局共享（各路模型流 `chunk.index` 从 0 重数 → 撞桶）+ 前端按「成员名 + running」猜卡片。三步修：**adapter 按泳道隔离状态**（键 = `checkpoint_ns` 第一个 `tools:<uuid>` 段）+ **子块盖 `delegate_id` 戳**（= 该次 task 的 tool_call_id）+ 前端按 `delegate_id ↔ callId` 精确归卡。**订正 06-17**：deepagents 子 agent 事件 ns **带 `tools:` 段**，`lc_agent_name` 只解决「哪个成员」、同名并发得靠 ns 段（最小复现脚本 dump 实证）。顺带：空 api_key 支持（无鉴权服务如本地 vLLM/Ollama，占位符 + 覆盖 Authorization）+ 成员能力路由（capability profile 拼进 subagent description 供 supervisor 按能力派活）。原理已沉淀 `notes/`。
+- **2026-06-28 — MCP 工具接入全栈整片**：CRUD → 运行时连接 → 测试连接 → 装进 agent 五段。**底层祛魅**：MCP = JSON-RPC over stdio/HTTP，LLM 不在这条线上（只吐 tool_call、App 才连 server 执行）；只做远端 HTTP（本地 stdio 对 Web 后端无意义 + spawn 是安全噩梦）、按 server 选非按工具选（Dify / Cursor 标准）。**三个实测踩坑**：① SSRF 黑名单误伤 `198.18/15` benchmark 网段（Clash / Surge fake-ip 把 `mcp.amap.com` 映射进去）→ 改精确网段；② favicon 子域名命中率极低 + Google 无图标返丑地球（不 404、onError 失效）→ 改首字母哈希彩块；③ key-in-URL（高德）→ 卡片砍 query 脱敏。**协作固化**：所有代码先审核后落盘，模板代码 Claude 写但仍过审核关。
 - **2026-06-28 — RAG 检索基准选型 + 分阶段计划**：Multi-CPR 医疗域（MS MARCO 格式、自带切段+qrels、~96 万 passage 落 `data/medical/`）+ 硅基流动 bge-large-zh-v1.5 zero-shot；段=块（passage 已是检索单元、不二次切）；评测 ranx、脚本独立 `backend/benchmarks/` 复用产品检索 service；阶段 0-5 计划 + 三缺口勘察（HNSW / 批量导入 / 评测脚本）。详见 `knowledge-rag-benchmark-v1.md`（07-16 阶段 0 落地）。
 - **2026-06-18 — Workspace d-3 @ 路由整片**：@直连（用户 `@成员` 绕 supervisor 应答）+ 视角化协议核心 `ViewContextAssembler`（按 viewer 重写历史、只标第三方 → prompt cache 友好；07-14 升级发言者协议 v2）+ `build_workspace_graph` 泛化 `responder` + 端点 `mentioned_member_ids` 路由（v1 取第一个）+ 前端 TipTap @mention（atomic token + floating-ui；IME / Enter 冲突踩坑）+ 群聊 UI（直连成员露头像、supervisor 保持裸）。多 @ 并发 = v2；TipTap 3.x 兼作未来文档编辑器底座。
 - **2026-06-17 — Workspace 单元 2 收官：派活 + 子 agent 实时露脸 + 回放**：决策推翻手搓 agent-as-tool，改用 deepagents `SubAgentMiddleware`（原生单 `task` + `subagent_type` 路由）；每成员 → `CompiledSubAgent`（复用 supervisor 装配链、没配模型继承 supervisor 模型）；露脸唯一干净信号 = `metadata.lc_agent_name`（dump 实证）→ adapter 盖 `subagent` 戳；前端 `DelegateBlock` 折叠块 + `SubagentDirectory` Context + collector 存戳回放重建嵌套。（07-01 泳道隔离补修并发同名串台。）

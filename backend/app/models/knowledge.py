@@ -26,6 +26,7 @@ class DocStatus(StrEnum):
 class DocStage(StrEnum):
     NONE = ""  # 没在任何阶段（pending / completed 时）
     UPLOADED = "uploaded"
+    QUEUED = "queued"  # 已入队等 worker 取；重试等待期也回落到这里
     PARSING = "parsing"
     SPLITTING = "splitting"
     EMBEDDING = "embedding"

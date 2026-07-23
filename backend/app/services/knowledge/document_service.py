@@ -12,11 +12,12 @@ from uuid import UUID
 from tortoise.queryset import QuerySet
 
 from app.core.config import settings
-from app.core.exceptions.types import NotFound404, ValidationException
+from app.core.exceptions.types import AppApiException, NotFound404, ValidationException
 from app.core.storage import storage
 from app.models.knowledge import Document, KnowledgeBase, DocStatus, DocStage
 from app.models.user import User
 from app.schemas.knowledge import ALLOWED_FILE_TYPES
+from app.tasks.registry import PROCESS_DOCUMENT
 
 logger = logging.getLogger(__name__)
 
@@ -149,12 +150,23 @@ class DocumentService:
             if doc.status == DocStatus.COMPLETED:
                 raise ValidationException("文档已处理完成，如需重切请删除后重传")
             raise ValidationException("文档尚未上传完成")  # pending 未传字节
-        # 同步置 processing：DB 立即反映「处理中」，刷新页面也能正确续轮询
-        # （process_document 开头会再设一次，幂等无害）
+        # 同步置 processing + queued：DB 立即反映「已入队待处理」，刷新页面也能正确续轮询
+        # （worker 真正取到任务后，process_document 才把 stage 推进到 parsing）
         doc.status = DocStatus.PROCESSING
-        doc.stage = DocStage.PARSING
+        doc.stage = DocStage.QUEUED
         doc.error_message = ""
         await doc.save(update_fields=["status", "stage", "error_message"])
+
+        try:
+            await PROCESS_DOCUMENT.enqueue(doc_id=str(doc.id))
+        except Exception as e:
+            # 状态已落库，入队却挂了（Redis 不可用等）；不回滚就永远卡在 processing
+            logger.exception("文档入队失败 doc_id=%s", doc.id)
+            doc.status = DocStatus.FAILED
+            doc.error_message = f"入队失败：{type(e).__name__}: {e}"
+            await doc.save(update_fields=["status", "error_message"])
+            raise AppApiException(code=503, message="任务队列不可用，请稍后重试") from e
+
         return doc
 
     async def delete(
@@ -200,15 +212,36 @@ class DocumentService:
 
         triggered = [did for did in document_ids if did in allowed]
         skipped = [did for did in document_ids if did not in allowed]
-        # 同步置 processing：DB 立即反映「处理中」，刷新页面也能正确续轮询
-        # （process_document 开头会再设一次，幂等无害）
-        if triggered:
-            await Document.filter(id__in=triggered).update(
-                status=DocStatus.PROCESSING,
-                stage=DocStage.PARSING,
-                error_message="",
+        # 同步置 processing + queued：DB 立即反映「已入队待处理」，刷新页面也能正确续轮询
+        # （worker 真正取到任务后，process_document 才把 stage 推进到 parsing）
+        if not triggered:
+            return triggered, skipped
+
+        await Document.filter(id__in=triggered).update(
+            status=DocStatus.PROCESSING,
+            stage=DocStage.QUEUED,
+            error_message="",
+        )
+
+        # 逐个入队；个别失败不牵连其余，失败的标 failed 并归入 skipped 回给前端
+        enqueued: list[UUID] = []
+        failed: list[UUID] = []
+        for doc_id in triggered:
+            try:
+                await PROCESS_DOCUMENT.enqueue(doc_id=str(doc_id))
+                enqueued.append(doc_id)
+            except Exception:
+                logger.exception("文档入队失败 doc_id=%s", doc_id)
+                failed.append(doc_id)
+
+        if failed:
+            await Document.filter(id__in=failed).update(
+                status=DocStatus.FAILED,
+                error_message="入队失败：任务队列不可用",
             )
-        return triggered, skipped
+            skipped.extend(failed)
+
+        return enqueued, skipped
 
     async def delete_many(
             self, user: User, kb_id: UUID, document_ids: list[UUID],

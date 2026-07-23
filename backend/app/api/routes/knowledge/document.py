@@ -13,7 +13,7 @@ from typing import Annotated
 from urllib.parse import quote
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, UploadFile, BackgroundTasks
+from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.core.depends import get_current_user
@@ -30,7 +30,6 @@ from app.schemas.knowledge import (
     UploadInitOut,
 )
 from app.services.knowledge import DocumentService, get_document_service
-from app.services.knowledge.document_processor import process_document
 
 router = APIRouter(
     prefix="/knowledge-bases/{kb_id}/documents",
@@ -140,16 +139,15 @@ async def upload_complete(
 async def process(
         kb_id: UUID,
         doc_id: UUID,
-        background_tasks: BackgroundTasks,
         current_user: CurrentUserDep,
         svc: DocumentServiceDep,
 ) -> ResponseModel[DocumentOut]:
     """手动触发文档向量化：解析→切段→切块→embed。
 
-        端点立即返回，处理在后台跑；前端轮询 `GET /{doc_id}` 看 status / stage 推进。
+        端点立即返回，处理由 SAQ worker 在独立进程跑；前端轮询 `GET /{doc_id}`
+        看 status / stage 推进。
     """
     doc = await svc.trigger_progress(current_user, kb_id, doc_id)
-    background_tasks.add_task(process_document, doc_id)
     return success(data=DocumentOut.model_validate(doc), message="已触发处理")
 
 
@@ -157,19 +155,16 @@ async def process(
 async def batch_process(
         kb_id: UUID,
         data: BatchDocumentIn,
-        background_tasks: BackgroundTasks,
         current_user: CurrentUserDep,
         svc: DocumentServiceDep,
 ) -> ResponseModel[BatchProcessOut]:
-    """批量向量化：service 过滤出可处理的 doc，路由层逐个入队后台任务。
+    """批量向量化：service 过滤出可处理的 doc 并逐个入队。
 
     返回 triggered / skipped 两组 id，前端据此乐观更新 + 提示被跳过的。
     """
     triggered, skipped = await svc.trigger_progress_many(
         current_user, kb_id, data.document_ids,
     )
-    for doc_id in triggered:
-        background_tasks.add_task(process_document, doc_id)
     return success(
         data=BatchProcessOut(triggered=triggered, skipped=skipped),
         message=f"已触发 {len(triggered)} 个文档处理",

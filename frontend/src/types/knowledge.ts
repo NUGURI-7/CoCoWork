@@ -63,9 +63,16 @@ export type DocumentStatus = 'pending' | 'processing' | 'completed' | 'failed'
  *
  * - `''` = init 后还没传完
  * - `'uploaded'` = 字节已传完、等向量化
+ * - `'queued'` = 已入队、等 worker 取（重试等待期也回落到这里）
  * - `'parsing'` / `'splitting'` / `'embedding'` = 向量化管线进行中（片5）
  */
-export type DocumentStage = '' | 'uploaded' | 'parsing' | 'splitting' | 'embedding'
+export type DocumentStage =
+  | ''
+  | 'uploaded'
+  | 'queued'
+  | 'parsing'
+  | 'splitting'
+  | 'embedding'
 
 /** Document 对外形态（对齐后端 DocumentOut） */
 export interface Document {

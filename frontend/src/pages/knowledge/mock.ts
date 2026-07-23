@@ -21,6 +21,7 @@ interface StatusMeta {
 export type DocDisplayStatus =
   | 'uploading' // pending + stage=''（占位已建、字节未传完）
   | 'uploaded' // pending + stage='uploaded'（已传完、等向量化）
+  | 'queued' // processing + stage='queued'（已入队、worker 还没取走）
   | 'processing' // 向量化管线进行中
   | 'completed' // 向量化完成、可用
   | 'failed' // 任一阶段失败
@@ -29,7 +30,10 @@ export type DocDisplayStatus =
 export function getDocDisplayStatus(doc: Document): DocDisplayStatus {
   if (doc.status === 'failed') return 'failed'
   if (doc.status === 'completed') return 'completed'
-  if (doc.status === 'processing') return 'processing'
+  // 入队与真正开跑都是 processing，靠 stage 区分（重试等待期同样回落 queued）
+  if (doc.status === 'processing') {
+    return doc.stage === 'queued' ? 'queued' : 'processing'
+  }
   // status === 'pending'
   return doc.stage === 'uploaded' ? 'uploaded' : 'uploading'
 }
@@ -46,6 +50,12 @@ export const docStatusMeta: Record<DocDisplayStatus, StatusMeta> = {
     label: '未向量化',
     dot: 'bg-muted-foreground',
     badgeClass: 'bg-muted text-muted-foreground border-border',
+  },
+  queued: {
+    label: '排队中',
+    dot: 'bg-warning',
+    pulse: true,
+    badgeClass: 'bg-warning/8 text-warning-foreground border-warning/25',
   },
   processing: {
     label: '向量化中',
