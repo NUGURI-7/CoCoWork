@@ -29,6 +29,7 @@ dependencies = [
     "langchain-mcp-adapters>=0.3.0",
     "jieba>=0.42.1",
     "saq>=0.26.4",
+    "charset-normalizer>=3.4.7",
 ]
 
 # 进程入口：uv sync 时据此在 .venv/bin/ 生成同名可执行文件，

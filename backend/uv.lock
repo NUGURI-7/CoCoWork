@@ -427,6 +427,7 @@ source = { editable = "." }
 dependencies = [
     { name = "bcrypt" },
     { name = "boto3" },
+    { name = "charset-normalizer" },
     { name = "colorlog" },
     { name = "cryptography" },
     { name = "deepagents" },
@@ -466,6 +467,7 @@ dev = [
 requires-dist = [
     { name = "bcrypt", specifier = "==4.0.1" },
     { name = "boto3", specifier = ">=1.42.67" },
+    { name = "charset-normalizer", specifier = ">=3.4.7" },
     { name = "colorlog", specifier = ">=6.9.0" },
     { name = "cryptography", specifier = ">=48.0.0" },
     { name = "deepagents", specifier = ">=0.6.10" },

@@ -20,16 +20,16 @@ from app.models.knowledge import SourceType
 from app.models.knowledge import Document, DocStage, DocStatus, Embedding, Paragraph
 from app.schemas.knowledge import ChunkConfig
 from app.services.knowledge.splitter import splitter
+from app.services.knowledge.parser import get_parser
+from app.services.knowledge.assembler import assemble_paragraphs
 from app.services.knowledge.tokenization import tokenize
 from app.services.model.model_client import ModelClient
 
 logger = logging.getLogger(__name__)
 
-
-def _split_paragraphs(text: str) -> list[str]:
-    """按双换行切段，strip + 过滤空段；没双换行整文 1 段。"""
-    return [ p.strip() for p in text.split("\n\n") if p.strip()]
-
+# 与 Paragraph.title 的 max_length 对齐。实测本项目标题链最长 129 字、远不到上限，
+# 但 PDF 那条路的层级深度未知——落库前截一刀，免得一条超长链让整份文档处理失败。
+_TITLE_MAX = 256
 
 
 async def process_document(doc_id: UUID) -> None:
@@ -56,7 +56,7 @@ async def process_document(doc_id: UUID) -> None:
     await doc.save(update_fields=["status","stage"])
 
     raw = await storage.read(doc.storage_key)
-    text = raw.decode("utf-8")
+    blocks = await get_parser(doc.file_type).parse(raw)
 
     # === 切段 ===
     doc.stage = DocStage.SPLITTING
@@ -65,17 +65,19 @@ async def process_document(doc_id: UUID) -> None:
     # 重入：清旧 paragraphs（FK CASCADE 自动清 embeddings）
     await Paragraph.filter(document_id=doc.id).delete()
 
-    para_texts = _split_paragraphs(text)
+    # 标题感知组装：heading 开新段、正文并入当前段，超长在块边界续段
+    drafts = assemble_paragraphs(blocks)
     paragraphs = [
         Paragraph(
             knowledge_base_id=doc.knowledge_base_id,
             document_id=doc.id,
-            content=p,
+            content=d.content,
+            title=d.title[:_TITLE_MAX],
             position=i,
-            char_length=len(p),
-            search_vector=tokenize(p),
+            char_length=len(d.content),
+            search_vector=tokenize(d.content),
         )
-        for i,p in enumerate(para_texts)
+        for i, d in enumerate(drafts)
     ]
     if paragraphs:
         await Paragraph.bulk_create(paragraphs)
@@ -118,7 +120,7 @@ async def process_document(doc_id: UUID) -> None:
         await Embedding.bulk_create(embeddings)
 
     # === 收尾 ===
-    doc.char_length = len(text)
+    doc.char_length = sum(len(b.text) for b in blocks)
     doc.paragraph_count = len(paragraphs)
     doc.chunk_count = len(chunk_items)
     doc.status = DocStatus.COMPLETED
