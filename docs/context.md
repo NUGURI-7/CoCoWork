@@ -87,6 +87,7 @@
 - **可点卡片统一加 `card-interactive`**（`app.css` 的 `@utility`）：封装品牌化 hover = 边框转墨绿实色 + 淡墨绿柔光阴影 + 上浮 1px。所有可点击的 Card 用它，别再各写 `hover:shadow-md` / `ring` 等零散 hover；展示型卡片（登录表单、详情信息卡）不加。
 - shadcn 组件用 `npx shadcn@latest add`，**必须在 `frontend/` 目录跑**（components.json 所在）；根 `frontend/tsconfig.json` 已补 `compilerOptions.paths`，否则 CLI 解析不到 `@` 会把组件写进字面量 `frontend/@/`。新组件用统一 `radix-ui` 包。
 - `routeTree.gen.ts` 由 TanStack Router 插件自动生成、已 gitignore，不纳入提交。
+- **所有 `ForeignKeyField` 一律显式加 `db_index=True`**（Tortoise 不像 Django 那样默认建）。
 - 这个 context 文件应该保持紧凑，服务于 AI 快速读取，而不是承担完整项目历史归档。
 
 ## 维护规则

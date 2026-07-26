@@ -131,7 +131,7 @@ const id = uuidv4()
 英文摘要行 1（对应中文要点，用于非中文读者快速理解）
 英文摘要行 2
 
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+Co-Authored-By: Claude <模型名> <noreply@anthropic.com>
 ```
 
 ### Type 类型
@@ -149,4 +149,6 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 - Body 部分先写**中文要点**（给自己看），再写**英文摘要**（给协作者 / GitHub 看）
 - 一个 commit 聚焦一件事；如果 body 需要超过 8 个要点，考虑拆分 commit
 - 不要在 commit message 里包含文件路径列表（git diff 已经有了）
-- message 末尾必须空一行后附 `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`
+- message 末尾必须空一行后附 `Co-Authored-By: Claude <模型名> <noreply@anthropic.com>`。
+  **`<模型名>` 写当次实际执行这个 commit 的模型**（`Opus 5` / `Sonnet 5` / `Haiku 4.5` …），
+  不写死某个版本——署名要对得上是谁干的活，换了模型就跟着换

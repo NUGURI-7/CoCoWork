@@ -1,6 +1,8 @@
 # PDF 解析切片（roadmap P1）—— 工作文档
 
-> 状态：**待实现**。设计已定形，本文档随实现回填。
+> 状态：**标题链整条通路已打通**（2026-07-26）。进度见下方实施步骤表。
+> 43 份存量文档已按新规则重跑：段数 2331 → 416、子块 2570 → 1419、标题链覆盖 408/416
+> （余 8 段是 YAML frontmatter，无标题罩着故为空，符合设计）。
 > 创建于 2026-07-21（四家源码调研验证后的规划讨论），2026-07-23 按实测结果与 roadmap 校准。
 
 ## 定位
@@ -85,13 +87,13 @@ bbox 级高亮：只留字段不实现（需前端 pdf.js 渲染 + 坐标换算�
 
 ## 实施步骤
 
-| 步 | 内容 | 说明 |
-|---|---|---|
-| 1 | `Parser` ABC + `DocumentBlock` + txt/markdown 实现，接进 `process_document` | **分段规则照抄双换行，结果与现状完全一致**——抽象先证明自己无害。验证方式：传同一文件两次对比段数与内容（`trigger_progress` 不允许 completed 重跑） |
-| 2 | 标题感知分段 | 兑现 v1 遗留缺陷：list-heavy md 挤成一巨段。markdown 的 `#` 是白送的，零启发式 |
-| 3 | `PdfParser`（pdfplumber）+ 放开 `.pdf` 扩展名 | 第 2 步的分段逻辑直接复用 |
-| 4 | 百度云 API + MinerU 两路 + Model 模块 `doc_parse` | 异步接口走 SAQ（`registry.py` 加 `TaskSpec` → 写 task → `worker.py` 登记） |
-| 5 | 定位信息落库（`Paragraph.meta`，需迁移）+ 检索结果透出 | P4 引用溯源的地基 |
+| 步 | 状态 | 内容 | 说明 |
+|---|---|---|---|
+| 1 | ✅ | `Parser` ABC + `DocumentBlock` + txt/markdown 实现，接进 `process_document` | **分段规则照抄双换行，结果与现状完全一致**——抽象先证明自己无害。验证方式：拿 43 份真实文档与库里旧实现的段逐条比对（`scripts/verify_parser_parity.py`，全中；重跑文档后基线即失效） |
+| 2 | ✅ | 标题感知分段 | 兑现 v1 遗留缺陷：list-heavy md 挤成一巨段。markdown 的 `#` 是白送的，零启发式。**实际拆成两小步做**：先只打标不动边界（好让标题识别的效果能单独衡量），再由 `assembler` 按标题分组并拼标题链 |
+| 3 | ⬜ **下一步** | `PdfParser`（pdfplumber）+ 放开 `.pdf` 扩展名 | 第 2 步的分段逻辑直接复用——`PdfParser` 只要吐出 `DocumentBlock`，标题链那套一行都不用改。真正要解决的是 pdfplumber 拿不到标题层级、得靠字号启发式推 |
+| 4 | ⬜ | 百度云 API + MinerU 两路 + Model 模块 `doc_parse` | 异步接口走 SAQ（`registry.py` 加 `TaskSpec` → 写 task → `worker.py` 登记） |
+| 5 | 🔄 | 定位信息落库（`Paragraph.meta`，需迁移）+ 检索结果透出 | P4 引用溯源的地基。**「检索结果透出」已随第 2 步提前做掉**（`RetrievalHit.title` + 两条 SQL + 前端「出自」行）：标题链本就是定位信息的一种，没必要等页码。剩下的是 PDF 页码落 `meta`，依赖第 3 步 |
 
 **分工**：`Parser` ABC / `DocumentBlock` / 分段策略 / `process_document` 改造归用户写（架构 + service 层）；schema / route / 前端 Claude 落盘；各 `Parser` 实现待定。
 
