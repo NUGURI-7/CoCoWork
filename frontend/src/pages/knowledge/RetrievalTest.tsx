@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FileText, Layers, Search, Timer } from 'lucide-react'
+import { FileText, Layers, ListTree, Search, Timer } from 'lucide-react'
 import { ring } from 'ldrs'
 
 import { retrievalTest } from '@/api/knowledge'
@@ -228,6 +228,16 @@ function ResultsArea({
               {r.score.toFixed(3)}
             </Badge>
           </div>
+          {/* 标题链：无标题区域（txt / frontmatter / 前言）为空串，整行不渲染，
+              免得留一个空的「出自」占位 */}
+          {r.title && (
+            <div className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
+              <ListTree className="size-3.5 shrink-0" />
+              <span className="truncate" title={r.title}>
+                出自 {r.title}
+              </span>
+            </div>
+          )}
           <p className="text-foreground text-sm leading-relaxed">{r.content}</p>
         </div>
       ))}

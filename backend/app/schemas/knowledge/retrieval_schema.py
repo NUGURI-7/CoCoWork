@@ -16,12 +16,19 @@ class RetrievalHit(BaseModel):
 
     - `content`：命中后返回给模型的**整段**（父子块的父级）。
     - `chunk_text`：实际命中的子块原文（`embedding.text`），调试切块时看。
+    - `title`：段的标题链（`第三章 > 3.1 向量检索`）。与 `doc_name` 合起来
+      构成完整出处；**祖先那几级是 `content` 里没有的信息**——正文只看得到
+      直接的那级标题，看不到自己属于哪一章。
     - `score`：相似度 0~1，= 1 - 余弦距离，越大越相关。
     """
 
     paragraph_id: UUID = Field(description="命中段 id")
     document_id: UUID = Field(description="来源文档 id")
     doc_name: str = Field(description="来源文档名")
+    title: str = Field(
+        default="",
+        description="段的标题链，如「第三章 > 3.1 向量检索」；无标题区域（txt / md 前言）为空串",
+    )
     content: str = Field(description="命中段全文（返回给模型的单元）")
     chunk_text: str = Field(description="实际命中的子块原文")
     score: float = Field(description="相似度 0~1（vector=1-余弦距离；keyword=归一化 ts_rank；hybrid=RRF 共识分）")

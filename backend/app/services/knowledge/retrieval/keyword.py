@@ -54,6 +54,7 @@ class KeywordRetriever(Retriever):
                 paragraph_id=row["paragraph_id"],
                 document_id=row["document_id"],
                 doc_name=row["doc_name"],
+                title=row["title"],
                 content=row["content"],
                 chunk_text="",
                 score=row["score"],

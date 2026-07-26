@@ -115,15 +115,21 @@ export interface UploadInitOut {
  *
  * - `content`：命中后返回的整段（父子块的父级）
  * - `chunk_text`：实际命中的子块原文，调试切块时看
+ * - `title`：段的标题链（`第三章 > 3.1 向量检索`）。与 `doc_name` 合起来构成
+ *   完整出处；祖先那几级是 `content` 里没有的信息。无标题区域（txt 全篇、
+ *   md 的 frontmatter 与前言）为空串
  * - `score`：相似度 0~1（= 1 - 余弦距离），越大越相关
+ * - `matched_by`：hybrid 模式下的命中来源路；单模式检索为 null
  */
 export interface RetrievalHit {
   paragraph_id: string
   document_id: string
   doc_name: string
+  title: string
   content: string
   chunk_text: string
   score: number
+  matched_by: 'vector' | 'keyword' | 'both' | null
 }
 
 /** 命中测试响应（对齐后端 RetrievalTestOut）：命中列表 + 四段耗时（毫秒）
