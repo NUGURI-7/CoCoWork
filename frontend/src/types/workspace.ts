@@ -100,6 +100,19 @@ export interface WorkspaceMessage {
   updated_at: string
 }
 
+/**
+ * 对齐后端 WorkspaceArtifactItem —— 产出物面板的列表项。
+ *
+ * 比消息里那个 `Artifact` 多「它是哪来的」：产物绑 workspace 不绑对话，
+ * 面板跨对话聚合，所以每项得说清自己出自哪个对话、哪条消息。
+ */
+export interface WorkspaceArtifact extends Artifact {
+  conversation_id: string
+  conversation_name: string
+  message_id: string
+  created_at: string
+}
+
 // ============ Member（招募进来的 agent 引用） ============
 
 /** 对齐后端 MemberOut.agent —— 通讯录展示用的 agent 摘要。 */

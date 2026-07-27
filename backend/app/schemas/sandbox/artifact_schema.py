@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -19,3 +20,15 @@ class ArtifactOut(BaseModel):
     content_type: str
 
     model_config = ConfigDict(from_attributes=True)
+
+class WorkspaceArtifactItem(ArtifactOut):
+    """产出物面板的列表项 —— 在 ArtifactOut 之上加「它是哪来的」。
+
+    继承而非另起：面板点击后走的还是同一个下载接口，公共字段必须一致，
+    分成两个平行模型迟早漂移。
+    """
+
+    conversation_id: UUID
+    conversation_name: str
+    message_id: UUID
+    created_at: datetime

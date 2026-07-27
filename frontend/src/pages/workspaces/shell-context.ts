@@ -10,6 +10,12 @@ import { createContext, useContext } from 'react'
 interface WorkspaceShellValue {
   /** 管家是否已配 chat 模型 —— 决定对话区可不可发 */
   supervisorReady: boolean
+  /**
+   * 对话里产出了新文件时叫一声，外壳据此让产出物面板重拉。
+   *
+   * 只往上送信号、不送数据：产物本体走接口，面板始终只有一个数据来源。
+   */
+  notifyArtifacts: () => void
 }
 
 export const WorkspaceShellContext = createContext<WorkspaceShellValue | null>(null)

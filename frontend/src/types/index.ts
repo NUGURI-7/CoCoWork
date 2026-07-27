@@ -53,6 +53,7 @@ export type {
   SenderKind,
   MessageStatus,
   WorkspaceMessage,
+  WorkspaceArtifact,
   MemberAgentInfo,
   WorkspaceMemberOut,
   MemberRecruitPayload,

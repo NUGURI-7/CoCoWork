@@ -145,6 +145,8 @@ export default function WorkspaceDetailPage() {
   const [recruitOpen, setRecruitOpen] = useState(false)
   // 沉浸模式下「产物」右栏开关 —— 用真侧栏（非 Sheet）：无遮罩，产物可拖进对话框
   const [immersiveArtifactOpen, setImmersiveArtifactOpen] = useState(false)
+  // 产出物面板的重拉信号：对话里产出新文件时 +1，面板 useEffect 依赖它
+  const [artifactRevision, setArtifactRevision] = useState(0)
   // 非沉浸模式宽 roster 的开关
   const [rosterOpen, setRosterOpen] = useState(true)
   // 右栏默认展示配置面（新空间第一件事是配管家）
@@ -179,6 +181,16 @@ export default function WorkspaceDetailPage() {
     const sup = workspace?.supervisor as { models?: { chat?: { id?: string } } } | undefined
     return Boolean(sup?.models?.chat?.id)
   }, [workspace])
+
+  // 下发给对话子路由的上下文。整体 useMemo：value 每渲染新建一个对象的话，
+  // 对话区那个依赖 notifyArtifacts 的 effect 会被反复触发
+  const shellValue = useMemo(
+    () => ({
+      supervisorReady,
+      notifyArtifacts: () => setArtifactRevision((v) => v + 1),
+    }),
+    [supervisorReady],
+  )
 
   // 通讯录 = 合成管家置顶 + 招募成员；recruitedAgentIds 给招募弹窗置灰防重招
   const roster = useMemo<RosterMember[]>(
@@ -277,7 +289,7 @@ export default function WorkspaceDetailPage() {
   }
 
   return (
-    <WorkspaceShellContext.Provider value={{ supervisorReady }}>
+    <WorkspaceShellContext.Provider value={shellValue}>
       <div className={cn('flex min-h-0 flex-1 flex-col', !immersive && 'gap-4')}>
         {/* 顶部：面包屑 + 面板开关 —— 沉浸模式整条隐藏 */}
         {!immersive && (
@@ -428,15 +440,25 @@ export default function WorkspaceDetailPage() {
                     onClose={() => setRightPanel(null)}
                   />
                 }
-                back={<ArtifactPanel onClose={() => setRightPanel(null)} />}
+                back={
+                  <ArtifactPanel
+                    workspaceId={workspaceId}
+                    refreshKey={artifactRevision}
+                    onClose={() => setRightPanel(null)}
+                  />
+                }
               />
             </div>
           )}
           {/* 沉浸模式产物栏 —— 真侧栏推开会话，无遮罩，产物可拖进对话框。
-            不撑满整列：定高 70vh + 垂直居中，跟左侧成员 dock 呼应。 */}
+            与对话区等高：产物多起来时定高会先撑不下，且上下留白让它像贴上去的。 */}
           {immersive && immersiveArtifactOpen && (
-            <div className="h-[70vh] max-h-full w-80 shrink-0 self-center">
-              <ArtifactPanel onClose={() => setImmersiveArtifactOpen(false)} />
+            <div className="h-full w-80 shrink-0">
+              <ArtifactPanel
+                workspaceId={workspaceId}
+                refreshKey={artifactRevision}
+                onClose={() => setImmersiveArtifactOpen(false)}
+              />
             </div>
           )}
         </div>

@@ -119,6 +119,14 @@ function containerFor(
 export interface ChatState {
   messages: ChatMessage[]
   isLoading: boolean
+  /**
+   * 产物变更计数 —— 每来一帧 artifacts 事件 +1。
+   *
+   * 它是**信号不是数据**：产物本体已经挂在消息上（`ChatMessage.artifacts`），
+   * 这个计数只用来告诉对话之外的东西（产出物面板）「该重拉一次了」。
+   * 于是面板的数据来源始终只有接口一处，不存在两份状态要对齐。
+   */
+  artifactsRevision: number
 
   send: (content: ApiContentBlock[], mentionedMemberIds?: string[]) => Promise<void>
   stop: () => void
@@ -352,6 +360,8 @@ export function createChatStore({
               const m = s.messages[s.messages.length - 1]
               if (m?.role !== 'assistant') return
               m.artifacts = p.artifacts
+              // 计数 +1 = 对话之外的消费者（产出物面板）该重拉了
+              s.artifactsRevision += 1
             })
             return
           }
@@ -433,6 +443,7 @@ export function createChatStore({
       return {
         messages: [],
         isLoading: false,
+        artifactsRevision: 0,
 
         async send(content, mentionedMemberIds) {
           // 防重入 —— 上一轮还在跑时不允许新发送

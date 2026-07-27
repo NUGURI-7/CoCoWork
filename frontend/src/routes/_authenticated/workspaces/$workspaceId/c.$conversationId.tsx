@@ -11,7 +11,7 @@ export const Route = createFileRoute('/_authenticated/workspaces/$workspaceId/c/
 
 function ConversationRoute() {
   const { workspaceId, conversationId } = Route.useParams()
-  const { supervisorReady } = useWorkspaceShell()
+  const { supervisorReady, notifyArtifacts } = useWorkspaceShell()
   const immersive = useImmersiveStore((s) => s.active)
 
   // key=conversationId：切会话整块重挂（重新拉历史 / 从 registry 取对应桶），沿用原 key 语义
@@ -22,6 +22,7 @@ function ConversationRoute() {
       conversationId={conversationId}
       supervisorReady={supervisorReady}
       topFade={immersive}
+      onArtifacts={notifyArtifacts}
     />
   )
 }

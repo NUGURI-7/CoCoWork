@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useStore } from 'zustand'
 import { ring } from 'ldrs'
 
 import {
@@ -27,6 +28,8 @@ interface WorkspaceChatProps {
   supervisorReady: boolean
   /** 顶部淡出遮罩（沉浸态无边框顶栏下用，替代硬分隔线） */
   topFade?: boolean
+  /** 这一轮产出了新文件 —— 产出物面板据此重拉。只是个信号，不带数据 */
+  onArtifacts?: () => void
 }
 
 /**
@@ -47,6 +50,7 @@ export function WorkspaceChat({
   conversationId,
   supervisorReady,
   topFade = false,
+  onArtifacts,
 }: WorkspaceChatProps) {
   const endpoint = conversationStreamEndpoint(workspaceId, conversationId)
   const store = useMemo(
@@ -55,6 +59,13 @@ export function WorkspaceChat({
     [conversationId, endpoint],
   )
   const [historyLoading, setHistoryLoading] = useState(true)
+
+  // 产物信号：桶里每收一帧 artifacts 计数 +1，转手通知上游（产出物面板）重拉。
+  // 初值 0 不触发；hydrate 回放历史不动这个计数，所以进对话不会白刷一次。
+  const artifactsRevision = useStore(store, (s) => s.artifactsRevision)
+  useEffect(() => {
+    if (artifactsRevision > 0) onArtifacts?.()
+  }, [artifactsRevision, onArtifacts])
 
   // 成员名册：①派活块 directory（member_<id8> → 真名/头像）②@mention 候选 items
   const [directory, setDirectory] = useState<Record<string, SubagentInfo>>({})

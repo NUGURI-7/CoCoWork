@@ -9,6 +9,7 @@
  */
 
 import { get } from '@/request'
+import type { WorkspaceArtifact } from '@/types'
 
 /** 浏览器拿到文件后怎么处理：直接打开看 / 存成文件。 */
 export type ArtifactDisposition = 'inline' | 'attachment'
@@ -31,4 +32,23 @@ export async function getArtifactDownloadUrl(
     { disposition },
   )
   return url.startsWith('http') ? url : `/api/v1${url}`
+}
+
+/** 一页产物的默认条数 —— 与后端 _DEFAULT_LIMIT 对齐 */
+export const ARTIFACT_PAGE_SIZE = 50
+
+/**
+ * 列一个 workspace 下的产物，按产出时间倒序（新的在上）。
+ *
+ * **跨对话**：产物绑 workspace 不绑对话，所以在对话 A 里也翻得到对话 B 的产出。
+ * 分组交给前端做 —— 接口只管给一串扁平数据，面板想按对话还是按时间都不用改后端。
+ */
+export async function listWorkspaceArtifacts(
+  workspaceId: string,
+  { limit = ARTIFACT_PAGE_SIZE, offset = 0 } = {},
+): Promise<WorkspaceArtifact[]> {
+  return get<WorkspaceArtifact[]>(`/workspaces/${workspaceId}/artifacts`, {
+    limit,
+    offset,
+  })
 }
