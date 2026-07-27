@@ -7,6 +7,13 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 7777
+    },
+    {
+      "name": "backend",
+      "cwd": "backend",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "dev"],
+      "port": 7999
     }
   ]
 }
