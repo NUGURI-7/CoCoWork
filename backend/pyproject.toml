@@ -30,6 +30,7 @@ dependencies = [
     "jieba>=0.42.1",
     "saq>=0.26.4",
     "charset-normalizer>=3.4.7",
+    "pdfplumber>=0.11.10",
 ]
 
 # 进程入口：uv sync 时据此在 .venv/bin/ 生成同名可执行文件，

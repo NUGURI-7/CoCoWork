@@ -13,9 +13,11 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-#: 允许上传的文件扩展名（小写，不带点）。v1 范围。
+#: 允许上传的文件扩展名（小写，不带点）。
 #: 不放 env：是产品/业务边界，不该让部署者随手放宽（解析能力跟不上会炸管线）。
-ALLOWED_FILE_TYPES: frozenset[str] = frozenset({"md", "txt"})
+#: pdf 于 P1 第 3 步放开——本地路只处理有文本层的单栏 PDF，扫描件会在解析阶段
+#: 报错、双栏读出的文本是乱序的，两者都待云端路（第 4 步）接上才算真正支持。
+ALLOWED_FILE_TYPES: frozenset[str] = frozenset({"md", "txt", "pdf"})
 
 
 class DocumentOut(BaseModel):

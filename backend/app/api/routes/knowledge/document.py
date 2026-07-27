@@ -39,10 +39,11 @@ router = APIRouter(
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
 DocumentServiceDep = Annotated[DocumentService, Depends(get_document_service)]
 
-# 扩展名 → MIME 类型；白名单已限 md/txt，未知给兜底
+# 扩展名 → MIME 类型；白名单已限 md/txt/pdf，未知给兜底
 _CONTENT_TYPE_BY_EXT = {
     "md": "text/markdown",
     "txt": "text/plain",
+    "pdf": "application/pdf",
 }
 
 

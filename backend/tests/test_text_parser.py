@@ -168,6 +168,10 @@ def test_each_format_routes_to_its_own_impl():
 
 
 def test_unknown_type_raises_value_error():
-    """走到这里还不支持 = 上传白名单与 `_PARSERS` 脱节，属编程错误。"""
-    with pytest.raises(ValueError, match="pdf"):
-        get_parser("pdf")
+    """走到这里还不支持 = 上传白名单与 `_PARSERS` 脱节，属编程错误。
+
+    用 docx 而非 pdf 举例——pdf 已于 P1 第 3 步接入。**每支持一种新格式，
+    这条测试就得换一个还没支持的类型**，这正是它该有的行为：断言过期时红给你看。
+    """
+    with pytest.raises(ValueError, match="docx"):
+        get_parser("docx")

@@ -6,6 +6,7 @@
 
 from app.services.knowledge.parser.base import BlockType, DocumentBlock, Parser
 from app.services.knowledge.parser.markdown_impl import MarkdownParser
+from app.services.knowledge.parser.pdf_impl import PdfParser
 from app.services.knowledge.parser.text_impl import PlainTextParser
 
 # 装配硬编码（解析后端不是部署变量，不入 env），同 splitter 的模块级单例。
@@ -13,6 +14,7 @@ from app.services.knowledge.parser.text_impl import PlainTextParser
 _PARSERS: dict[str, Parser] = {
     "txt": PlainTextParser(),
     "md": MarkdownParser(),
+    "pdf": PdfParser(),
 }
 
 
