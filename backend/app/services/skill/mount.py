@@ -1,0 +1,128 @@
+"""skill 侧的 agent 装配：把挂载的 skill 变成 middleware + system prompt 片段。
+
+设计稿决策 19/20/22 的落点：
+- 工具不自己设计，用 FilesystemMiddleware 自带的 7 个（ls/read_file/write_file/
+  edit_file/glob/grep/execute），且**仅当挂了 skill 才装**，没挂一个都不装。
+- 不用 SkillsMiddleware，清单 prompt 自己拼。
+- 片 2a 的执行后端是 LocalShellBackend（不起容器），docker 落地时只换这一处。
+"""
+
+import os
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Sequence
+from uuid import UUID
+
+from deepagents import FilesystemMiddleware
+from deepagents.backends import LocalShellBackend
+
+from app.models import User
+from app.schemas.agent import AgentConfig
+from app.services.sandbox.layout import SandboxPaths, prepare_workspace_dir
+from app.services.skill.builtin import resolve_builtin_skills, fetch_builtin_credentials, BuiltinSkill
+from app.services.skill.prompt import build_skills_prompt
+
+# 单条命令的默认超时与硬上限（秒）。LLM 可为单条命令调高，但不得超过上限 ——
+# deepagents 的 max_execute_timeout 默认 3600，一个 skill 脚本跑一小时是失控
+# 不是耐心，收到 5 分钟。
+_EXECUTE_TIMEOUT = 120
+_EXECUTE_TIMEOUT_CEILING = 600
+
+
+@dataclass(frozen=True, slots=True)
+class SkillMount:
+    """一次运行里 skill 侧的全部装配产物。
+
+    一次回复共用一个 mount（决策 12）：workspace 里 supervisor 与各成员拿到的
+    是同一个 middleware 实例 —— 同一个 backend、同一套文件系统，成员产出的
+    文件 supervisor 才看得见。
+    """
+
+    middleware: FilesystemMiddleware
+    paths: SandboxPaths  # 工作区路径，供日志与排查用
+
+    def prompt_for(self, cfg: AgentConfig) -> str:
+        """某个参与者的 skill 清单片段 —— 只列它自己挂的，不列同伴的。
+
+        物理上 /skills 底下躺着本轮所有参与者的 skill，但清单各给各的：
+        没授予这个成员的技能不该出现在它眼前，否则配置形同虚设。
+        """
+        return build_skills_prompt(resolve_builtin_skills(cfg.builtin_skills), self.paths)
+
+def _union_skills(cfgs: Sequence[AgentConfig]) -> list[BuiltinSkill]:
+    """本轮所有参与者挂的 skill 并集，按首次出现排序。
+
+    按 name 去重：两个成员挂了同一个 skill，源目录本来就是同一个，铺一份即可。
+    """
+    merged: dict[str, BuiltinSkill] = {}
+    for cfg in cfgs:
+        for skill in resolve_builtin_skills(cfg.builtin_skills):
+            merged.setdefault(skill.name, skill)
+    return list(merged.values())
+
+async def build_skill_mount(
+        cfgs: Sequence[AgentConfig], user: User, *, scope_id: UUID, message_id: UUID
+) -> SkillMount | None:
+    """据一组 agent config 装出共用的 skill 沙箱；没人挂 skill 返回 None。
+
+    入参是「一组」而非一个：workspace 一轮回复里 supervisor 与各成员同时在场，
+    必须共用同一个工作区（决策 12，借还粒度 = 一次完整回复）。Playground 只有
+    一个 agent，传 [cfg]。
+
+    并集在本函数里求、不甩给调用方：将来接用户上传的 skill（cfg.skills）时，
+    改动收在这里，两条调用路径一行不动。
+
+    Args:
+        cfgs: 本轮全部参与者的 config
+        scope_id: 工作区目录的归属键。workspace 对话传 workspace_id（跨对话保留，
+            决策 14）；Playground 是试跑场、不属于任何 workspace，传 user_id。
+        message_id: 本轮消息 ID，用作交付区目录名
+    """
+    mounted = _union_skills(cfgs)
+    if not mounted:
+        return None
+
+    credentials = await fetch_builtin_credentials(user, [s.name for s in mounted])
+    paths = prepare_workspace_dir(
+        scope_id, [s.directory for s in mounted], message_id=message_id,
+    )
+
+    backend = LocalShellBackend(
+        root_dir=paths.root,
+        # virtual_mode=False：文件工具与 execute 必须共用同一个路径空间。
+        # 开虚拟根只骗得过文件工具 —— shell 由操作系统解释，照样按宿主机真实
+        # 路径找文件，两半会打架（实测 execute 报 can't open file '/skills/...'）。
+        # 它也从来不是安全边界，deepagents 自己的告警原话：
+        # "virtual_mode does not restrict shell execution"。
+        virtual_mode=False,
+        timeout=_EXECUTE_TIMEOUT,
+        env={**credentials, **_sandbox_env(paths)},
+        inherit_env=False,  # 显式写出：宿主机环境（DB 密码 / R2 密钥）绝不外泄
+    )
+
+    return SkillMount(
+        middleware=FilesystemMiddleware(
+            backend=backend,
+            max_execute_timeout=_EXECUTE_TIMEOUT_CEILING,
+        ),
+        paths=paths,
+    )
+
+
+def _sandbox_env(paths: SandboxPaths) -> dict[str, str]:
+    """沙箱进程的环境变量白名单 —— 这是 docker run -e 的本地等价物。
+
+    带 key 的 skill 将来把解密后的凭据并进这里（决策 15）。
+    """
+    return {
+        # 空 PATH 会让 python3 都找不到。带上当前解释器所在目录，保证脚本跑得起来；
+        # 换成容器后这一项由镜像决定，此处的拼接随之删除。
+        "PATH": os.pathsep.join(
+            [str(Path(sys.executable).parent), os.defpath.lstrip(os.pathsep)]
+        ),
+        "HOME": paths.workspace,  # 别让脚本写进真的家目录
+        "LANG": "C.UTF-8",
+        "PYTHONIOENCODING": "utf-8",  # 中文标签的图表，输出不因终端编码而乱
+        "PYTHONDONTWRITEBYTECODE": "1",  # 不在 skills/ 里拉 __pycache__
+    }

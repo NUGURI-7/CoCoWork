@@ -14,6 +14,7 @@ POST /agents/{agent_id}/playground/stream  →  text/event-stream
 from typing import Annotated
 from uuid import UUID
 
+from uuid_utils import compat as uuid_compat
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
@@ -45,12 +46,18 @@ async def playground_stream(
     if agent is None:
         raise NotFound404("Agent 不存在")
 
-    graph, messages = await prepare_stream(AgentSpec.from_agent(agent), body, current_user)
+    # 本轮消息 ID —— 交付区目录名、SSE 帧、（workspace 那条路的）DB 主键共用同一个
+    message_id = uuid_compat.uuid7()
+    prepared = await prepare_stream(
+        AgentSpec.from_agent(agent), body, current_user, message_id=message_id,
+    )
 
     return StreamingResponse(
         run_chat_stream(
-            graph,
-            messages,
+            prepared.graph,
+            prepared.messages,
+            message_id=message_id,
+            collect=prepared.collect,
             trace=TraceContext(
                 user_id=str(current_user.id),
                 name="playground",

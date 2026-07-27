@@ -81,7 +81,12 @@ export interface AgentConfig {
   capabilities?: string[]
   knowledge?: string[]
   builtin_tools?: string[]
+  /** MCP server，按 id 挂载（运行时连上去拉工具） */
+  mcp_servers?: string[]
+  /** 用户上传的 skill，按 id 挂载（DB 实体，本体在对象存储） */
   skills?: string[]
+  /** 内置 skill，按 name 挂载（本体随代码分发、不进表，同 builtin_tools 的形态） */
+  builtin_skills?: string[]
   behavior?: AgentBehavior
   ui?: AgentUI
 }

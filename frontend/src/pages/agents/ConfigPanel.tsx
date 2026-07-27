@@ -7,6 +7,7 @@ import { updateAgent, type AgentUpdatePayload } from '@/api/agent'
 import { listKnowledgeBases } from '@/api/knowledge'
 import { listMCPServers } from '@/api/mcp'
 import { listAllModels } from '@/api/model'
+import { listSkills } from '@/api/skill'
 import { listTools } from '@/api/tool'
 import {
   Accordion,
@@ -49,6 +50,7 @@ import type {
   AIModel,
   KnowledgeBase,
   MCPServer,
+  Skill,
   Tool,
 } from '@/types'
 import { KindBadge } from './KindBadge'
@@ -72,6 +74,8 @@ interface FormState {
   mcp_server_ids: string[]
   /** 旧版 mcp_ids 改名 —— 对齐后端 schema 的 skills 字段（mock 期 MCP = skill） */
   skill_ids: string[]
+  /** 内置 skill 按 name 挂载，写进 config.builtin_skills（与上面 skill_ids 是两回事） */
+  builtin_skill_names: string[]
   /** 调用参数：save 时打包成 config.models.chat.params（maxTokens=null → 不发上限） */
   params: ModelParamsValue
 }
@@ -88,6 +92,7 @@ function agentToForm(agent: Agent): FormState {
     tool_ids: c.builtin_tools ?? [],
     mcp_server_ids: c.mcp_servers ?? [],
     skill_ids: c.skills ?? [],
+    builtin_skill_names: c.builtin_skills ?? [],
     params: fromApiParams(chat?.params),
   }
 }
@@ -104,6 +109,7 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
   const [chatModels, setChatModels] = useState<AIModel[]>([])
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([])
   const [tools, setTools] = useState<Tool[]>([])
+  const [skills, setSkills] = useState<Skill[]>([])
   const [mcpServers, setMcpServers] = useState<MCPServer[]>([])
 
   // 切换 agent / 外部 setAgent 时（保存成功覆盖）同步本地 form
@@ -121,6 +127,9 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
       .catch(() => {})
     listTools()
       .then(setTools)
+      .catch(() => {})
+    listSkills()
+      .then(setSkills)
       .catch(() => {})
     listMCPServers()
       .then(setMcpServers)
@@ -165,6 +174,7 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
       builtin_tools: form.tool_ids,
       mcp_servers: form.mcp_server_ids,
       skills: form.skill_ids,
+      builtin_skills: form.builtin_skill_names,
       behavior: agent.config.behavior ?? {},
       ui: agent.config.ui ?? {},
     }
@@ -323,6 +333,20 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
                   onChange={setToolSelection}
                   placeholder="搜索内置工具..."
                   emptyLabel="未挂载任何内置工具"
+                />
+              </Field>
+
+              <Field label="Skill">
+                <MultiSelectPopover
+                  items={skills.map((s) => ({
+                    id: s.name,
+                    name: s.name,
+                    meta: s.required_env.length > 0 ? '需要 key' : undefined,
+                  }))}
+                  value={form.builtin_skill_names}
+                  onChange={(names) => patch('builtin_skill_names', names)}
+                  placeholder="搜索 skill..."
+                  emptyLabel="未挂载任何 skill"
                 />
               </Field>
 

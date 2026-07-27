@@ -16,7 +16,7 @@ from langchain.agents import create_agent
 from langchain_core.language_models import BaseChatModel
 from langchain_core.tools import BaseTool
 from langgraph.graph.state import CompiledStateGraph
-
+from langchain.agents.middleware import AgentMiddleware
 
 class AgentTemplate(ABC):
     """内置模板基类：所有模板共有的出厂元数据 + build() 钩子。"""
@@ -36,6 +36,7 @@ class AgentTemplate(ABC):
             chat_model: BaseChatModel,
             system_prompt: str | None,
             tools: list[BaseTool],
+            middleware: list[AgentMiddleware] | None = None,
     ) -> CompiledStateGraph:
         """据模板配方 + 注入的 config 构建 CompiledStateGraph。
 
@@ -43,6 +44,8 @@ class AgentTemplate(ABC):
             chat_model: runner build_chat_model 出的 LangChain BaseChatModel
             system_prompt: 实例 config.system_prompt（覆盖 base_prompt 用）
             tools: 装配器解析 capabilities / 内置工具 / mcp 后的 BaseTool 列表（P0 空）
+            middleware: 装配器按需挂的能力 middleware（如 skill 的文件/执行工具）。
+                没挂 skill 时为空 —— 那 7 个文件工具一个都不出现。
         """
 
         ...
@@ -59,6 +62,7 @@ class LoopTemplate(AgentTemplate):
             chat_model: BaseChatModel,
             system_prompt: str | None,
             tools: list[BaseTool],
+            middleware: list[AgentMiddleware] | None = None,
 
     ) -> CompiledStateGraph:
         """共享 create_agent 工厂 —— Augmented LLM 基线。
@@ -75,6 +79,7 @@ class LoopTemplate(AgentTemplate):
             model=chat_model,
             tools=tools,
             system_prompt=prompt,
+            middleware=middleware or [],
         )
 
 

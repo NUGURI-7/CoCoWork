@@ -12,14 +12,21 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator, Callable
 from typing import Any
+from uuid import UUID
+from collections.abc import Awaitable
+from dataclasses import dataclass
+from functools import partial
 
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain.agents.middleware import AgentMiddleware
 from langchain_core.tools import BaseTool
 from langgraph.graph.state import CompiledStateGraph
-from uuid_utils import uuid7
+from uuid_utils import compat as uuid_compat
 
+from app.models.sandbox import SandboxArtifact
+from app.services.sandbox.artifact import collect_artifacts
 from app.agents.runtime.adapter import adapt_chat_stream
 from app.agents.runtime.events import EventType, sse_event
 from app.agents.runtime.param_adapter import get_param_adapter
@@ -35,6 +42,7 @@ from app.schemas.agent.chat_schema import ContentBlock, HistoryMessage
 from app.schemas.agent.config_schema import AgentConfig
 from app.schemas.agent.config_schema import ModelSlot
 from app.services.mcp.mcp_runtime import fetch_tools_for_server
+from app.services.skill.mount import build_skill_mount
 from app.tools import resolve_tools
 from app.tools.knowledge_retrieval import KnowledgeRetrievalTool
 
@@ -47,8 +55,25 @@ logger = logging.getLogger(__name__)
 # sink：事件旁路回调 —— runner 每产一个事件，先喂 sink 一份再序列化成 SSE。
 SinkFn = Callable[[EventType, dict[str, Any]], None]
 
+# 收产物的回调：参数已在 prepare_stream 里绑好，调用方只管 await 一下
+ArtifactCollector = Callable[[], Awaitable[list[SandboxArtifact]]]
+
 # SSE message_start 的 role —— 流式产出的消息恒为 assistant（协议固定值）
 _SSE_ROLE_ASSISTANT = "assistant"
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedStream:
+    """SSE 流开起来前装配好的一切。
+
+    刻意用 dataclass 而非元组：workspace 接线时还要把 mount 带出来
+    （supervisor 与各成员共用同一个），元组会一路膨胀成四元、五元。
+    """
+
+    graph: CompiledStateGraph
+    messages: list[BaseMessage]
+    collect: ArtifactCollector | None  # 没挂 skill 就没有交付区，恒为 None
+
 
 def _feed_sink(sink: SinkFn | None, event: EventType, payload: dict[str, Any]) -> None:
     """把事件喂给 sink（装了才喂）。sink 自己炸了只 log —— 旁路故障不打断主流。"""
@@ -58,6 +83,7 @@ def _feed_sink(sink: SinkFn | None, event: EventType, payload: dict[str, Any]) -
         sink(event, payload)
     except Exception:
         logger.exception("stream sink failed on %s; stream continues", event)
+
 
 _PROVIDER_TYPE_TO_LC: dict[str, str] = {
     "openai": "openai",
@@ -251,7 +277,9 @@ async def prepare_stream(
         spec: AgentSpec,
         request: ChatStreamRequest,
         user: User,
-) -> tuple[CompiledStateGraph, list[BaseMessage]]:
+        *,
+        message_id: UUID,
+) -> PreparedStream:
     """SSE 流开起来前的同步装配 —— 配置校验 / 取模板 / 装 chat model / 装 graph。
 
     所有可能 raise 的逻辑在此完成 —— FastAPI handler 接 ValidationException → 400 JSON。
@@ -271,20 +299,47 @@ async def prepare_stream(
 
     chat_model = await build_chat_model(cfg.models.chat)
 
+    # Playground 只有一个 agent 在场，包成单元素列表；workspace 那条路传一串
+    mount = await build_skill_mount([cfg], user, scope_id=user.id, message_id=message_id)
+    system_prompt = cfg.system_prompt
+    middleware: list[AgentMiddleware] = []
+
+    collect: ArtifactCollector | None = None
+
+    if mount is not None:
+        middleware.append(mount.middleware)
+        # Playground 的产物不挂对话（消息本身就不入库），conversation_id 留空
+        collect = partial(
+            collect_artifacts,
+            mount.paths,
+            user=user,
+            scope_id=user.id,
+            message_id=message_id,
+        )
+
+        # skill 清单拼在实例人设之后：先是「你是谁」，再是「你有哪些工具书」
+        skills_prompt = mount.prompt_for(cfg)
+        system_prompt = (
+            f"{system_prompt}\n\n{skills_prompt}" if system_prompt else skills_prompt
+        )
+
     graph = template.build(
         chat_model=chat_model,
-        system_prompt=cfg.system_prompt,
+        system_prompt=system_prompt,
         tools=await assemble_tools(cfg, user),
+        middleware=middleware,
     )
 
     messages = to_lc_messages(request.history, request.content)
-    return graph, messages
+    return PreparedStream(graph=graph, messages=messages, collect=collect)
 
 
 async def run_chat_stream(
         graph: CompiledStateGraph,
         messages: list[BaseMessage],
         *,
+        message_id: UUID,
+        collect: ArtifactCollector | None = None,
         sink: SinkFn | None = None,
         trace: TraceContext | None = None,
 ) -> AsyncIterator[str]:
@@ -300,9 +355,8 @@ async def run_chat_stream(
     - sink 内部 → _feed_sink 兜住只 log（旁路故障不打断对话主流）
     - message_stop → finally 兜底必发（前端靠它关活气泡，光标不卡）
     """
-    message_id = str(uuid7())
 
-    start_payload = {"id": message_id, "role": _SSE_ROLE_ASSISTANT}
+    start_payload = {"id": str(message_id), "role": _SSE_ROLE_ASSISTANT}
     _feed_sink(sink, EventType.MESSAGE_START, start_payload)
     yield sse_event(EventType.MESSAGE_START, start_payload)
 
@@ -326,12 +380,37 @@ async def run_chat_stream(
 
         async for event, payload in adapt_chat_stream(events):
             _feed_sink(sink, event, payload)
-            yield sse_event(event,payload)
+            yield sse_event(event, payload)
 
     finally:
+        # 产物帧必须赶在 message_stop 之前 —— 前端收到 stop 就把这条消息收口了
+        if collect is not None:
+            try:
+                artifacts = await collect()
+                if artifacts:
+                    payload = {
+                        "message_id": str(message_id),
+                        "artifacts": [
+                            {
+                                "id": str(a.id),
+                                "filename": a.filename,
+                                "size": a.size,
+                                "content_type": a.content_type,
+                            }
+                            for a in artifacts
+                        ],
+                    }
+                    _feed_sink(sink, EventType.ARTIFACTS, payload)
+                    yield sse_event(EventType.ARTIFACTS, payload)
+            except Exception:
+                # 收产物失败不连累这轮回复：前端少一组卡片，消息照常收尾。
+                # CancelledError 继承 BaseException、不会被这里接住 —— 用户掐断时
+                # 产物就不收了（文件留在交付区），这是定好的行为，不是漏网。
+                logger.exception("产物回收失败，跳过产物帧 message_id=%s", message_id)
+
         # generator finally 兜底：自身 yield 也包 try，二次失败只 log 不再 raise
         try:
-            stop_payload = {"id": message_id}
+            stop_payload = {"id": str(message_id)}
             _feed_sink(sink, EventType.MESSAGE_STOP, stop_payload)
             yield sse_event(EventType.MESSAGE_STOP, stop_payload)
 

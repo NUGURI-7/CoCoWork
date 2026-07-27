@@ -23,7 +23,7 @@ class LocalStorage(Storage):
     supports_presigned = False
 
     def __init__(self) -> None:
-        self._root = Path(settings.STORAGE_LOCAL_ROOT).resolve()
+        self._root = settings.storage_local_path
 
     def _resolve(self, key: str) -> Path:
         """key → 绝对路径，并防路径穿越（key 含 ../ 逃出 root 时拒绝）。"""

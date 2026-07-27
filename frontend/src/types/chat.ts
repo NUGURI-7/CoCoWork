@@ -130,6 +130,29 @@ export interface ErrorPayload {
   message: string
 }
 
+/**
+ * 沙箱产物 —— agent 这一轮交付给用户的一个文件。
+ *
+ * 「哪些算产物」由后端的交付区决定（每轮一个空目录，放进去的就是），
+ * 前端不做任何判断，收到什么就渲染什么。
+ *
+ * **刻意不含下载 URL**：URL 在用户点击时才向后端换取（短期预签名），
+ * 于是每次点击都过一遍归属校验，链接也不会长期有效。
+ */
+export interface Artifact {
+  id: string
+  filename: string
+  /** 字节数 */
+  size: number
+  /** 后端按扩展名推出的 MIME，决定图标与「能不能直接看」 */
+  content_type: string
+}
+
+export interface ArtifactsPayload {
+  message_id: string
+  artifacts: Artifact[]
+}
+
 // ============ 渲染层（RenderBlock + UI 状态，camelCase） ============
 
 export interface TextBlock {
@@ -220,6 +243,11 @@ export interface AssistantMessage {
   stopReason: string | null
   /** error 事件给的 message（已脱敏） */
   errorMessage: string | null
+  /**
+   * 这一轮沙箱交付出来的文件。没挂 skill / 没产出时为 undefined。
+   * 来自 artifacts 事件（在 message_stop 之前到）。
+   */
+  artifacts?: Artifact[]
   /**
    * @直连应答的成员 id（WorkspaceMember.id）。supervisor / Playground 应答为 undefined。
    * 实时：send 时记下被 @ 的成员、message_start 标上；回放：从 DB sender_member_id 译。

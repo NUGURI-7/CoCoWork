@@ -13,6 +13,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
+from uuid_utils import compat as uuid_compat
 
 from app.agents.runtime import (
     MessageCollector,
@@ -73,12 +74,11 @@ async def conversation_stream(
                 id=body.mentioned_member_ids[0],
                 workspace_id=workspace_id
             )
-            .select_related("agent") # build_workspace_graph 要 responder.agent.config
+            .select_related("agent")  # build_workspace_graph 要 responder.agent.config
             .first()
         )
         if responder is None:
             raise NotFound404("被 @ 的成员不存在或已移出空间")
-
 
     # ③ 先落 user —— 说出去的话即事实；prepare 失败(400)也不该让输入蒸发
     await svc.append(
@@ -100,14 +100,17 @@ async def conversation_stream(
         responder,
     )
 
+    # 本轮 assistant 消息的 ID —— SSE 帧、DB 主键、（将来）交付区目录名共用同一个。
+    # 用 compat 版：它返回标准库 uuid.UUID，Tortoise 的 UUIDField 直接吃。
+    message_id = uuid_compat.uuid7()
     collector = MessageCollector()
 
     async def persist_assistant(status: MessageStatus) -> None:
         """流收尾落库：assistant 消息 + touch 对话活跃时间。"""
         final = MessageStatus.ERROR if collector.saw_error else status
-        # message_id 来自 MESSAGE_START 帧；极端早断没收到时不传，
-        # 让 MessageAppend 的 default_factory 自己造
-        keyed = {"id": collector.message_id} if collector.message_id else {}
+
+        # message_id 由 route 生成（见上），不必再从 MESSAGE_START 帧里捡回来 ——
+        # 「早断没收到帧」这个 fallback 分支随之消失，id 一定有
 
         # 应答者身份：supervisor(responder=None) 或被 @ 的成员
         if responder is None:
@@ -118,7 +121,7 @@ async def conversation_stream(
         await svc.append(
             conversation_id,
             MessageAppend(
-                **keyed,
+                id=message_id,
                 role=MessageRole.ASSISTANT,
                 sender_kind=sender_kind,
                 sender_member_id=sender_member_id,
@@ -133,19 +136,20 @@ async def conversation_stream(
         status = MessageStatus.STOPPED  # 悲观默认：没自然走完就是被掐
         try:
             async for sse in run_chat_stream(
-                graph,
-                lc_messages,
-                sink=collector.feed,
-                trace=TraceContext(
-                    user_id=str(current_user.id),
-                    session_id=str(conversation_id),
-                    name="workspace_chat",
-                    tags=["workspace_chat"],
-                    metadata={
-                        "workspace_id": str(workspace_id),
-                        "responder": "supervisor" if responder is None else str(responder.id),
-                    },
-                ),
+                    graph,
+                    lc_messages,
+                    message_id=message_id,
+                    sink=collector.feed,
+                    trace=TraceContext(
+                        user_id=str(current_user.id),
+                        session_id=str(conversation_id),
+                        name="workspace_chat",
+                        tags=["workspace_chat"],
+                        metadata={
+                            "workspace_id": str(workspace_id),
+                            "responder": "supervisor" if responder is None else str(responder.id),
+                        },
+                    ),
             ):
                 yield sse
             status = MessageStatus.DONE  # 自然走到这行 = 完整流完

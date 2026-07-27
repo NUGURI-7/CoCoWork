@@ -9,6 +9,52 @@ interface ToolUseBlockProps {
 }
 
 /**
+ * 工具名 → 中文（**纯展示**，模型看到的仍是英文原名）。
+ *
+ * 这七个来自 deepagents 的 FilesystemMiddleware，挂了 skill 的 agent 才有；
+ * 它们不走本项目 CoCoTool 基类，所以没有后端下发的 display_name，只能前端映射。
+ * 表里没有的工具（内置工具 / MCP）原样显示英文名。
+ */
+const TOOL_LABELS: Record<string, string> = {
+  ls: '列出目录',
+  read_file: '读取文件',
+  write_file: '写入文件',
+  edit_file: '编辑文件',
+  glob: '查找文件',
+  grep: '搜索内容',
+  execute: '执行命令',
+}
+
+/** 折叠时跟在工具名后面显示的那个参数 —— 一眼看出「对谁做的」。 */
+const PRIMARY_ARG: Record<string, string> = {
+  ls: 'path',
+  read_file: 'file_path',
+  write_file: 'file_path',
+  edit_file: 'file_path',
+  glob: 'pattern',
+  grep: 'pattern',
+  execute: 'command',
+}
+
+const SUMMARY_MAX = 56
+
+/**
+ * 把沙箱里的绝对路径缩短成「从挂载点起算」的形态。
+ *
+ * 本地沙箱是宿主机长路径、容器里是 /workspace/x，同一条规则两边都成立：
+ * 只保留最后一个 workspace/ | skills/ | tmp/ 之后的部分。容器那条本就短，
+ * 截了约等于没截 —— 故不必按环境分支。
+ *
+ * 只用于折叠头部；展开的参数区保留完整原文（要复制路径去打开文件时用）。
+ */
+function shortenSandboxPaths(text: string): string {
+  return text.replace(
+    /(?:\/[^\s/]+)*\/((?:workspace|skills|tmp)\/[^\s]*)/g,
+    '$1',
+  )
+}
+
+/**
  * Tool 调用块 —— assistant tool_use 状态机渲染（building → calling → success/error）。
  *
  * 头部：状态图标 + 工具名 + 折叠箭头
@@ -35,6 +81,22 @@ export function ToolUseBlock({ block }: ToolUseBlockProps) {
       return raw
     }
   }, [block.partialInputJson])
+
+  /** 折叠头部的一行摘要：主参数缩短 + 限长。流式中途 JSON 还不完整时留空。 */
+  const summary = useMemo(() => {
+    const key = PRIMARY_ARG[block.name]
+    if (!key || !block.partialInputJson) return ''
+    try {
+      const value = JSON.parse(block.partialInputJson)?.[key]
+      if (typeof value !== 'string') return ''
+      const short = shortenSandboxPaths(value)
+      return short.length > SUMMARY_MAX
+        ? `${short.slice(0, SUMMARY_MAX)}…`
+        : short
+    } catch {
+      return ''
+    }
+  }, [block.name, block.partialInputJson])
 
   const resultText = useMemo(() => {
     const d = block.resultData
@@ -75,7 +137,15 @@ export function ToolUseBlock({ block }: ToolUseBlockProps) {
           )}
         </span>
 
-        <span className="shrink-0 font-medium">{block.name}</span>
+        <span className="shrink-0 font-medium">
+          {TOOL_LABELS[block.name] ?? block.name}
+        </span>
+
+        {summary && (
+          <span className="text-muted-foreground/70 min-w-0 truncate font-mono text-xs">
+            {summary}
+          </span>
+        )}
 
         <ChevronDown
           size={12}

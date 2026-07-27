@@ -8,7 +8,7 @@
 import asyncio
 import logging
 from functools import cached_property
-from typing import TYPE_CHECKING, BinaryIO
+from typing import TYPE_CHECKING, BinaryIO, Literal
 from urllib.parse import quote
 
 import boto3
@@ -116,7 +116,11 @@ class R2Storage(Storage):
         )
 
     async def generate_download_url(
-            self, key: str, expires: int = 3600, filename: str | None = None,
+            self,
+            key: str,
+            expires: int = 3600,
+            filename: str | None = None,
+            disposition: Literal["attachment", "inline"] = "attachment",
     ) -> str:
         params: dict = {"Bucket": self._bucket, "Key": key}
         if filename:
@@ -125,7 +129,7 @@ class R2Storage(Storage):
             # RFC 6266：filename= 兜底 ASCII，filename*= 支持 UTF-8（中文不乱码）
             encoded = quote(safe, safe="")
             params["ResponseContentDisposition"] = (
-                f'attachment; filename="{safe}"; filename*=UTF-8\'\'{encoded}'
+                f'{disposition}; filename="{safe}"; filename*=UTF-8\'\'{encoded}'
             )
         return self._client.generate_presigned_url(
             ClientMethod="get_object",

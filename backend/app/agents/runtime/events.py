@@ -33,6 +33,9 @@ class EventType(StrEnum):
     TOOL_USE_STOP = "tool_use_stop"
     TOOL_RESULT = "tool_result"
 
+    # P5 — 沙箱产物（一轮结束时交付区里收到的文件清单）
+    ARTIFACTS = "artifacts"
+
 
 def sse_event(event: EventType | str, data: dict[str, Any]) -> str:
     """把事件类型 + 字典 payload 序列化成 SSE 帧（`event: ...\\ndata: ...\\n\\n`）。

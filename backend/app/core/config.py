@@ -3,7 +3,19 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # backend/app/core/config.py → parents[2] = backend/
-_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+BASE_DIR = Path(__file__).resolve().parents[2]
+_ENV_FILE = BASE_DIR / ".env"
+
+
+def _under_base(p: str) -> Path:
+    """把配置里的路径锚在 BASE_DIR 上，不随进程 cwd 漂移。
+
+    绝对路径原样返回（部署时可以直接配一个挂载点），相对路径挂到后端根下。
+    不这么做的后果实测过：dev server 从 backend/app 启动时，"data/sandbox"
+    会解析成 backend/app/data/sandbox —— 换个启动方式，历史工作区就凭空消失。
+    """
+    path = Path(p)
+    return (path if path.is_absolute() else BASE_DIR / path).resolve()
 
 
 class Settings(BaseSettings):
@@ -65,6 +77,21 @@ class Settings(BaseSettings):
     STORAGE_BACKEND: str = "r2"  # r2 | local
     STORAGE_LOCAL_ROOT: str = "data/uploads"  # local 后端根目录（相对 backend/）
     STORAGE_MAX_UPLOAD_SIZE: int = 50 * 1024 * 1024  # 单文件上传上限，默认 50MB
+
+    # ---------- 沙箱 ----------
+    SANDBOX_LOCAL_ROOT: str = "data/sandbox"  # 沙箱工作区根目录（相对 backend/，也可填绝对路径）
+
+    SANDBOX_ARTIFACT_MAX_SIZE: int = 20 * 1024 * 1024  # 单个产物大小上限，默认 20MB
+
+    @property
+    def storage_local_path(self) -> Path:
+        """local 存储后端的根目录（绝对路径）。"""
+        return _under_base(self.STORAGE_LOCAL_ROOT)
+
+    @property
+    def sandbox_local_path(self) -> Path:
+        """沙箱工作区的根目录（绝对路径）。"""
+        return _under_base(self.SANDBOX_LOCAL_ROOT)
 
     # ==================== 对象存储 (R2) ====================
     R2_ENDPOINT: str = ""  # 例: https://<AccountID>.r2.cloudflarestorage.com

@@ -103,6 +103,8 @@ class AgentConfig(BaseModel):
     builtin_tools: list[str] = Field(default_factory=list)
     mcp_servers: list[UUID] = Field(default_factory=list)
     skills: list[UUID] = Field(default_factory=list)
+    # 内置 skill 按 name 挂载（本体随代码分发、不进表），同 builtin_tools 的形态
+    builtin_skills: list[str] = Field(default_factory=list)
 
     behavior: AgentBehavior = Field(default_factory=AgentBehavior)
     ui: AgentUI = Field(default_factory=AgentUI)

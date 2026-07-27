@@ -3,6 +3,16 @@
 > 本文件是 P5 的**决策记录**，不是实现方案。每条决策附依据（源码路径或推导过程），
 > 便于日后复核；没有依据的条目显式标注为「产品决策」或「估算，待实测替换」。
 > 实现方案另出。
+>
+> **2026-07-26 修订 ①**（片 2a 落地过程中，实测推翻的部分）：决策 **3 / 6 / 7** 关于内置 skill
+> 的形态整体改判（内置不入表、不可删改、按 name 挂载）；决策 **9a** 关于 zip bomb 的判断修正；
+> **C.1** 补「路径由 driver 决定，本地与容器路径字面不可能相同」。改判处一律保留原文与推翻理由，
+> 不要照着记忆里的旧版本做。落地清单见 §5.5。
+>
+> **2026-07-26 修订 ②**（产物回传设计期，需求澄清后推翻的部分）：**只有交付区的产物会被持久化**，
+> 工作区不再整体同步。连带改判 **决策 14**（持久化对象从「整个工作区」缩小为「产物」）、
+> **C.1**（加第四个挂载点：交付区）、**C.2**（快照比对整段作废）、**§5.5**（ArtifactMiddleware 推翻）。
+> **推翻的根因记在 C.2 末尾，是本片最值得复用的一条**：两个不同的需求被一套机制同时回答了。
 
 ---
 
@@ -11,8 +21,8 @@
 做 Skill 的**执行能力**：一个带脚本的 Skill 能被 agent 调用、在容器内执行、产物回传，宿主机无副作用。
 
 **一句话架构**：agent 循环留在应用进程，沙箱是一次性 Docker 容器；一次完整回复借还一个容器，
-容器内所有命令走 `docker exec` 靠文件传递产物，回复结束把 `/workspace` 的变更按文件同步回对象存储、销毁容器。
-工作区状态绑 **workspace**（跨对话可见），不绑容器、不绑对话。
+容器内所有命令走 `docker exec` 靠文件传递产物，回复结束把**交付区**的产物收进对象存储、销毁容器。
+产物绑 **workspace**（跨对话可见），不绑容器、不绑对话；**中间文件一律不持久化**。
 
 ---
 
@@ -66,7 +76,7 @@
 |---|---|---|
 | 1 | 形态 = 目录 + `SKILL.md`（YAML 头 name/description + 正文 + 捆绑脚本），对齐 agentskills 标准 | deepagents 完整实现该规范；OpenHands 有 `is_agentskills_format` 位；Dify 存 `<slug>/SKILL.md`；Letta 映射 `skills/{name}/SKILL.md` — **四家源码互证** |
 | 2 | Skill 与 tool **同级资源**（可挂载、可管理、UI 平起平坐），但运行时**不是函数签名** | MaxKB `ToolType.SKILL` 与 INTERNAL/CUSTOM/MCP 并列（建模层）；五家运行机制均为「文本进上下文 + 通用工具执行」（运行时层） |
-| 3 | 两个来源：**内置**（随代码分发，`backend/app/skills/builtin/<name>/`）+ **用户上传**。**两者共用同一条入库路径** —— 内置只是启动时 seed 进表的种子数据，同样 per-user、同样可删改 | 刻意不做「共享的内置行」：那会让权限判断分叉，且共享行挂不上 per-user 的凭据。放 `app/` 下是硬约束 —— `pyproject.toml:66` 是 `packages = ["app"]`，放外面构建镜像时带不进去、部署即 seed 失败。**曾一度决定「v1 不做内置」**（理由是自造的是玩具、Anthropic 官方那批是 Proprietary 不能分发），后因自写的 `svg-chart`（MIT、零依赖、产物是可看的 SVG）合格而收回 |
+| 3 | 两个来源：**内置**（随代码分发，`backend/app/skills/builtin/<name>/`）+ **用户上传**。**内置不进 `skills` 表** —— 本体在代码里，启动时扫盘进内存注册表（`app/services/skill/builtin.py`）；表里只可能有一种内置行：用户给某个内置 skill **配了 key** 时产生的凭据行，没配 key 则零行 | **2026-07-26 推翻原决策**（原文：「两者共用同一条入库路径，内置只是 seed 进表的种子数据」）。改判依据 = **Dify `tool_builtin_providers` 表**：字段只有 `tenant_id / user_id / provider(字符串) / encrypted_credentials`，**没有 description、没有工具定义**，即内置工具本体在代码里，DB 只存「某租户给某内置 provider 配的凭据」，没配凭据就一行都没有。原决策的理由「共享行挂不上 per-user 凭据」正是被这个形态解掉的。收益：消掉 N×M 行、消掉 seed 遍历用户、内置包升级改代码即可零数据动作。放 `app/` 下仍是硬约束 —— `pyproject.toml:66` 是 `packages = ["app"]`，放外面构建镜像时带不进去 |
 
 ### B. Skill 怎么存
 
@@ -74,26 +84,48 @@
 |---|---|---|
 | 4 | 用户上传的：**DB 存元数据 + 对象存储存 zip 本体**，复用现有 `storage` 抽象（R2/Local）。表里只放 key，不存字节 | Dify `agent_drive_files` 表是路径 KV、**从不存字节**；MaxKB File 表存 zip；Letta block 表 — 三家一致。本项目 Document 表已是此形态 |
 | 5 | **独立 `skills` 表**，不塞进 tool 表 | 反面教材 = MaxKB `tool` 表的 `code` 字段：CUSTOM 存 Python / SKILL 存 File id / MCP 存别的，一字段三语义、大量列对某类型恒空。正面 = 本项目 `MCPServer` 已独立成表 |
-| 6 | `source_type`（builtin / user）**只作来源溯源**，用于 UI 区分与 seed 幂等判断 —— **不是权限位，两者都可删改** | 原设想是「builtin 不可删改」（仿 Letta block 的 `read_only`，`core_tool_executor.py:320`），随决策 3 改成「内置也走同一条入库路、也是 per-user 行」后失去意义 |
-| 7 | `AgentConfig.skills: list[UUID]` **保持 UUID 不变** | skill 是 DB 实体，同 KB / MCP；只有内置工具用 str name |
+| 6 | **内置 skill 不可删、不可改，用户唯一能动的是 key。** 「我不想要」= 从 `AgentConfig.builtin_skills` 里去掉那个 name（挂载层的事，跟 skill 行无关），与停用内置工具同构 | **2026-07-26 推翻原决策**（原文：「不是权限位，两者都可删改」）。原理由「随决策 3 改成 per-user 行后失去意义」站不住 —— **per-user 的行照样可以是只读的**。硬证据两条：① **Letta** 的 `read_only` 位在 `core_tool_executor.py` 被检查 **8 次**（320/336/354/530/665/691/744/899），每个写入口都查；② **Dify** 的 `delete_builtin_tool_provider(tenant_id, provider, credential_id)` 删的是**凭据**不是工具 —— 内置工具本体删不掉。连带收益：不可删 = 没有「被删掉」这个状态，注册表每次启动重扫不会复活任何东西 |
+| 7 | **两个字段，两种标识**：`skills: list[UUID]`（用户上传的，DB 实体）+ `builtin_skills: list[str]`（内置的，按 name） | **2026-07-26 修订**（原文：「保持 UUID 不变」）。随决策 3 而变 —— 内置的凭据行**可能不存在**（没配 key 时零行），UUID 引用不了一个还没出生的东西；而挂载与否必须跟「有没有行」完全无关。**这不是新发明**：项目里 `builtin_tools: list[str]`（按 name）与 `mcp_servers: list[UUID]`（按 id）本就并存，内置 skill 天然属于前者 |
 | 8 | 写入口**收在 service 层**；沙箱与 agent 永不持有 DB 凭据 | Letta `core_memory_append` 走 manager + `actor` + `read_only` 校验；Dify agent stub 用 JWE 令牌回调应用；OpenHands session key 仅 RUNNING 时有效 — 三家一致 |
 | 9 | 流通性 = **上传入库 ✅ / 导出 ✅**；外部源导入、市场 **留字段不实现** | 导出 = 拉归档，零成本（原「不做」已收回）。Letta `SkillSchema.source_url`、OpenHands `MarketplaceRegistration` 证明分发是数据模型的一部分，故留字段 |
-| 9a | 上传侧校验：**zip 大小上限** + **必须含 `SKILL.md`** + **frontmatter 合规**（见下）+ **成员路径不含 `..` / 不以 `/` 开头** | 末项抄 MaxKB `flow/tools.py:412`（`if ".." in member or member.startswith("/"): raise`，这段它做对了）。**其价值是「早报错 + 不依赖工具默认行为」，不是「不做会被黑」** —— 2026-07-25 实测：Python `zipfile.extractall` 已自动剥掉 `..` 与前导 `/`（CPython 文档明载），恶意条目落在目标目录内而非穿出去。但默认行为是**静默剥离**（用户不知道包有问题），且我们在容器内用 `unzip` 解压（决策 21a）时保护取决于那个 `unzip` 的版本与参数，已不在 Python 的保护范围。**大小上限挡不住 zip bomb**（特征是文件小、解开巨大），那一层靠容器的 `--memory` + tmpfs size 兜 |
+| 9a | 上传侧校验：**zip 大小上限** + **必须含 `SKILL.md`** + **frontmatter 合规**（见下）+ **成员路径不含 `..` / 不以 `/` 开头** | 末项抄 MaxKB `flow/tools.py:412`（`if ".." in member or member.startswith("/"): raise`，这段它做对了）。**其价值是「早报错 + 不依赖工具默认行为」，不是「不做会被黑」** —— 2026-07-25 实测：Python `zipfile.extractall` 已自动剥掉 `..` 与前导 `/`（CPython 文档明载），恶意条目落在目标目录内而非穿出去。但默认行为是**静默剥离**（用户不知道包有问题），且我们在容器内用 `unzip` 解压（决策 21a）时保护取决于那个 `unzip` 的版本与参数，已不在 Python 的保护范围。**~~大小上限挡不住 zip bomb~~ —— 2026-07-26 修正：这句不完整。** zip 的中央目录里逐条记着**解压后大小**（`ZipInfo.file_size`），把它们求和就能在**解压之前**拦下 zip bomb，成本近乎为零。**Dify 就是这么做的**（`api/services/agent/skill_package_service.py`）：`_MAX_ARCHIVE_BYTES 50MB` + `_MAX_UNCOMPRESSED_BYTES 200MB` + `_MAX_ENTRIES 5000` + `_MAX_SKILL_MD_BYTES 1MB` 四道，外加扩展名白名单与 `unsafe_path`。故 zip 层把关照抄 Dify 这一套（**必须自己写，`skills-ref` 完全不管这层**）；容器的 `--memory` + tmpfs size 退为最后兜底而非唯一防线。**注意声明值可以撒谎**，读单个成员时仍要用「流式读 上限+1 字节」而不是信 `file_size` |
 | 9b | frontmatter 校验按 **Agent Skills 规范原文**（https://agentskills.io/specification ，2026-07-25 已核对原文，非转述）：`name` 必填、1-64 字符、仅小写字母数字与连字符、不以 `-` 起止、无连续 `--`、**须等于父目录名**；`description` 必填、1-1024 字符；`license` / `compatibility`(≤500) / `metadata` / `allowed-tools` 可选 | 校验动机是四件具体事，不是「为了合规」：① 缺 `name`/`description` 则 prompt 片段拼不出来；② `name` 会进 prompt 且被当目录名，含空白或 `/` 会出诡异问题；③ 长度上限防单个描述把 prompt 撑爆；④ 对齐规范意味着聚合站下载的包能直接用（官方另有 `skills-ref validate` 工具）。**「须等于父目录名」并非我们的正确性必需**（deepagents 单独存 `path`、我们单独存 `storage_key`，都不靠 name 找文件），仍硬校验只为对齐规范 —— 曾以「否则找不到文件」为理由，该理由已收回 |
 | 9c | **prompt 膨胀不是问题，v1 全部常驻**；真挂多了再上 trigger | 规范「渐进披露」节自述：metadata（`name`+`description`）**约 100 tokens/skill**，启动时全部加载；1024 是硬上限非目标（Anthropic pdf skill 描述约 250 字符）。且挂载是用户显式选的（`AgentConfig.skills`），非全库注入 —— 与「挂 5 个工具就常驻 5 份 schema」同量级，工具 schema 通常更长。将来若需按需注入，照 OpenHands 的 `KeywordTrigger` / `TaskTrigger`（用户消息命中关键词才注入），决策 22 自拼 prompt 的形态天然容得下 |
 
-**表结构草案**（实现时定稿）：
+**表结构**（迁移 0017 已落地，字段不变；**语义随决策 3/6 改了**）：
 ```
 skills
-├── created_by      FK User
-├── name            SKILL.md 的 name（LLM 可见标识）
-├── description     SKILL.md 的 description（进 prompt 供判断）
-├── source_type     builtin | user   ← 来源溯源（非权限位）
-├── storage_key     对象存储 zip 的键
-├── skill_metadata  jsonb：原包文件清单等（抄 Dify `skill_metadata`）
+├── created_by            FK User
+├── name                  SKILL.md 的 name（LLM 可见标识）
+├── description           SKILL.md 的 description（进 prompt 供判断）
+├── source_type           builtin | user   ← 来源溯源（非权限位）
+├── storage_key           对象存储 zip 的键
+├── credentials_encrypted 运行所需环境变量 dict（整体 JSON Fernet 加密）
+├── skill_metadata        jsonb：原包文件清单等（抄 Dify `skill_metadata`）
 ├── enabled
 └── 时间戳
 ```
+
+**表里有两种行，别混**：
+
+| | `source_type=user`（上传的） | `source_type=builtin`（内置的） |
+|---|---|---|
+| 这行是什么 | **skill 本体的索引** | **仅仅是一份 key**，本体在 `app/skills/builtin/<name>/` |
+| 何时产生 | 上传时 | **用户填 key 那一刻**；不需要 key 的内置 skill 永远零行 |
+| `storage_key` | 对象存储的键 | 恒空（没有 zip） |
+| `description` 等展示字段 | 有效 | **不作数**，一律以代码里的 `SKILL.md` 为准（存冗余副本会跟代码漂移） |
+| 可删改 | 可 | **不可**，只能改 key |
+
+> 有人会拿决策 5 批评 MaxKB 的那句「大量列对某类型恒空」来反对这个设计。**不适用**：MaxKB 的病是 `code` **一列三语义**（读之前得先判类型才知道这列装的是什么），而这里没有任何一列语义会变 —— `storage_key` 永远是「zip 在对象存储的键」，内置行只是没有 zip 所以为空。**空值不是多义。**
+
+**「需不需要 key」写在 `SKILL.md` 的 `metadata` 里**，规范对该字段的定义原文即 "Key-value pairs for **client-specific properties**"：
+
+```yaml
+metadata:
+  required-env: OPENWEATHER_API_KEY OPENWEATHER_UNITS   # 空格分隔，形态对齐 allowed-tools
+```
+
+它是**给前端的预填提示**（该摆几个 key 输入框、分别叫什么），**不是白名单** —— key 编辑器允许用户自己加行（同 `MCPServer.headers`，决策 15 已定 UI 同构）。故从聚合站下来的包没写这个字段也能配 key，不用改包重打。**一条约定同时覆盖内置与上传两种来源。**
 
 ### C. 沙箱怎么跑
 
@@ -103,7 +135,7 @@ skills
 | 11 | **一次性容器**：起 → 跑 → `docker rm`。不用 restart 复用（省的几秒不值），池化推后 | 销毁式清理使「清理漏网 = 跨用户数据泄露」这类 bug 不存在。RAGFlow 池化可行的前提是 read-only + tmpfs（清理近乎免费），与本项目取舍不同 |
 | 12 | **借还粒度 = 一次完整回复**（一条用户消息 → agent 与 LLM 转 N 圈 → 吐完回复）。轮内所有命令打进**同一容器** | 若按单条命令借还，一轮十几步就要解包/打包十几次，方案作废 |
 | 13 | 命令执行 = **`docker exec`**，不上容器内守护进程 | 守护进程唯一多买到的是 shell 会话态（cwd 延续 / 后台常驻），Dify 需要（tmux 长会话）、OpenHands 需要（`npm run dev` 后测网页）；本项目 skill 是跑完即止的脚本，用不上。**产物跨命令传递靠文件、与此选择无关**（文件在容器磁盘，活得比 shell 进程久） |
-| 14 | **工作区状态绑 workspace**（不绑容器、不绑对话）：状态活在对象存储，容器随时可销毁 | OpenHands `sandbox/workspace_archive.py`：删容器前把工作区传对象存储，「让 agent 的工作在沙箱被删除后仍存活」。**绑定粒度**：Letta 绑 agent（MemFS）、Dify 绑 `agent-<agent_id>`（drive_ref）—— 本项目 workspace 就是那个「持久实体」（自带 supervisor + 招募成员 + 跨多个 conversation），故映射到 workspace 而非 conversation。**曾误判为「无先例可抄」，是因为把 workspace 当成了「装对话的容器」而非实体** |
+| 14 | **持久化的是产物，不是工作区**（绑 workspace，不绑容器、不绑对话）：产物活在对象存储，容器与工作区随时可销毁 | **2026-07-26 修订 ②**（原文：「**工作区状态**绑 workspace……状态活在对象存储」）。**改的是持久化的对象，不是绑定粒度** —— 绑 workspace 这条不变（Letta 绑 agent、Dify 绑 `agent-<agent_id>`，本项目 workspace 才是那个持久实体：自带 supervisor + 招募成员 + 跨多个 conversation）。改的是「留什么」：中间文件任何情况都不留，只有**被显式交付到交付区的成果**才活得过这一轮（产品决策，2026-07-26 用户拍板）。**连带效果**：跨对话可见的东西 = 历史**产物**（容器启动时铺回工作区），不再是 agent 的全部工作痕迹；OpenHands `sandbox/workspace_archive.py` 那套「整个工作区打包传对象存储」**不再适用**，它服务的是 coding agent（工作区就是 repo、每个文件都是成果），与本项目形态不同 |
 | 15 | 带 key 的 skill：**Fernet 加密存 DB → 运行时解密 → `docker run -e` 启动注入** | 同本项目 Provider API key、MCPServer headers 既有做法。注入时机是「起容器时」，故与命令怎么跑无关 |
 | 16 | 容器加固：`--read-only` + tmpfs + `--user nobody` + `--memory 256m` + `--cpus`；装 Python + Node | 直接抄 RAGFlow `executor_manager/core/container.py:82` 的 `create_container` 参数 |
 | 17 | **网络**：沙箱容器接**专用 docker network**（网络内只有沙箱自己，PG / Redis / web 都不在）→ 能出公网、连不到内部服务。**外加一条防火墙规则**拦云元数据地址：`iptables -I DOCKER-USER -d 169.254.169.254 -j DROP` | 靠网络拓扑而非 iptables 规则集，Mac / Linux 一致。**元数据地址必须单独拦** —— 它返回的是可直接调云 API 的 IAM 临时凭据，不是配置信息；Capital One 2019 即由 SSRF 打到该地址窃取凭据、泄露约 1 亿条客户数据（AWS 因此推出 IMDSv2）。**RAGFlow 的做法不可照搬**：它靠 AST 静态分析禁 `socket`/`http.client`/`os`/`subprocess` 等 import（`services/security.py`），那是纯计算节点的做法，skill 要调外部服务、禁不得 |
@@ -112,44 +144,76 @@ skills
 #### C.1 容器目录布局
 
 ```
-/skills      ← 挂载的 skill 解压于此（只读）
-/workspace   ← 持久区：同步回对象存储，跨对话可见
-/tmp         ← 本轮临时区（tmpfs 内存盘）：容器销毁即弃，不同步
+/skills               ← 挂载的 skill 解压于此（只读）
+/workspace            ← 工作台：容器启动时铺入历史产物，跨对话可见；本身不持久化
+/outputs/<本轮 id>/   ← 交付区：每轮新建的空目录。放进来的才是产物
+/tmp                  ← 本轮草稿（tmpfs 内存盘）：销毁即弃
 ```
 
-除这三处外整个文件系统 `--read-only`。**临时区直接用 `/tmp`**（Linux 标准语义，脚本作者与 LLM 都天然知道它会被清掉，无需在 prompt 里额外解释；RAGFlow 亦挂 `--tmpfs /tmp`）—— 不自造 `/scratch` 之类的名字。
+除这四处外整个文件系统 `--read-only`。**草稿区直接用 `/tmp`**（Linux 标准语义，脚本作者与 LLM 都天然知道它会被清掉，无需在 prompt 里额外解释；RAGFlow 亦挂 `--tmpfs /tmp`）—— 不自造 `/scratch` 之类的名字。
 
-#### C.2 同步机制：按文件、不按整包
+**交付区是 2026-07-26 修订 ② 新增的，它是「哪些是产物」这个问题的全部答案**（依据见 C.2 末尾）。三条硬约定：
 
-**object key = `sandbox/{workspace_id}/{相对 /workspace 的路径}`，一个文件一个对象。**
-```
-/workspace/plan.md         ←→ sandbox/{wsid}/plan.md
-/workspace/data/sales.csv  ←→ sandbox/{wsid}/data/sales.csv
-```
+1. **每轮一个新的空目录**（目录名 = 本轮 `message_id`）。里面有什么就是本轮产物，**不需要跟任何东西比对** —— 目录是空的开始的，没有历史可混。
+2. **`execute` 的工作目录 = `/tmp`（草稿区），不是交付区。** 脚本随手写的相对路径文件（`temp.json`）落草稿区、不进卡片；成果必须由模型用 `--out` 显式写进交付区。曾想把工作目录设成交付区以兜住「脚本硬编码输出文件名」的情况，**当场推翻**：那会让所有正常 skill 的中间文件也落进交付区 —— 拿大代价换小风险。
+3. **残余风险照实记**：脚本不接受输出路径参数、自己写死文件名时，成果落在草稿区、没有卡片（文件不丢）。**这一层任何系统都堵不上** —— 「哪个是成果」是语义，脚本没说出来就不存在于任何地方。正常 skill 不会这样（输出路径不可指定的脚本，agent 根本没法用）。
 
-**key 里不含 conversation_id** —— 一放进去对话 B 就找不到对话 A 写的文件，等于退回「一对话一份文件系统」。
+**上面这些路径是 docker driver 的值，不是全局常量。**（2026-07-26 落地时补）
+路径由 driver 决定，代码里是 `SandboxPaths(root / skills / workspace / outputs / tmp)`，prompt 拼接时从它取值：
 
-**为什么不能按整包**：整包是 read-modify-write，必然丢更新 ——
-对话 A、B 各自拉走同一份快照，A 传回整包后 B 再传回它那份旧快照，A 的改动被覆盖。
-分子目录（`shared/` + `conv-x/`）**不解决**：冲突发生在整包层面，不在文件层面。
-
-**只回传变更的文件**，靠一份「进门快照」判断：挂载时把每个文件记成 `{相对路径: 内容指纹}`
-（指纹 = 内容的 hash，内容改一个字节指纹就完全不同）；销毁时遍历 `/workspace` 重算，跟进门那份比 ——
-
-| 情况 | 动作 |
+| driver | 模型看到的路径 |
 |---|---|
-| 快照里没有 | 新文件 → 上传 |
-| 有，指纹不同 | 已修改 → 上传 |
-| 有，指纹相同 | 未改动 → 不传 |
-| 快照里有、文件已不存在 | 删除 → **v1 不处理** |
+| LocalShell（片 2a 脚手架） | `<root>/skills`、`<root>/workspace`、`<root>/outputs/<id>`、`<root>/tmp` —— 宿主机真实绝对路径 |
+| LocalDocker | `/skills`、`/workspace`、`/outputs/<id>`、`/tmp` —— 容器内路径 |
 
-**不加锁、不为一致性排队**（容器池的排队是另一回事）：两个对话写不同文件天然无冲突；
-撞同一 key 是语义冲突，**v1 后写赢 + 记日志**。条件写（If-Match）留后续 —— 现在要求它会逼
-`storage` 抽象长出一个 Local 后端做不到的残缺能力。
+**「本地与容器路径字面相同」这个目标拿不到，别再尝试。** 曾想用 `LocalShellBackend(virtual_mode=True)` 造一个假根让本地也显示 `/skills`，**实测失败**：`virtual_mode` 只映射那 7 个工具里的文件类工具，`execute` 交给 `sh -c` 执行、由操作系统按真实文件系统解析，直接报 `can't open file '/skills/svg-chart/scripts/bar.py'`。deepagents 自己的告警原话即 *"virtual_mode does not restrict shell execution"*，且其自带 prompt 明写 *"All file paths must start with a /"* —— **文件工具与 shell 必须共用同一个路径空间**，本地只能用 `virtual_mode=False` + 宿主机绝对路径。真正要保住的性质是「prompt 里的路径与实际路径一致」，那个两种 driver 下都成立；字面相同只是曾经以为能白拿的东西。
 
-**安全边界 = workspace 前缀**，无新增风险（workspace 归属校验既有）。两条必须做的防护：
-① `workspace_id` 只能服务端取，绝不受 skill / LLM 影响；
-② 相对路径防穿越（`../` 逃出前缀）—— 复用 Local storage 后端既有的路径穿越防护。
+#### C.2 回收机制：只收交付区（2026-07-26 修订 ②）
+
+**一轮结束 → `ls` 交付区 → 收进对象存储 → 落一条记录带 `message_id`。**
+
+**object key = `sandbox/{workspace_id}/{message_id}/{文件名}`。**
+```
+/outputs/019e.../sales.svg  ←→  sandbox/{wsid}/019e.../sales.svg
+```
+
+带 `message_id` 是**必需**的两个理由：① 回放时按消息归组（没有它事后无法把产物挂回那条消息）；
+② 两轮都产出 `chart.svg` 不会互相覆盖。
+
+**不需要快照、不需要比对、不需要判断「哪些变了」** —— 交付区每轮是新建的空目录，
+里面有什么就是这一轮交付的，数一数即可。
+
+**安全边界**：`workspace_id` 与 `message_id` 均由服务端生成，绝不接受来自 skill / LLM 的输入；
+文件名防穿越复用 Local storage 后端既有的防护。
+
+---
+
+**以下为原方案，已整段作废，保留以记录推翻理由：**
+
+> 原 C.2 = **同步整个工作区，按文件、不按整包**：key = `sandbox/{workspace_id}/{相对 /workspace 的路径}`；
+> 靠一份「进门快照」（`{相对路径: 内容指纹}`）在容器销毁前重算比对，新增与修改的才上传；
+> 不加锁（两个对话写不同文件天然无冲突），撞同一 key 后写赢 + 记日志。
+> 论证过「整包是 read-modify-write 必然丢更新，分子目录不解决」——**那段论证本身没错**，
+> 只是它要解决的问题现在不存在了。
+
+**推翻的直接原因**（产品决策，2026-07-26 用户拍板）：**中间文件任何情况都不持久化**，
+只有最终产物需要留。一旦持久化对象从「整个工作区」缩小成「交付区里的成果」，
+快照比对要回答的那个问题（哪些文件变了）就没有了 —— 要存的东西本来就在筐里。
+连带「丢更新」也消失：key 带 `message_id`，两个对话根本写不到同一个 key 上。
+
+**推翻的根本原因（本片最值得复用的一条）：一套机制被同时用来回答两个不同的问题。**
+
+| | 要回答的问题 | 想要什么 | 正确的机制 |
+|---|---|---|---|
+| **A** | 容器要销毁了，哪些文件得留住 | 曾以为是「全部变更」 | 快照比对 |
+| **B** | 哪些是给用户看的产物卡片 | **只要成果** | 交付区 |
+
+原 §5.5 直接把 A 的机制（快照比对）拿去做 B（产物清单），于是一路在文件系统里挖
+「哪个是成果」这个语义 —— **而语义不在文件系统里，怎么挖都挖不出来**。
+澄清需求后 A 收缩成 B，两者合并，快照比对整个不需要了。
+
+**可迁移的判据**：拿到一个「怎么做」时，先确认它服务的「要什么」——
+尤其当那个「怎么做」是从旧文档抄来的，文档里的机制很可能是为另一个目标设计的。
 
 ### D. agent 侧 —— 轮子 deepagents 已造完
 
@@ -162,7 +226,7 @@ skills
 | 20 | **唯一要写的** = 一个 `BaseSandbox` 子类，填 `execute()` + `upload_files()`，其余由基类派生 | `deepagents/backends/sandbox.py:394`（ABC，ls/grep/glob/read/edit 全部 shell 出去派生）。位置同 MaxKB `SandboxShellBackend` —— 它填宿主 subprocess，本项目填一次性容器 |
 | 21 | skill 进出容器 = backend 的 `upload_files()` / `download_files()` | 同上。原「不知道怎么投递 / 怎么取回」由该接口消化 |
 | 21a | **zip 传进容器、在容器内解压**（`upload_files` 送字节 → `execute("unzip …")`），**不在 web 进程内解、也不让容器自己去对象存储拉** | ① 容器自取 = 必须给它对象存储凭据，而容器里跑的是用户代码 → 等于交出整个 bucket 读写权；② 在容器内解，zip bomb 炸开时被 `--memory 256m` + tmpfs size 上限掐死；在 web 进程内解则是拿自己的进程冒险 |
-| 22 | **不用 `SkillsMiddleware`**，自己拼那段 system prompt 片段（约 20 行，prompt 模板照抄它的 `SKILLS_SYSTEM_PROMPT`），清单数据从 `skills` 表取、内置 skill 启动时扫一次 | `SkillsMiddleware.abefore_agent` 在 agent 一开始就调 `backend.als()` 扫 `/skills`（`middleware/skills.py`）—— **扫目录就得先有容器，与容器懒启动（决策 22a）直接冲突**。而它的核心价值「扫文件系统发现 skill」我们本就不需要：name / description 已在 DB 里 |
+| 22 | **不用 `SkillsMiddleware`**，自己拼那段 system prompt 片段（约 20 行，prompt 模板照抄它的 `SKILLS_SYSTEM_PROMPT`），清单数据：内置的从启动时扫出的内存注册表取（决策 3），用户上传的从 `skills` 表取 | `SkillsMiddleware.abefore_agent` 在 agent 一开始就调 `backend.als()` 扫 `/skills`（`middleware/skills.py`）—— **扫目录就得先有容器，与容器懒启动（决策 22a）直接冲突**。而它的核心价值「扫文件系统发现 skill」我们本就不需要：name / description 已在 DB 里 |
 | 22a | **容器懒启动**：LLM 第一次调那 7 个工具中任意一个时才起容器，不在回复开头起 | 挂了 skill 的对话也未必真用沙箱，提前起是白付启动开销。启动约 1-3s（未实测），在「一轮几十秒到 5 分钟」的尺度上可接受 |
 | 22b | **`SANDBOX_ENABLED` 配置 + 三层降级**：① 未挂 skill → 不装 middleware、不碰 docker；② 配置关闭 → 不装工具、prompt 不列 skill；③ 开着但 docker 连不上 → 工具返回一句人话，不抛异常 | 本地开发 / clone 项目未装 docker 时不能报错。注意第 ③ 层要自己写（见决策 19 下方注：这 7 个工具不走 `CoCoTool` 基类） |
 | 23 | **不用 `create_deep_agent`**，继续零件式引 deepagents | 同本项目 `agents/workspace/workspace.py` 既有姿势（只取 `SubAgentMiddleware` / `StateBackend` / `SummarizationMiddleware`，图自己拼）。MaxKB 为用 `create_deep_agent` 单开了一条 agent 分支 |
@@ -207,8 +271,8 @@ skills
 | 容器池 / 粘性窗口 / 排队调度 | 池化是优化不是必需。一轮 2 分钟的尺度上，容器启动 1-3s 可忽略。等跑通后用实测数据决定池子大小 |
 | Skill 市场 / 外部源自动拉取 | 留字段不实现 |
 | 「agent 自己装技能」工具 | 独立小切片。本片只保证数据模型与 service 层不挡路（写入口收在 service 层） |
-| 删除同步（容器内删了文件、对象存储也删） | v1 不做。只做新增 / 修改的回传 |
-| 条件写（If-Match）防同路径覆盖 | Local storage 后端做不到，现在要求会逼抽象层长出残缺能力。v1 后写赢 + 记日志 |
+| ~~删除同步（容器内删了文件、对象存储也删）~~ | **2026-07-26 修订 ② 后不再是一个议题** —— 不同步工作区，只收交付区的产物，没有「删除」这个状态要同步 |
+| ~~条件写（If-Match）防同路径覆盖~~ | **同上，问题消失** —— object key 带 `message_id`，两轮 / 两个对话根本写不到同一个 key |
 | 用户自写 tool（非 skill）跑进沙箱 | 有价值（MaxKB 即如此），但属 tool 模块的后续刀，不在本片 |
 | 部署上线 | 本地 Mac 跑通即可 |
 
@@ -231,8 +295,44 @@ skills
 - **内置 skill `svg-chart` ✅**（2026-07-25）：`backend/app/skills/builtin/svg-chart/`
   —— `SKILL.md` + `scripts/{_svgbase,bar,line,pie}.py`，纯标准库、MIT、产物是可看的 `.svg`。
   实测：三种图跑通、XML 合法、输出确定性（同输入同字节）、缺失值不当 0、负值柱子朝下、
-  饼图喂多系列报错退出而非硬画。**它的 seed 入库代码推到片 4/5（上传流程）一起做**，
-  当下先当 2a 验证链路的素材用。
+  饼图喂多系列报错退出而非硬画。~~seed 入库代码推到片 4/5~~ —— 随决策 3 改判，**内置根本不入库**。
+- **片 2a：agent 侧链路打通 ✅**（2026-07-26，不碰 docker）。落地件：
+  - `app/services/skill/package.py` —— zip → `SKILL.md` → `skills_ref.validate()` 的胶水（**A/B 两种打包形态 + GitHub 外壳三种都归一化**；`name` 参与拼路径前自证防穿越）
+  - `app/services/skill/builtin.py` —— 内置注册表（`load/list/get/resolve` + 按 name 批量取凭据），lifespan 启动时扫一次、校验失败即抛
+  - `app/services/skill/prompt.py` —— `<available_skills>` XML（形状照抄 `skills_ref.to_prompt()`，但**不能调它** —— 它吃本地目录且把宿主机路径写进 `<location>`）
+  - `app/services/sandbox/layout.py` —— `SandboxPaths` + 工作区铺设（`skills/`、`tmp/` 每次重铺，`workspace/` 绝不清空）
+  - `app/services/skill/mount.py` —— `build_skill_mount(cfg, user, scope_id)` → `FilesystemMiddleware` + prompt 片段；**没挂 skill 返回 `None`**（决策 19 的落点）
+  - `AgentConfig.builtin_skills: list[str]`；`AgentTemplate.build()` 新增 `middleware` 参数
+  - **依赖新增 `skills-ref`**（Anthropic 官方参考实现）。诚实记一笔：**实测五家六份实现无一使用它，全部手写**（RAGFlow 有三份，其中两份连 YAML 库都不用、逐行 `strings.HasPrefix`）。仍然用它的唯一理由是**它是唯一一个校验失败会给出原因的实现**（`validate(dir) -> list[str]`）——其余全是「失败返回 None / 跳过 + 打日志」，因为它们的场景是「扫已有 skill 库」而非「审核用户刚传的包」。押注面只有两个函数，换回手写就是 100 行
+  - **完成判据已达成**：`qwen3.7-max` 在 Playground 里自主完成 读 SKILL.md（带 `limit=1000`）→ 数据落成 JSON → **自己选了 `line.py`（时间序列，选图表格判对）** → `execute` 跑通 → 回读 SVG 自检 → 报路径。产物在 `workspace/`，跨对话保留
+  - 途中修掉三个不测发现不了的问题：① `virtual_mode=True` 导致文件工具与 shell 路径空间打架；② `LoopTemplate.build` 收下 `middleware` 却不传给 `create_agent`（**签名对、类型对、不报错，只是工具全没绑上**，症状是模型把 tool call 写成纯文本）；③ 配置项被误贴进 `.env`
+
+- **前端对接 ✅**（2026-07-26）：`GET /skills` 列表接口（读内存注册表，不查库）+ `/tools` 页第三个 Tab + ConfigPanel「资源」区第四个下拉（写 `builtin_skills`）+ `ToolUseBlock` 打磨（7 个文件工具的中文名映射 + 沙箱绝对路径缩短到挂载点起算，规则本地/容器通用）。顺带修掉一个存在一个月的类型错误：`AgentConfig` 缺 `mcp_servers` 声明，`npm run build` 一直是坏的（`vite dev` 不做类型检查所以没人发现）。
+
+**产物回传的形态已定（未实现，2026-07-26 修订 ② 重写）**：
+
+链路四步，每步一句话：
+
+```
+一轮结束 → ls 交付区 → 收进对象存储 → 落库带 message_id → SSE 发清单 → 前端卡片
+```
+
+- **识别 = `ls` 一个空目录**。交付区每轮新建（目录名 = `message_id`），里面有什么就是本轮产物。
+  **不用快照、不用比对、不用拦 backend、不用 middleware、不用模型额外调什么工具。**
+- **`ArtifactMiddleware` 这条推翻**（原文：「快照比对挂成一个 `ArtifactMiddleware`，`abefore_agent`
+  拍快照 / `aafter_agent` 比对，跟着 `SkillMount` 走」）。推翻理由见 C.2 末尾：它是拿 A 的机制做 B 的事。
+  连带这些中途讨论过的方案**全部作废**，不要再走回去：指纹用 hash 还是 stat、快照拍在 middleware
+  还是 runner 的 `finally`、按 mtime 时间戳过滤、继承 backend 拦 `write`/`edit`/`execute` 三个写入口、
+  给模型一个 `publish_artifact` 工具。**它们都是在「交付区不存在」的前提下硬猜「哪个是成果」。**
+- **落库必须带 `message_id`** —— 回放要用（容器早销毁了，卡片靠 DB 记录 + 存储里的字节渲染），
+  且 Workspace 的文件浏览器要按消息归组。
+- **Playground 只做「消息内产物卡片」**，不做工作区文件浏览器 —— 试跑场没有「上周那份文件在哪」
+  这种需求。且 Playground 消息不入库（沙盒语义），**刷新后卡片不留**，这是它一贯行为、不是缺陷。
+- **Workspace 才做文件浏览器**（跨消息聚合、按消息折叠）。
+- 站内预览挂账不排期，见 `issues/003-artifact-inline-preview.md`；先用下载接口的
+  `Content-Disposition: inline` 让浏览器自己渲染。
+
+**还没做的（P5 剩余）**：产物回传（交付区目录 + 收产物 + 产物表与迁移 + SSE + 前端卡片 + 下载接口）；workspace 那条路的接线（`build_workspace_graph` 直接调 `create_agent`、不走模板，需 supervisor + 各成员**共用同一个 mount**、skills 取并集 —— 决策 12「借还粒度=一次完整回复」的直接约束）；用户上传（zip 层把关 + 对象存储 + CRUD + 前端）；**LocalDocker driver（真沙箱，当前零隔离）**。
 
 ## 6. 范围与排期
 

@@ -33,6 +33,7 @@ import { ChatStreamHttpError, streamChat } from '@/api/chat-stream'
 import type {
   ApiContentBlock,
   ApiHistoryMessage,
+  ArtifactsPayload,
   AssistantMessage,
   ChatMessage,
   ContentBlockDeltaPayload,
@@ -341,6 +342,16 @@ export function createChatStore({
               if (m?.role !== 'assistant') return
               m.usage = p.usage
               m.stopReason = p.stop_reason
+            })
+            return
+          }
+          case 'artifacts': {
+            const p = payload as ArtifactsPayload
+            // 后端保证这一帧在 message_stop 之前到，所以挂得上当前这条消息
+            set((s) => {
+              const m = s.messages[s.messages.length - 1]
+              if (m?.role !== 'assistant') return
+              m.artifacts = p.artifacts
             })
             return
           }

@@ -10,6 +10,7 @@ import type {
 } from '@/types'
 import { cn } from '@/lib/utils'
 
+import { ArtifactCard } from './ArtifactCard'
 import { DelegateBlock } from './blocks/DelegateBlock'
 import { TextBlock } from './blocks/TextBlock'
 import { ThinkingBlock } from './blocks/ThinkingBlock'
@@ -193,6 +194,15 @@ const AssistantMessageRow = memo(function AssistantMessageRow({
         }
         return <ToolUseBlock key={block.index} block={block} />
       })}
+
+      {/* 沙箱产物 —— 这一轮交付出来的文件，排在正文之后、错误之前 */}
+      {message.artifacts && message.artifacts.length > 0 && (
+        <div className="mt-2 flex flex-col gap-2">
+          {message.artifacts.map((a) => (
+            <ArtifactCard key={a.id} artifact={a} />
+          ))}
+        </div>
+      )}
 
       {message.status === 'error' && message.errorMessage && (
         <p className="text-destructive text-sm">{message.errorMessage}</p>

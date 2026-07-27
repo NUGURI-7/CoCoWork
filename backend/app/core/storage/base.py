@@ -9,7 +9,7 @@
 """
 
 from abc import ABC, abstractmethod
-from typing import BinaryIO
+from typing import BinaryIO, Literal
 
 
 class Storage(ABC):
@@ -26,10 +26,10 @@ class Storage(ABC):
 
     @abstractmethod
     async def save(
-        self,
-        key: str,
-        fileobj: BinaryIO,
-        content_type: str = "application/octet-stream",
+            self,
+            key: str,
+            fileobj: BinaryIO,
+            content_type: str = "application/octet-stream",
     ) -> None:
         """流式保存对象。
 
@@ -58,17 +58,24 @@ class Storage(ABC):
         confirm/passthrough 后由后端跟存储确认一次真实大小。
         """
 
-    async def generate_upload_url(
-        self,
-        key: str,
-        content_type: str = "application/octet-stream",
-        expires: int = 300,
+    async def generate_download_url(
+            self,
+            key: str,
+            expires: int = 3600,
+            filename: str | None = None,
+            disposition: Literal["attachment", "inline"] = "attachment",
     ) -> str:
-        """生成预签名上传 URL（前端直传，PUT 到此 URL）。
+        """生成预签名下载 URL（前端直接 GET，绕开后端出站流量）。
 
         默认抛 `NotImplementedError`；仅对象存储后端（`supports_presigned=True`）重写。
+
+        `filename`: 给定时，浏览器跨域下载会以此名保存。
+        `disposition`: 浏览器拿到后怎么处理 —— `attachment` 存成文件，
+            `inline` 直接在浏览器里打开（沙箱产物要看图，走这个）。
+            **它直接拼进 HTTP 响应头**，故用 Literal 锁死取值，不接受任意字符串。
+            仅在 `filename` 给定时生效（两者写在同一个头里）。
         """
-        raise NotImplementedError(f"{type(self).__name__} 不支持预签名上传")
+        raise NotImplementedError(f"{type(self).__name__} 不支持预签名下载")
 
     async def generate_download_url(
             self, key: str, expires: int = 3600, filename: str | None = None,
