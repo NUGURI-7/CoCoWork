@@ -79,6 +79,7 @@ class VectorRetriever(Retriever):
                 document_id=row["document_id"],
                 doc_name=row["doc_name"],
                 title=row["title"],
+                page=row["page"],
                 content=row["content"],
                 chunk_text=row["chunk_text"],
                 score=1 - row["distance"],

@@ -126,6 +126,8 @@ export interface RetrievalHit {
   document_id: string
   doc_name: string
   title: string
+  /** 段的起始页；仅 PDF 有，其余格式为 null */
+  page: number | null
   content: string
   chunk_text: string
   score: number

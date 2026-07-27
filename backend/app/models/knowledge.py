@@ -94,6 +94,7 @@ class Document(UUIDBaseModel, TimestampMixin):
 
     knowledge_base = fields.ForeignKeyField(
         "models.KnowledgeBase", related_name="documents", on_delete=fields.CASCADE,
+        db_index=True,
     )
     name = fields.CharField(max_length=255, description="文档名")
     file_type = fields.CharField(max_length=20, description="源文件类型：md / txt")
@@ -127,9 +128,11 @@ class Paragraph(UUIDBaseModel, TimestampMixin):
 
     knowledge_base = fields.ForeignKeyField(
         "models.KnowledgeBase", related_name="paragraphs", on_delete=fields.CASCADE,
+        db_index=True,
     )
     document = fields.ForeignKeyField(
         "models.Document", related_name="paragraphs", on_delete=fields.CASCADE,
+        db_index=True,
     )
     content = fields.TextField(description="段全文——命中后返回给模型的就是它")
     title = fields.CharField(max_length=256, default="", description="段 / 章节标题")
@@ -137,6 +140,11 @@ class Paragraph(UUIDBaseModel, TimestampMixin):
     char_length = fields.IntField(default=0, description="字符数")
     search_vector = TSVectorField(
         null=True, description="全文检索词料（jieba 分词 → tsvector，建 GIN 索引）",
+    )
+    meta = fields.JSONField(
+        default=dict,
+        db_default="{}",
+        description="定位信息等元数据：PDF 存 {'page': 12}（段的起始页），其余格式为空",
     )
 
     class Meta:
@@ -155,12 +163,15 @@ class Embedding(UUIDBaseModel):
 
     knowledge_base = fields.ForeignKeyField(
         "models.KnowledgeBase", related_name="embeddings", on_delete=fields.CASCADE,
+        db_index=True,
     )
     document = fields.ForeignKeyField(
         "models.Document", related_name="embeddings", on_delete=fields.CASCADE,
+        db_index=True,
     )
     paragraph = fields.ForeignKeyField(
         "models.Paragraph", related_name="embeddings", on_delete=fields.CASCADE,
+        db_index=True,
         description="始终有——命中后据此返回整段",
     )
     source_type = fields.CharEnumField(

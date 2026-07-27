@@ -30,14 +30,19 @@ from app.services.knowledge.assembler import (
 from app.services.knowledge.parser import BlockType, DocumentBlock
 
 
-def h(text: str, level: int) -> DocumentBlock:
-    """造标题块。`text` 写 markdown 原文（含 `#`），与 parser 的产出一致。"""
-    return DocumentBlock(text=text, block_type=BlockType.HEADING, heading_level=level)
+def h(text: str, level: int, page: int | None = None) -> DocumentBlock:
+    """造标题块。`text` 写 markdown 原文（含 `#`），与 parser 的产出一致。
+
+    `page` 默认 None，与 markdown / txt 那两条路一致——只有 PDF 会填。
+    """
+    return DocumentBlock(
+        text=text, block_type=BlockType.HEADING, heading_level=level, page=page
+    )
 
 
-def p(text: str) -> DocumentBlock:
+def p(text: str, page: int | None = None) -> DocumentBlock:
     """造正文块。"""
-    return DocumentBlock(text=text, block_type=BlockType.PARAGRAPH)
+    return DocumentBlock(text=text, block_type=BlockType.PARAGRAPH, page=page)
 
 
 # --- 退化输入 ---
@@ -236,3 +241,41 @@ def test_content_keeps_heading_markup():
     """
     drafts = assemble_paragraphs([h("## 3.1 向量检索", 2), p("正文")])
     assert drafts[0].content == "## 3.1 向量检索\n\n正文"
+
+
+# --- 页码（定位信息，P4 引用溯源的上游） ---
+
+
+def test_page_taken_from_first_block():
+    """段的页码 = 它**第一个块**的页码，后面的块跨到下一页也不改。
+
+    记起始页而非结束页：展示成「出自第 12 页」是给人跳转用的，跳到段的
+    开头才对。
+    """
+    drafts = assemble_paragraphs([h("# T", 1, page=3), p("A", page=3), p("B", page=4)])
+    assert drafts[0].page == 3
+
+
+def test_page_of_continuation_segment_is_its_own():
+    """超长切出来的续段取**它自己**第一个块的页，不继承原段的。
+
+    页码因此会随续段自然往后走。放在有标题的语境下测——无标题那条路径
+    会先触发、把超长逻辑整个盖住（测试照样绿，测的却是另一回事）。
+    """
+    blocks = [h("# T", 1, page=1), p("AAAA", page=1), p("BBBB", page=2)]
+    assert [d.page for d in assemble_paragraphs(blocks, max_chars=6)] == [1, 2]
+
+
+def test_page_not_leaked_between_segments():
+    """前一段有页码，不能渗进后一段——本层带状态，`flush` 必须把它清掉。
+
+    这类残留 bug 不报错：页码串了段，流水线照样跑完，只有翻库才看得见。
+    """
+    blocks = [h("# 有页", 1, page=7), p("A", page=7), h("# 无页", 1), p("B")]
+    assert [d.page for d in assemble_paragraphs(blocks)] == [7, None]
+
+
+def test_page_is_none_for_formats_without_pages():
+    """markdown / txt 没有页码，恒为 None——定位信息由标题链承担。"""
+    drafts = assemble_paragraphs([h("# 标题", 1), p("正文一"), p("正文二")])
+    assert all(d.page is None for d in drafts)

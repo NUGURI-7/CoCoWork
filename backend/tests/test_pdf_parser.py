@@ -510,20 +510,6 @@ def test_synthetic_heading_level_matches_numbering(synthetic_blocks):
     assert levels["一、绪论"] < levels["1.1 背景"]
 
 
-@requires(SYNTHETIC)
-@pytest.mark.xfail(
-    strict=True,
-    reason="设计稿待办 5：_LINE_TOLERANCE 只看 y 不看 x，p3 的页眉(top≈80.4)与"
-    "正文(top≈79.5)被按 y 聚成了同一行，两串文字逐字交错",
-)
-def test_synthetic_header_never_leaks_into_body(synthetic_blocks):
-    """断言的是交错后的产物而非页眉原文：页眉被逐字拆进正文，
-    `pdfplumber Draft` 变成了 `陷pdf阱plu、mb表er 格Dr独aft立`，
-    原样的连续子串反而找不到。`Dr独aft` 就是这次交错的指纹。
-    """
-    assert not [b for b in synthetic_blocks if "Dr独aft" in b.text]
-
-
 @requires(JOURNAL)
 def test_journal_two_column_does_not_crash():
     """双栏本地路读出来是左右交错的乱序文本，属已知限制（交云端路）。

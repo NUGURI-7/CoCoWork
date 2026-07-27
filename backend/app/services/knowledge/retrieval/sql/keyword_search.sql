@@ -2,11 +2,11 @@
 -- $1 kb_id  $2 tsquery 字面量(如 '大便' | '干结',Python 端已转义)  $3 分数阈值  $4 top_k
 
 
-WITH matched AS (SELECT p.id                                   AS paragraph_id,
+WITH matched AS (SELECT p.id AS paragraph_id,
                         p.document_id,
                         p.content,
                         p.title,
-                        ts_rank_cd(p.search_vector, query, 32) AS score
+                        (p.meta ->> 'page')::int               AS page, ts_rank_cd(p.search_vector, query, 32) AS score
                  FROM paragraphs p,
                       to_tsquery('simple', $2) AS query
                  WHERE p.knowledge_base_id = $1
@@ -19,6 +19,7 @@ SELECT m.paragraph_id,
        doc.name AS doc_name,
        m.content,
        m.title,
+       m.page,
        m.score
 FROM matched m
          JOIN documents doc ON doc.id = m.document_id

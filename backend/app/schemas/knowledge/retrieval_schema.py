@@ -19,6 +19,8 @@ class RetrievalHit(BaseModel):
     - `title`：段的标题链（`第三章 > 3.1 向量检索`）。与 `doc_name` 合起来
       构成完整出处；**祖先那几级是 `content` 里没有的信息**——正文只看得到
       直接的那级标题，看不到自己属于哪一章。
+    - `page`：段的起始页（仅 PDF）。与 `title` 是同一类东西——定位信息，
+      只是格式不同的文档能给出的形态不一样：PDF 给页码，md / txt 给标题链。
     - `score`：相似度 0~1，= 1 - 余弦距离，越大越相关。
     """
 
@@ -28,6 +30,9 @@ class RetrievalHit(BaseModel):
     title: str = Field(
         default="",
         description="段的标题链，如「第三章 > 3.1 向量检索」；无标题区域（txt / md 前言）为空串",
+    )
+    page: int | None = Field(
+        default=None, description="段的起始页（仅 PDF；其余格式为 null）",
     )
     content: str = Field(description="命中段全文（返回给模型的单元）")
     chunk_text: str = Field(description="实际命中的子块原文")

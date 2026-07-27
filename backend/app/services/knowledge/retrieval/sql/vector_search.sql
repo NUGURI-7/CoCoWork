@@ -25,7 +25,10 @@ SELECT d.paragraph_id,
        doc.name AS doc_name,
        p.content,
        p.title,
-       d.chunk_text,
+       -- 页码在 SQL 里就取出来转成 int:asyncpg 拿 jsonb 会给一个 JSON 字符串,
+       -- 还得在 Python 端解一次;`->>` 直接给文本,键不存在时为 NULL,cast 完就是
+       -- None,组装层不用写任何判断
+       (p.meta ->> 'page')::int AS page, d.chunk_text,
        d.distance
 FROM dedup d
          JOIN paragraphs p ON p.id = d.paragraph_id

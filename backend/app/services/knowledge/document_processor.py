@@ -75,6 +75,9 @@ async def process_document(doc_id: UUID) -> None:
             title=d.title[:_TITLE_MAX],
             position=i,
             char_length=len(d.content),
+            # 页码只有 PDF 有。没有时给空 dict 而不是 {"page": None}——
+            # 免得下游要分「没这个键」和「键在但值是 null」两种情况
+            meta={"page": d.page} if d.page is not None else {},
             search_vector=tokenize(d.content),
         )
         for i, d in enumerate(drafts)

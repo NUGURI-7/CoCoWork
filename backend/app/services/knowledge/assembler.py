@@ -31,10 +31,15 @@ class ParagraphDraft:
     `content` 含标题原文（命中后要交给模型，标题是有用的上下文）；
     `title` 是**带祖先的完整链**，这份信息 content 里没有——正文里只看得到
     直接的那级标题，看不到它属于哪一章。
+
+    `page` 是段的**起始页**（PDF 专属，其余格式恒为 None）：段跨页时记开头
+    那一页，展示成「出自第 12 页」正好是要跳过去的位置。结束页等真需要时再
+    往 `Paragraph.meta` 里加一个键，不用动表——这正是用 jsonb 换来的余地。
     """
 
     content: str
     title: str
+    page: int | None = None
 
 
 def _heading_text(text: str) -> str:
@@ -78,7 +83,19 @@ def assemble_paragraphs(
     buf: list[str] = []  # 当前段攒的块文本
     buf_len = 0  # 当前段已攒字符数
     title = ""  # 当前段的标题链
+    page: int | None = None  # 当前段的起始页
     has_body = False  # 当前段是否已有正文
+
+    def add(block: DocumentBlock) -> None:
+        """把块并进当前段。**页码只在段的第一个块上取**——段跨页时记起始页；
+        超长切出来的续段也一样，取它自己第一个块的页，故续段的页码会自然
+        往后走，不会都挂在原段的开头那一页。
+        """
+        nonlocal buf_len, page
+        if not buf:
+            page = block.page
+        buf.append(block.text)
+        buf_len += len(block.text)
 
     def flush() -> None:
         """当前段定稿。读的是**调用时刻**的 `title` 变量，故收尾必须发生在
@@ -89,10 +106,12 @@ def assemble_paragraphs(
         挪到赋值之后 8 条测试变红）。
         """
 
-        nonlocal buf, buf_len, has_body
+        nonlocal buf, buf_len, has_body, page
         if buf:
-            drafts.append(ParagraphDraft(content="\n\n".join(buf), title=title))
-        buf, buf_len, has_body = [], 0, False
+            drafts.append(
+                ParagraphDraft(content="\n\n".join(buf), title=title, page=page)
+            )
+        buf, buf_len, has_body, page = [], 0, False, None
 
     for block in blocks:
         if block.block_type is not BlockType.HEADING:
@@ -100,8 +119,7 @@ def assemble_paragraphs(
             # 单块自身就超限时不切——交给 splitter 去切子块，段该长就长。
             if has_body and (not title or buf_len + len(block.text) > max_chars):
                 flush()
-            buf.append(block.text)
-            buf_len += len(block.text)
+            add(block)
             has_body = True
             continue
 
@@ -109,8 +127,7 @@ def assemble_paragraphs(
             flush()
         _push(stack, block)
         title = CHAIN_SEP.join(stack[lv] for lv in sorted(stack))
-        buf.append(block.text)
-        buf_len += len(block.text)
+        add(block)
 
     flush()
     return drafts

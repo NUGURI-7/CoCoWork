@@ -228,13 +228,18 @@ function ResultsArea({
               {r.score.toFixed(3)}
             </Badge>
           </div>
-          {/* 标题链：无标题区域（txt / frontmatter / 前言）为空串，整行不渲染，
-              免得留一个空的「出自」占位 */}
-          {r.title && (
+          {/* 出处：标题链 + 页码。两者是同一类东西（定位信息），只是不同格式
+              能给出的形态不一样——PDF 给页码，md / txt 给标题链，PDF 两样都有。
+              两样都没有时（txt / frontmatter / 前言）整行不渲染，免得留一个
+              空的「出自」占位 */}
+          {(r.title || r.page != null) && (
             <div className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
               <ListTree className="size-3.5 shrink-0" />
               <span className="truncate" title={r.title}>
-                出自 {r.title}
+                出自{' '}
+                {[r.title, r.page != null && `第 ${r.page} 页`]
+                  .filter(Boolean)
+                  .join(' · ')}
               </span>
             </div>
           )}
