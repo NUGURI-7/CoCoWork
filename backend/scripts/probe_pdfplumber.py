@@ -8,6 +8,12 @@
 
     uv run python -m scripts.probe_pdfplumber data/pdf/PDF结构测试文档.pdf
     uv run python -m scripts.probe_pdfplumber <pdf> --pages 3 --lines 40
+    uv run python -m scripts.probe_pdfplumber <pdf> --thresholds   # 页级判据的分离度
+
+`--thresholds` 是**换语料后重定阈值的入口**：它全文档扫一遍，把三个页级判据
+（目录页 / 封面页 / 整页旋转）的实测值逐页打出来，与代码里现行的阈值并排对照。
+没有它就只能凭印象拍数——而**凭印象拍必错**，实测教训见设计稿：只采了 3 页样本
+得出的 39:0 分离度，放到全语料上直接翻车（正常斜体行的交叠占比同样是 1.00）。
 """
 
 import argparse
@@ -16,6 +22,16 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 import pdfplumber
+
+# 阈值从实现里 import 而不是在这儿抄一份：抄了就会悄悄跑偏，
+# 而这个脚本存在的全部意义就是「拿实测分布对照现行阈值」
+from app.services.knowledge.parser.pdf_impl import (
+    _COVER_MAX_LINES,
+    _COVER_SIZE_RATIO,
+    _TOC_LEADER,
+    _TOC_LINE_RATIO,
+    _TOC_MIN_LINES,
+)
 
 # pdfminer 对每个缺 FontBBox 的字体刷一条 warning——Chrome 打印出的 PDF 会满屏刷。
 # 不影响解析结果（字号/坐标照样拿得到），但会把真正的输出淹掉。
@@ -68,6 +84,75 @@ def _group_lines(chars: list[dict]) -> list[dict]:
     return lines
 
 
+def _probe_thresholds(pdf) -> None:
+    """全文档扫一遍，逐页打印三个**页级判据**的实测值，供换语料后重定阈值。
+
+    三个判据对应 `pdf_impl` 里三处按页剔除非正文内容的逻辑：
+
+    | 判据 | 现行阈值 | 拦的是什么 |
+    |---|---|---|
+    | 目录页 | 点号行占比 ≥ 0.5 且行数 ≥ 5 | 目录条目被切成段、进库、参与检索 |
+    | 封面页 | 无正文字号行 + 最大字号 ≥ 正文 ×1.5 + 行数 ≤ 20 | 封面大字被判成 H1/H2 且永不出栈 |
+    | 整页旋转 | 该页无任何水平字符 | 竖排表每字一行、顺序全乱 |
+
+    **怎么用**：看「分离度」——命中的页与没命中的页之间应该有一大段空档。
+    实测三份语料时，目录页占比 0.83 / 0.74 而其余页恒为 0，中间空了整整 0.7，
+    阈值落在 0.5 才有余量。**如果换了语料后发现命中页与正常页的数值挨得很近，
+    那就不是调阈值的问题，是这个判据在新语料上不成立**——该换判据，别硬调。
+    """
+    print(f"\n{'=' * 74}\n6. 页级判据的实测分离度（全 {len(pdf.pages)} 页）\n{'=' * 74}")
+
+    # 正文基准字号按**行数**取众数（与 pdf_impl._body_size 同口径；按字符数会被长行带偏）
+    per_page: list[tuple[int, list[dict], int, int]] = []
+    line_sizes: Counter[float] = Counter()
+    for page_no, page in enumerate(pdf.pages, 1):
+        upright = [c for c in page.chars if c.get("upright", True)]
+        lines = [ln for ln in _group_lines(upright) if ln["text"]]
+        per_page.append((page_no, lines, len(page.chars), len(upright)))
+        for ln in lines:
+            line_sizes[ln["size"]] += 1
+
+    if not line_sizes:
+        print("  （整份文档没有可用文本，无从判起）")
+        return
+    body = line_sizes.most_common(1)[0][0]
+    print(f"  正文基准字号（按行数众数）：{body}\n")
+    print(f"  {'页':>4} {'行数':>5} {'点号行占比':>10} {'最大字号÷正文':>13} {'有正文字号行':>12} {'旋转字符':>9}  判定")
+
+    for page_no, lines, n_chars, n_upright in per_page:
+        rotated = n_chars - n_upright
+        if not lines:
+            verdict = "★整页旋转" if rotated else "无文本层"
+            print(f"  {page_no:>4} {0:>5} {'—':>10} {'—':>13} {'—':>12} {rotated:>9}  {verdict}")
+            continue
+
+        toc_ratio = sum(1 for ln in lines if _TOC_LEADER.search(ln["text"])) / len(lines)
+        max_ratio = max(ln["size"] for ln in lines) / body
+        has_body = any(ln["size"] == body for ln in lines)
+
+        is_toc = len(lines) >= _TOC_MIN_LINES and toc_ratio >= _TOC_LINE_RATIO
+        is_cover = (
+            not has_body
+            and max_ratio >= _COVER_SIZE_RATIO
+            and len(lines) <= _COVER_MAX_LINES
+        )
+        verdict = "★目录页" if is_toc else ("★封面页" if is_cover else "")
+        # 没命中但沾边的页也打出来——分离度要看的正是这些「差一点」的页
+        borderline = toc_ratio > 0 or (not has_body) or rotated
+        if not (verdict or borderline):
+            continue
+        print(
+            f"  {page_no:>4} {len(lines):>5} {toc_ratio:>10.2f} {max_ratio:>13.2f} "
+            f"{str(has_body):>12} {rotated:>9}  {verdict}"
+        )
+
+    print(
+        f"\n  现行阈值：目录 占比≥{_TOC_LINE_RATIO} 且行数≥{_TOC_MIN_LINES}；"
+        f"封面 倍数≥{_COVER_SIZE_RATIO} 且行数≤{_COVER_MAX_LINES} 且无正文字号行"
+    )
+    print("  （只列命中或沾边的页；全是空白说明这份文档三个判据一个都不触发）")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="探测 pdfplumber 的输出形态")
     parser.add_argument("pdf", type=Path)
@@ -77,9 +162,19 @@ def main() -> None:
         help="从第几页开始（1 起）。期刊 PDF 前几页常是下载页 / 摘要页，得跳过才见正文",
     )
     parser.add_argument("--lines", type=int, default=30, help="每页打印前 N 行")
+    parser.add_argument(
+        "--thresholds", action="store_true",
+        help="全文档扫描页级判据（目录页 / 封面页 / 整页旋转）的实测分离度，"
+             "换语料重定阈值时跑这个；只出这一节，不打逐行明细",
+    )
     args = parser.parse_args()
 
     with pdfplumber.open(args.pdf) as pdf:
+        if args.thresholds:
+            print(f"文件：{args.pdf.name}")
+            _probe_thresholds(pdf)
+            return
+
         total = len(pdf.pages)
         begin = max(0, args.start - 1)
         pages = pdf.pages[begin : begin + args.pages]
