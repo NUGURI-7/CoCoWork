@@ -102,8 +102,9 @@ bbox 级高亮：只留字段不实现（需前端 pdf.js 渲染 + 坐标换算�
 | 1 | ✅ | `Parser` ABC + `DocumentBlock` + txt/markdown 实现，接进 `process_document` | **分段规则照抄双换行，结果与现状完全一致**——抽象先证明自己无害。验证方式：拿 43 份真实文档与库里旧实现的段逐条比对（`scripts/verify_parser_parity.py`，全中；重跑文档后基线即失效） |
 | 2 | ✅ | 标题感知分段 | 兑现 v1 遗留缺陷：list-heavy md 挤成一巨段。markdown 的 `#` 是白送的，零启发式。**实际拆成两小步做**：先只打标不动边界（好让标题识别的效果能单独衡量），再由 `assembler` 按标题分组并拼标题链 |
 | 3 | ✅ | `PdfParser`（pdfplumber）+ 放开 `.pdf` 扩展名 | 第 2 步的分段逻辑直接复用——`PdfParser` 只要吐出 `DocumentBlock`，标题链那套一行都不用改。真正要解决的是 pdfplumber 拿不到标题层级、得靠字号启发式推。**非正文内容的按页剔除与单测于 2026-07-27 补齐** |
-| 4 | ⬜ **下一步** | 百度云 API + MinerU 两路 + Model 模块 `doc_parse` | 异步接口走 SAQ（`registry.py` 加 `TaskSpec` → 写 task → `worker.py` 登记） |
+| 4 | ⬜ **下一步** | 百度云 API 一路 + Model 模块 `doc_parse` | 拆三片：① 凭证包重构（Provider 凭证列改存加密 JSON）② `BaiduDocParser`（提交 + 轮询 + `layouts` → IR）③ 路由接线（KB 级选解析模型 + 本地失败升级）。详见下方「第 4 步实施拆分」 |
 | 5 | ✅ | 定位信息落库（`Paragraph.meta`，需迁移）+ 检索结果透出 | P4 引用溯源的地基。分两批做完：**标题链**随第 2 步提前透出（标题链本就是定位信息的一种，没必要等页码）；**PDF 页码**于 2026-07-27 补齐（迁移 `0020_add_paragraph_meta` + `ParagraphDraft.page` + 两条 SQL 各加一列 + 前端「出自」行拼页码）。实测记录见下 |
+| 6 | ⬜ **压最后** | MinerU 重型路 | **等前五步全部跑通再动**。定位是对照与兜底，不是必需品——百度那路已经能拿到真结构（`sub_type` 层级 + `page_num` + 表格 markdown），MinerU 的增量只在公式与复杂表格结构还原。`doc_parse` 抽象已给它留好口子：加一个 `Parser` 实现 + 一个 provider_type，业务侧一行不动 |
 
 **分工**：`Parser` ABC / `DocumentBlock` / 分段策略 / `process_document` 改造归用户写（架构 + service 层）；schema / route / 前端 Claude 落盘；各 `Parser` 实现待定。
 
@@ -270,6 +271,41 @@ v1 的 `raw.decode("utf-8")` 一行藏了三个洞，全部实测确认：
 要判出「`Abstract` 与第一章是平级」只能靠语义 —— 认「摘要 / Abstract / 致谢 / 参考文献」
 这几个词，即往解析层塞中文关键词表，换模板、换语言即失效。这与「排版不规范的文档不处理」
 是同一条线。**真解法是第 4 步云端路拿 `sub_type` 真层级。**
+
+### 百度有两条 API，选异步那条（2026-07-27 查证）
+
+官网上 PaddleOCR-VL 挂了两处，形态完全不同，别选错：
+
+| | **AIP 文字识别路（选它）** | 千帆 v2 路 |
+|---|---|---|
+| 端点 | `aip.baidubce.com/rest/2.0/brain/online/v2/paddle-vl-parser/task` | `qianfan.baidubce.com/v2/ocr/paddleocr` |
+| 鉴权 | **API Key + Secret Key 换 access_token**（30 天有效） | Bearer 单 API Key |
+| 形态 | 异步（提交 + 轮询），PDF 上限 100M / 500 页 | 同步 |
+| 结构 | `layouts[].sub_type` 真标题层级（需开 `relevel_titles`） | markdown + 版面元素，层级不明 |
+
+千帆那条单凭证、看着省事，但**同步接口撑不住知识库那种几十页的文档**，且拿不准有没有
+`sub_type`。而本片存在的全部理由就是拿真标题层级（`Abstract` 那个坑、三级小节抓不到那个
+天花板，都只能靠它）。故维持原判走 AIP 异步路，**双凭证的麻烦是必须付的成本**。
+
+### 第 4 步实施拆分
+
+三片，按顺序做，每片自己能验：
+
+| 片 | 内容 | 卡点 |
+|---|---|---|
+| ① | **凭证包重构** + `baidu` provider_type + `doc_parse` model_type + 验证器 | Provider 凭证列是一列裸字符串，装不下 AK+SK。**已定走方案 A** |
+| ② | `BaiduDocParser`：提交 + 轮询 + access_token 缓存 + `layouts` → `DocumentBlock` | 无 |
+| ③ | 路由接线：KB 级选 `doc_parse_model`（同 `rerank_model` 那套）+ 本地解析空手而归时升级云端 | 无 |
+
+**方案 A（凭证包，Dify 形态）**：凭证列语义统一改成「加密的凭证 JSON」——普通供应商是
+`{"api_key": "sk-xxx"}`，百度是 `{"api_key": ..., "secret_key": ...}`，存量数据一条
+`RunPython` 迁移解密→包 JSON→重加密。
+
+**为什么不选方案 B**（只给百度那列塞 JSON、其余保持裸 key，即 RAGFlow 的 Bedrock 做法：
+AK/SK/region 一起塞进 `api_key` 字段）：B 省下的只是一次迁移（本项目 provider 行数极少，
+成本近乎为零），换来的是**同一列两种语义**——每次读凭证都得先看 provider_type 决定怎么解。
+Azure OpenAI / Bedrock 这类多凭证供应商不是特例，是离开 OpenAI 兼容协议之后的常态，早晚
+要统一。
 
 ### 百度云文档解析 API 返回结构（据官方文档）
 
