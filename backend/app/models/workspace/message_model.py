@@ -54,6 +54,7 @@ class Message(UUIDBaseModel, TimestampMixin):
 
     conversation = fields.ForeignKeyField(
         "models.Conversation", related_name="messages", on_delete=fields.CASCADE,
+        db_index=True,
     )
     role = fields.CharEnumField(
         MessageRole, max_length=16, description="协议层角色:user/assistant",
