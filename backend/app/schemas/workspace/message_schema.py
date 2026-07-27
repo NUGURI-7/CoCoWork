@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.models import MessageRole, MessageStatus, SenderKind
 from app.schemas.agent.chat_schema import ContentBlock
+from app.schemas.sandbox import ArtifactOut
 
 
 class MessageOut(BaseModel):
@@ -34,6 +35,10 @@ class MessageOut(BaseModel):
     error_message: str
     created_at: datetime
     updated_at: datetime
+    artifacts: list[ArtifactOut] = Field(
+        default_factory=list,
+        description="本条消息产出的沙箱产物。实时走 SSE artifacts 帧，这里是刷新后回放用的",
+    )
 
     model_config = ConfigDict(from_attributes=True)
 

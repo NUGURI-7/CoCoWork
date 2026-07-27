@@ -91,18 +91,22 @@ async def conversation_stream(
         ),
     )
 
-    # ④ supervisor 装配（可 raise → 400 JSON，SSE 还没起）
-    graph, lc_messages = await build_workspace_graph(
+    # 本轮 assistant 消息的 ID —— SSE 帧、DB 主键、交付区目录名共用同一个。
+    # 必须赶在装配之前生成：mount 要拿它当交付区的目录名。
+    # 用 compat 版：它返回标准库 uuid.UUID，Tortoise 的 UUIDField 直接吃。
+    message_id = uuid_compat.uuid7()
+
+    # ④ 应答者装配（可 raise → 400 JSON，SSE 还没起）
+    prepared = await build_workspace_graph(
         conversation.workspace,
         ChatStreamRequest(content=body.content, history=[]),
         current_user,
         past,
         responder,
+        message_id=message_id,
+        conversation_id=conversation_id,
     )
 
-    # 本轮 assistant 消息的 ID —— SSE 帧、DB 主键、（将来）交付区目录名共用同一个。
-    # 用 compat 版：它返回标准库 uuid.UUID，Tortoise 的 UUIDField 直接吃。
-    message_id = uuid_compat.uuid7()
     collector = MessageCollector()
 
     async def persist_assistant(status: MessageStatus) -> None:
@@ -136,9 +140,10 @@ async def conversation_stream(
         status = MessageStatus.STOPPED  # 悲观默认：没自然走完就是被掐
         try:
             async for sse in run_chat_stream(
-                    graph,
-                    lc_messages,
+                    prepared.graph,
+                    prepared.messages,
                     message_id=message_id,
+                    collect=prepared.collect,
                     sink=collector.feed,
                     trace=TraceContext(
                         user_id=str(current_user.id),

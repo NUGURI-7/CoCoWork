@@ -6,6 +6,8 @@
  * d-2 招募 / 成员接真时随 mock 一起退役。
  */
 
+import type { Artifact } from './chat'
+
 // ============ Workspace ============
 
 /** 对齐后端 WorkspaceOut */
@@ -92,6 +94,8 @@ export interface WorkspaceMessage {
   mentioned_member_ids: string[]
   status: MessageStatus
   error_message: string
+  /** 这条消息产出的沙箱产物。流式那份走 SSE artifacts 帧，这里是刷新后回放用的 */
+  artifacts: Artifact[]
   created_at: string
   updated_at: string
 }

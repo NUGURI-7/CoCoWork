@@ -1,7 +1,9 @@
+from collections import defaultdict
 from uuid import UUID
 
 from app.core.exceptions import NotFound404
-from app.models import Conversation, Message, User
+from app.models import Conversation, Message, User, SandboxArtifact
+from app.schemas.sandbox import ArtifactOut
 from app.schemas.workspace import MessageAppend, MessageOut
 
 
@@ -36,7 +38,22 @@ class MessageService:
         messages = await Message.filter(
             conversation_id=conversation_id,
         ).order_by("created_at")
-        return [MessageOut.model_validate(m) for m in messages]
+
+        # 产物挂在消息上，但 message_id 不是外键（Playground 的消息不入库，做成 FK 就插不进来），
+        # ORM 反查不到，只能按对话捞出来自己归组。按文件名排序，与实时那份的顺序一致。
+        grouped: dict[UUID, list[ArtifactOut]] = defaultdict(list)
+        for a in await SandboxArtifact.filter(
+                conversation_id=conversation_id
+        ).order_by("filename"):
+            grouped[a.message_id].append(ArtifactOut.model_validate(a))
+
+        result: list[MessageOut] = []
+        for m in messages:
+            out = MessageOut.model_validate(m)
+            out.artifacts = grouped[m.id]
+            result.append(out)
+
+        return result
 
 
     async def append(

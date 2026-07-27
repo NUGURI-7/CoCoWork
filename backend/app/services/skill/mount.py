@@ -42,6 +42,14 @@ class SkillMount:
     middleware: FilesystemMiddleware
     paths: SandboxPaths  # 工作区路径，供日志与排查用
 
+    def has_skills(self, cfg: AgentConfig) -> bool:
+        """这个 agent 自己挂了 skill 吗 —— 决定给不给它那 7 个文件工具（决策 19）。
+
+        判「真解出了东西」而不是「字段非空」：配置里可能留着已下架的 skill 名，
+        那种情况字段有值、实际无货，不该给工具。
+        """
+        return bool(resolve_builtin_skills(cfg.builtin_skills))
+
     def prompt_for(self, cfg: AgentConfig) -> str:
         """某个参与者的 skill 清单片段 —— 只列它自己挂的，不列同伴的。
 

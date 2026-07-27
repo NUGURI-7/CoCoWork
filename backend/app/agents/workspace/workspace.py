@@ -6,26 +6,32 @@ runtime.run_chat_stream 跑。与 Playground 的三点差异：
 - supervisor 不走模板链：它是工作空间自带的通用内置 loop，直接 create_agent 拼，
   跟 templates/(给用户建的 NPC 用)无关。
 - 外面套一层薄 StateGraph 持 workspace 级数据：supervisor 作为其中唯一节点。
-- 返回形态与 prepare_stream 一致 (CompiledStateGraph, list[BaseMessage])，
-  stream 端点 ⑤⑥ plumbing + Playground 全部零改。
+- 返回形态与 prepare_stream 一致（PreparedStream：graph + messages + collect），
+  run_chat_stream 直接消费。
 """
 from datetime import date
+from functools import partial
 from typing import Annotated, TypedDict
+from uuid import UUID
 
-from langchain.agents import create_agent
-from langchain.agents.middleware import AgentMiddleware
-from langchain_core.messages import BaseMessage
-from langgraph.graph import END, START, StateGraph
-from langgraph.graph.message import add_messages
-from langgraph.graph.state import CompiledStateGraph
-from langchain_core.language_models import BaseChatModel
-from deepagents.middleware.subagents import CompiledSubAgent, DEFAULT_SUBAGENT_PROMPT
 from deepagents import SubAgentMiddleware
 from deepagents.backends import StateBackend
 from deepagents.middleware.filesystem import FilesystemState
+from deepagents.middleware.subagents import CompiledSubAgent, DEFAULT_SUBAGENT_PROMPT
 from deepagents.middleware.summarization import SummarizationMiddleware
-from langchain_core.messages import BaseMessage, HumanMessage
-from app.models import User, Workspace, WorkspaceMember, Message, KnowledgeBase, MCPServer
+from langchain.agents import create_agent
+from langchain.agents.middleware import AgentMiddleware
+from langchain_core.language_models import BaseChatModel
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import add_messages
+
+from app.agents.runtime.runner import (
+    ArtifactCollector,
+    PreparedStream,
+    assemble_tools,
+    build_chat_model,
+    to_lc_messages,
+)
 from app.agents.workspace.view_context_assembler import (
     SPEAKER_SUPERVISOR,
     ViewContextAssembler,
@@ -33,21 +39,19 @@ from app.agents.workspace.view_context_assembler import (
     member_key,
     member_label,
 )
-from app.models import SenderKind
-from app.agents.runtime.runner import (
-    assemble_tools,
-    build_chat_model,
-    to_lc_messages,
-)
 from app.core.exceptions import ValidationException
+from app.models import Message, KnowledgeBase, MCPServer
+from app.models import SenderKind
 from app.models import User, Workspace, WorkspaceMember
 from app.schemas.agent.chat_schema import ChatStreamRequest
 from app.schemas.agent.config_schema import AgentConfig
+from app.services.sandbox.artifact import collect_artifacts
+from app.services.skill.mount import SkillMount, build_skill_mount
 from app.tools import resolve_tools
 
 
 def _workspace_base_prompt(
-    workspace_name: str, member_names: list[str], self_name: str, self_alias: str
+        workspace_name: str, member_names: list[str], self_name: str, self_alias: str
 ) -> str:
     """workspace 协作框架 —— supervisor / member 共享的出场底座。
 
@@ -115,17 +119,21 @@ def _summarization_middleware(model: BaseChatModel) -> list[AgentMiddleware]:
 
 async def _member_to_subagent(
         member: WorkspaceMember,
+        member_cfg: AgentConfig,
         user: User,
         fallback_model: BaseChatModel,
+        mount: SkillMount | None,
 ) -> CompiledSubAgent:
     """把一个招募成员装配成 supervisor 可派活的子 agent。
 
     成员没配 chat 模型时继承 supervisor 的模型（fallback_model）——
     模型只决定「用哪个 LLM」，成员的身份（prompt / tools / 知识库）仍是它自己的；
     这也是 deepagents 的默认语义（subagent 不配 model 则继承主 agent）。
+
+    mount 是 supervisor 那个同一个实例，不是各自新建的：派活发生在同一张图、
+    同一次回复里，成员产出的文件 supervisor 必须看得见（决策 12）。
     """
     agent = member.agent
-    member_cfg = AgentConfig.model_validate(agent.config)
 
     model = (
         await build_chat_model(member_cfg.models.chat)
@@ -140,13 +148,21 @@ async def _member_to_subagent(
         if base_prompt else DEFAULT_SUBAGENT_PROMPT
     )
 
+    middleware: list[AgentMiddleware] = _summarization_middleware(model)
+
+    # 这个成员自己挂了 skill 才给它文件工具（决策 19）。mount 是全场共用的一个，
+    # 只要有任何一人挂了它就存在，所以不能拿它当判据。
+    if mount is not None and mount.has_skills(member_cfg):
+        middleware.append(mount.middleware)
+        system_prompt = f"{system_prompt}\n\n{mount.prompt_for(member_cfg)}"
+
     profile = await build_capability_profile(member_cfg, user)
 
     runnable = create_agent(
         model=model,
         tools=tools,
         system_prompt=system_prompt,
-        middleware=_summarization_middleware(model),
+        middleware=middleware,
     )
 
     desc = f"{agent.name}：{agent.description}" if agent.description else agent.name
@@ -155,6 +171,7 @@ async def _member_to_subagent(
         "description": f"{desc}\n能力 · {profile}",
         "runnable": runnable,
     }
+
 
 async def build_capability_profile(cfg: AgentConfig, user: User) -> str:
     """从 config 派生一行能力画像 —— 供 Supervisor 按能力路由。
@@ -190,10 +207,13 @@ async def build_workspace_graph(
         user: User,
         past: list[Message],  # ← 新增:DB 历史消息(视角化用)
         responder: WorkspaceMember | None = None,  # None = supervisor;否则 = 被 @ 的成员
-) -> tuple[CompiledStateGraph, list[BaseMessage]]:
+        *,
+        message_id: UUID,
+        conversation_id: UUID,
+) -> PreparedStream:
     """装配 workspace 对话图 —— 内置 supervisor 套外层 StateGraph。
 
-        与 prepare_stream 同形态返回 (graph, messages)，供 run_chat_stream 直接消费。
+        与 prepare_stream 同形态返回 PreparedStream，供 run_chat_stream 直接消费。
         所有可能 raise 的逻辑在此完成 —— FastAPI handler 接 ValidationException → 400 JSON，
         此刻 SSE 还没起。
 
@@ -201,13 +221,14 @@ async def build_workspace_graph(
             workspace: 已取出的 Workspace 实例(supervisor jsonb 在 workspace.supervisor)
             request:   当前轮 user 输入 + 历史(历史由 stream 端点从 DB 拼好)
             user:      当前用户(KB 工具归属校验用)
-            past:      新增:DB 历史消息(视角化用)
+            past:      DB 历史消息(视角化用)
             responder: None = supervisor;否则 = 被 @ 的成员
+            message_id: 本轮 assistant 消息 ID —— 交付区目录名与产物归组键
+            conversation_id: 产物落库时挂在哪个对话下
 
         Raises:
             ValidationException: supervisor 未配 chat 模型 / 槽位类型错 / 模型不存在
     """
-
 
     # 拉本 workspace 招募的成员（select_related agent —— 正向 FK 走 JOIN，一次查询）
     members = await WorkspaceMember.filter(
@@ -224,20 +245,36 @@ async def build_workspace_graph(
         cfg = AgentConfig.model_validate(workspace.supervisor)
         viewer = Viewer(sender_kind=SenderKind.SUPERVISOR)
         can_delegate = True
-        self_name = SPEAKER_SUPERVISOR # 与 assembler 打的 from 标签同源
+        self_name = SPEAKER_SUPERVISOR  # 与 assembler 打的 from 标签同源
         self_alias = SPEAKER_SUPERVISOR
     else:
         cfg = AgentConfig.model_validate(responder.agent.config)
         viewer = Viewer(sender_kind=SenderKind.MEMBER, member_id=responder.id)
-        can_delegate = False # @直连成员不派活
-        self_name = member_label(responder.id, responder.agent.name) # 与 from 标签同源
-        self_alias = responder.agent.name # 用户 @ 时用的裸名
+        can_delegate = False  # @直连成员不派活
+        self_name = member_label(responder.id, responder.agent.name)  # 与 from 标签同源
+        self_alias = responder.agent.name  # 用户 @ 时用的裸名
 
     if cfg.models.chat is None:
         raise ValidationException("应答者未配置 chat 模型")
 
     chat_model = await build_chat_model(cfg.models.chat)
     tools = await assemble_tools(cfg, user)
+
+    # 派活成员的 config 先 parse 出来：既要参与 skill 并集，又要传给 _member_to_subagent，
+    # 免得同一份 jsonb 解两遍。@直连时不派活，场上只有应答者自己。
+    member_cfgs: list[tuple[WorkspaceMember, AgentConfig]] = (
+        [(m, AgentConfig.model_validate(m.agent.config)) for m in members]
+        if can_delegate else []
+    )
+
+    # skill 沙箱：一轮回复共用一个（决策 12）。这一刀先只装应答者自己的，
+    # 派活成员的下一刀并进来。scope_id 用 workspace.id —— 工作区跨对话保留。
+    mount = await build_skill_mount(
+        [cfg, *(c for _, c in member_cfgs)],
+        user,
+        scope_id=workspace.id,
+        message_id=message_id,
+    )
 
     # base 框架(协议说明 + 名单 + 日期 + 应答者自我身份)+ 应答者自己的人设
     base = _workspace_base_prompt(workspace.name, member_roster, self_name, self_alias)
@@ -249,10 +286,16 @@ async def build_workspace_graph(
         WorkspaceContextMiddleware(),
         *_summarization_middleware(chat_model),
     ]
+
+    # 应答者自己挂了 skill 才给文件工具 —— 同 _member_to_subagent 的判据
+    if mount is not None and mount.has_skills(cfg):
+        middleware.append(mount.middleware)
+        system_prompt = f"{system_prompt}\n\n{mount.prompt_for(cfg)}"
+
     if can_delegate:
         subagents = [
-            await _member_to_subagent(member, user, chat_model)
-            for member in members
+            await _member_to_subagent(member, member_cfg, user, chat_model, mount)
+            for member, member_cfg in member_cfgs
         ]
         if subagents:
             middleware.append(
@@ -278,4 +321,17 @@ async def build_workspace_graph(
     history = await ViewContextAssembler().build(past, viewer, member_names)
     messages = history + to_lc_messages([], request.content)
 
-    return graph, messages
+    # 收产物的回调：挂了 skill 才有交付区。产物绑 conversation —— workspace 那条路
+    # 的消息入库，卡片将来靠这个字段按对话捞回来
+    collect: ArtifactCollector | None = None
+    if mount is not None:
+        collect = partial(
+            collect_artifacts,
+            mount.paths,
+            user=user,
+            scope_id=workspace.id,
+            message_id=message_id,
+            conversation_id=conversation_id,
+        )
+
+    return PreparedStream(graph=graph, messages=messages, collect=collect)

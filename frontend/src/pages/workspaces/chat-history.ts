@@ -179,6 +179,8 @@ export function workspaceMessagesToChatMessages(
       stopReason: null,
       errorMessage:
         m.status === 'error' ? m.error_message || '生成失败' : null,
+      // 产物卡片：流式那份由 artifacts 事件写进同名字段，这里是刷新后从 DB 还原的同一份
+      artifacts: m.artifacts,
       // @直连成员答的消息：从 DB 身份字段译出成员 id（supervisor 应答为 undefined）
       senderMemberId:
         m.sender_kind === 'member' && m.sender_member_id
