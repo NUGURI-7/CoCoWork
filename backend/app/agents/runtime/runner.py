@@ -32,7 +32,6 @@ from app.agents.runtime.events import EventType, sse_event
 from app.agents.runtime.param_adapter import get_param_adapter
 from app.agents.runtime.spec import AgentSpec
 from app.agents.templates import get_template
-from app.core.encryption import decrypt
 from app.core.exceptions import ValidationException
 from app.core.observability import TraceContext, get_langfuse_handler
 from app.models import KnowledgeBase, MCPServer, User
@@ -42,6 +41,7 @@ from app.schemas.agent.chat_schema import ContentBlock, HistoryMessage
 from app.schemas.agent.config_schema import AgentConfig
 from app.schemas.agent.config_schema import ModelSlot
 from app.services.mcp.mcp_runtime import fetch_tools_for_server
+from app.services.model.model_client import ModelClient
 from app.services.skill.mount import build_skill_mount
 from app.tools import resolve_tools
 from app.tools.knowledge_retrieval import KnowledgeRetrievalTool
@@ -139,9 +139,8 @@ async def build_chat_model(slot: ModelSlot) -> BaseChatModel:
 
     # 凭证：Model 级覆盖优先，空则 fallback Provider 级
     provider = ai_model.provider
-    base_url = ai_model.base_url or provider.base_url
-    api_key_encrypted = ai_model.api_key_encrypted or provider.api_key_encrypted
-    api_key = decrypt(api_key_encrypted)
+    base_url, creds = ModelClient.resolve_credentials(ai_model)
+    api_key = creds.api_key
 
     lc_provider = _resolve_lc_provider(provider.provider_type)
 
