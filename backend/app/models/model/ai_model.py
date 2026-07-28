@@ -9,7 +9,7 @@ class AIModel(UUIDBaseModel, TimestampMixin):
     - `model_name`：上游模型 ID（如 qwen-plus、text-embedding-v3）
     - `model_type`：chat / embedding / rerank
     - `config`：参数预设（temperature / top_p 等）
-    - `base_url` / `api_key_encrypted`：可选覆盖，为空时 fallback 到 Provider 级
+    - `base_url` / `credentials_encrypted`：可选覆盖，为空时 fallback 到 Provider 级
     """
 
     provider = fields.ForeignKeyField(
@@ -21,7 +21,9 @@ class AIModel(UUIDBaseModel, TimestampMixin):
     config = fields.JSONField(default=dict, description="参数预设（temperature / top_p 等）")
     meta = fields.JSONField(default=dict, null=True, description="模型固有事实：dim / context_window / max_input 等（非用户可调）")
     base_url = fields.CharField(max_length=512, default="", description="覆盖 Provider 的 base URL（留空继承）")
-    api_key_encrypted = fields.TextField(default="", description="覆盖 Provider 的 API Key（留空继承）")
+    credentials_encrypted = fields.TextField(
+        default="", description="整包覆盖 Provider 的凭证（留空继承）",
+    )
     is_enabled = fields.BooleanField(default=True, description="是否启用")
 
     class Meta:

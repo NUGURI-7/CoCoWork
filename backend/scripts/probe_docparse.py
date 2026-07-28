@@ -18,7 +18,7 @@ import base64
 import json
 from pathlib import Path
 
-from app.core.encryption import decrypt
+from app.services.model.credentials import load_credentials
 from app.db.postgresql import pg_client
 from app.models.model import AIModel, Provider
 from app.services.model.model_client import ModelClient
@@ -47,8 +47,8 @@ async def _probe(image_path: Path, model_name: str, prompt: str, max_tokens: int
         print("！库里没有 siliconflow provider，先用 --list 看看有哪些")
         return
 
-    api_key = decrypt(provider.api_key_encrypted)
-    client = ModelClient.build_client(provider.base_url, api_key)
+    creds = load_credentials(provider.provider_type, provider.credentials_encrypted)
+    client = ModelClient.build_client(provider.base_url, creds.api_key)
 
     b64 = base64.b64encode(image_path.read_bytes()).decode()
     suffix = image_path.suffix.lstrip(".").lower()

@@ -2,6 +2,7 @@ import logging
 from typing import Any
 
 from app.core.exceptions.types import ValidationException
+from app.services.model.credentials import BaseCredentials
 from app.services.model.model_client import ModelClient
 from app.services.model.validators.base import BaseModelValidator
 
@@ -11,8 +12,10 @@ logger = logging.getLogger(__name__)
 class OpenAIChatValidator(BaseModelValidator):
     """OpenAI 兼容供应商的 Chat 模型验证。"""
 
-    async def validate(self, base_url: str, api_key: str, model_name: str) -> dict[str, Any]:
-        client = ModelClient.build_client(base_url, api_key)
+    async def validate(
+        self, base_url: str, credentials: BaseCredentials, model_name: str,
+    ) -> dict[str, Any]:
+        client = ModelClient.build_client(base_url, credentials.api_key)
         try:
             await client.chat.completions.create(
                 model=model_name,
@@ -30,8 +33,10 @@ class OpenAIChatValidator(BaseModelValidator):
 class OpenAIEmbeddingValidator(BaseModelValidator):
     """OpenAI 兼容供应商的 Embedding 模型验证。"""
 
-    async def validate(self, base_url: str, api_key: str, model_name: str) -> dict[str, Any]:
-        client = ModelClient.build_client(base_url, api_key)
+    async def validate(
+        self, base_url: str, credentials: BaseCredentials, model_name: str,
+    ) -> dict[str, Any]:
+        client = ModelClient.build_client(base_url, credentials.api_key)
         try:
             resp = await client.embeddings.create(
                 model=model_name,

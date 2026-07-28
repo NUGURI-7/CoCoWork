@@ -7,8 +7,8 @@ class Provider(UUIDBaseModel, TimestampMixin):
     """上游模型服务供应商。
 
     - `created_by`：创建者
-    - `api_key_encrypted`：Fernet 加密后的默认 API Key，模型实例可覆盖
-    - `provider_type`：UI 标识（openai/dashscope/siliconflow/deepseek/anthropic/custom）
+    - `credentials_encrypted`：加密的默认凭证包，模型实例可整包覆盖
+    - `provider_type`：UI 标识（openai/dashscope/siliconflow/deepseek/anthropic/baidu/custom）
     """
 
     created_by = fields.ForeignKeyField(
@@ -17,7 +17,9 @@ class Provider(UUIDBaseModel, TimestampMixin):
     name = fields.CharField(max_length=100, description="显示名")
     provider_type = fields.CharField(max_length=50, description="服务商类型")
     base_url = fields.CharField(max_length=512, description="默认 API base URL")
-    api_key_encrypted = fields.TextField(description="默认 API Key（加密）")
+    credentials_encrypted = fields.TextField(
+        description="凭证包：Fernet 加密的 JSON，形状见 services/model/credentials.py",
+    )
     description = fields.CharField(max_length=500, default="", description="备注")
 
     class Meta:

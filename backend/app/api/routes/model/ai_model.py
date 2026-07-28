@@ -28,7 +28,7 @@ def _to_model_out(model: AIModel) -> ModelOut:
     """ORM → ModelOut，补充计算字段。"""
     data = ModelOut.model_validate(model)
     data.has_custom_base_url = bool(model.base_url)
-    data.has_custom_api_key = bool(model.api_key_encrypted)
+    data.has_custom_credentials = bool(model.credentials_encrypted)
     return data
 
 

@@ -2,6 +2,7 @@ import logging
 from typing import Any
 
 from app.core.exceptions.types import ValidationException
+from app.services.model.credentials import BaseCredentials
 from app.services.model.rerank.base import BaseRerankClient
 from app.services.model.validators.base import BaseModelValidator
 
@@ -17,11 +18,11 @@ class RerankValidator(BaseModelValidator):
     def __init__(self, client: BaseRerankClient) -> None:
         self._client = client
 
-    async def validate(self, base_url: str, api_key: str, model_name: str) -> dict[str, Any]:
+    async def validate(self, base_url: str, credentials: BaseCredentials, model_name: str) -> dict[str, Any]:
         try:
             await self._client.rerank(
                 base_url=base_url,
-                api_key=api_key,
+                api_key=credentials.api_key,
                 model_name=model_name,
                 query="hi",
                 documents=["hello", "world"],

@@ -19,7 +19,9 @@ class ModelCreate(BaseModel):
     model_type: ModelType = Field(description="chat / embedding / rerank")
     config: dict[str, Any] = Field(default_factory=dict, description="参数预设")
     base_url: str | None = Field(default=None, max_length=512, description="覆盖 Provider 的 base URL")
-    api_key: str | None = Field(default=None, description="覆盖 Provider 的 API Key")
+    credentials: dict[str, str] | None = Field(
+        default=None, description="整包覆盖 Provider 的凭证；不传则继承",
+    )
     is_enabled: bool = Field(default=True)
 
 
@@ -31,7 +33,9 @@ class ModelUpdate(BaseModel):
     model_type: ModelType | None = None
     config: dict[str, Any] | None = None
     base_url: str | None = Field(default=None, max_length=512)
-    api_key: str | None = Field(default=None, description="新 Key，留空不改")
+    credentials: dict[str, str] | None = Field(
+        default=None, description="整包替换凭证；传空 dict 清掉覆盖、回去继承",
+    )
     is_enabled: bool | None = None
 
 
@@ -49,8 +53,8 @@ class ModelOut(BaseModel):
     has_custom_base_url: bool = Field(
         default=False, description="是否覆盖了 Provider 的 base_url"
     )
-    has_custom_api_key: bool = Field(
-        default=False, description="是否覆盖了 Provider 的 api_key"
+    has_custom_credentials: bool = Field(
+        default=False, description="是否覆盖了 Provider 的凭证"
     )
     is_enabled: bool
     created_at: datetime

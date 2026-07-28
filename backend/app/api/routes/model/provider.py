@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, get_args
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
@@ -6,8 +6,9 @@ from fastapi import APIRouter, Depends
 from app.core.depends import get_current_user
 from app.core.http import ResponseModel, success
 from app.models.user import User
-from app.schemas.model import ProviderCreate, ProviderOut, ProviderUpdate
+from app.schemas.model import ProviderCreate, ProviderOut, ProviderType, ProviderUpdate
 from app.services.model import ProviderService, get_provider_service
+from app.services.model.credentials import CredentialField, credential_fields
 
 router = APIRouter(prefix="/providers", tags=["providers"])
 
@@ -32,6 +33,18 @@ async def list_providers(
 ) -> ResponseModel[list[ProviderOut]]:
     providers = await svc.list_own(current_user)
     return success(data=[ProviderOut.model_validate(p) for p in providers])
+
+
+# 必须注册在 /{provider_id} 之前：FastAPI 按顺序匹配，放到后面会先撞上路径参数，
+# 拿 "credential-definitions" 去解析 UUID 直接 422
+@router.get("/credential-definitions", summary="凭证字段定义（动态表单元数据）")
+async def get_credential_definitions(
+    _current_user: CurrentUserDep,
+) -> ResponseModel[dict[str, list[CredentialField]]]:
+    """按 provider_type 返回各家要填哪些凭证字段，前端据此渲染表单。"""
+    return success(
+        data={pt: credential_fields(pt) for pt in get_args(ProviderType)},
+    )
 
 
 @router.get("/{provider_id}", summary="Provider 详情")

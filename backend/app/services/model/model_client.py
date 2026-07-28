@@ -9,7 +9,7 @@ from typing import Any
 
 from openai import AsyncOpenAI
 
-from app.core.encryption import decrypt
+from app.services.model.credentials import BaseCredentials, load_credentials
 from app.models.model import AIModel
 
 logger = logging.getLogger(__name__)
@@ -32,17 +32,22 @@ class ModelClient:
         )
 
     @staticmethod
-    def resolve_credentials(model: AIModel) -> tuple[str, str]:
-        """解析实际使用的 base_url 和 api_key（Model 级优先，fallback Provider 级）。"""
-        base_url = model.base_url or model.provider.base_url
-        api_key_encrypted = model.api_key_encrypted or model.provider.api_key_encrypted
-        return base_url, decrypt(api_key_encrypted)
+    def resolve_credentials(model: AIModel) -> tuple[str, BaseCredentials]:
+        """解析实际使用的 base_url 和凭证包（Model 级优先，留空则继承 Provider）。
+
+        凭证是**整包**覆盖、不按字段合并——半截状态（api_key 用模型级、secret_key
+        用 provider 级）配错了极难排查。base_url 那级回退与凭证各自独立。
+        """
+        provider = model.provider
+        base_url = model.base_url or provider.base_url
+        ciphertext = model.credentials_encrypted or provider.credentials_encrypted
+        return base_url, load_credentials(provider.provider_type, ciphertext)
 
     @classmethod
     def get_model_client(cls, model: AIModel) -> AsyncOpenAI:
         """从 AIModel 构造客户端（含 fallback 逻辑）。"""
-        base_url, api_key = cls.resolve_credentials(model)
-        return cls.build_client(base_url, api_key)
+        base_url, creds = cls.resolve_credentials(model)
+        return cls.build_client(base_url, creds.api_key)
 
     @classmethod
     async def chat_completion(

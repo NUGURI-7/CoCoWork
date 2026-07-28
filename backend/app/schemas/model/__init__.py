@@ -11,6 +11,7 @@ from app.schemas.model.provider_schema import (
     ProviderBrief,
     ProviderCreate,
     ProviderOut,
+    ProviderType,
     ProviderUpdate,
 )
 
@@ -26,5 +27,6 @@ __all__ = [
     "ProviderBrief",
     "ProviderCreate",
     "ProviderOut",
+    "ProviderType",
     "ProviderUpdate",
 ]

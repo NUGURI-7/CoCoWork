@@ -8,7 +8,7 @@ URL nested 后所有按 provider 的方法签名都带 `provider_id`；跨 provi
 import logging
 from uuid import UUID
 
-from app.core.encryption import decrypt, encrypt
+from app.services.model.credentials import dump_credentials, load_credentials
 from app.core.exceptions.types import NotFound404
 from app.models.model import AIModel, Provider
 from app.models.user import User
@@ -52,11 +52,19 @@ class AIModelService:
 
         # 2. 解析凭证：Model 级覆盖 > Provider 级
         base_url = data.base_url or provider.base_url
-        api_key = data.api_key or decrypt(provider.api_key_encrypted)
+        own_ciphertext = (
+            dump_credentials(provider.provider_type, data.credentials)
+            if data.credentials
+            else ""
+        )
+        creds = load_credentials(
+            provider.provider_type,
+            own_ciphertext or provider.credentials_encrypted,
+        )
 
         # 3. 连通性验证（顺带探测固有信息，如 embedding 维度）
         validator = get_validator(provider.provider_type, data.model_type)
-        probed_meta = await validator.validate(base_url, api_key, data.model_name)
+        probed_meta = await validator.validate(base_url, creds, data.model_name)
 
         # 4. 验证通过，入库
         model = await AIModel.create(
@@ -67,7 +75,7 @@ class AIModelService:
             config=data.config,
             meta=probed_meta or None,
             base_url=data.base_url or "",
-            api_key_encrypted=encrypt(data.api_key) if data.api_key else "",
+            credentials_encrypted=own_ciphertext,
             is_enabled=data.is_enabled,
         )
         return await AIModel.filter(id=model.id).first()
@@ -76,6 +84,7 @@ class AIModelService:
         self, user: User, provider_id: UUID, model_id: UUID, data: ModelUpdate,
     ) -> AIModel:
         model = await self.get_by_id(user, provider_id, model_id)
+        provider = await Provider.filter(id=model.provider_id).first()
 
         update_fields: dict = {}
         if data.model_name is not None:
@@ -88,8 +97,13 @@ class AIModelService:
             update_fields["config"] = data.config
         if data.base_url is not None:
             update_fields["base_url"] = data.base_url
-        if data.api_key is not None:
-            update_fields["api_key_encrypted"] = encrypt(data.api_key) if data.api_key else ""
+        if data.credentials is not None:
+            # 传空 dict = 清掉模型级覆盖，回去继承 Provider
+            update_fields["credentials_encrypted"] = (
+                dump_credentials(provider.provider_type, data.credentials)
+                if data.credentials
+                else ""
+            )
         if data.is_enabled is not None:
             update_fields["is_enabled"] = data.is_enabled
 
@@ -97,20 +111,21 @@ class AIModelService:
             return model
 
         # 凭证或模型名变了，需要重新验证连通性
-        need_validate = any(k in update_fields for k in ("base_url", "api_key_encrypted", "model_name"))
+        need_validate = any(
+            k in update_fields for k in ("base_url", "credentials_encrypted", "model_name")
+        )
         if need_validate:
-            provider = await Provider.filter(id=model.provider_id).first()
-
             base_url = update_fields.get("base_url", model.base_url) or provider.base_url
-            if "api_key_encrypted" in update_fields:
-                api_key = data.api_key
-            else:
-                api_key = decrypt(model.api_key_encrypted) if model.api_key_encrypted else decrypt(provider.api_key_encrypted)
+            ciphertext = (
+                    update_fields.get("credentials_encrypted", model.credentials_encrypted)
+                    or provider.credentials_encrypted
+            )
+            creds = load_credentials(provider.provider_type, ciphertext)
             model_name = update_fields.get("model_name", model.model_name)
             model_type = update_fields.get("model_type", model.model_type)
 
             validator = get_validator(provider.provider_type, model_type)
-            await validator.validate(base_url, api_key, model_name)
+            await validator.validate(base_url, creds, model_name)
 
         await AIModel.filter(id=model_id).update(**update_fields)
         return await AIModel.filter(id=model_id).first()

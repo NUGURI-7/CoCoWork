@@ -1,8 +1,8 @@
 import logging
 from uuid import UUID
 
-from app.core.encryption import decrypt, encrypt
-from app.core.exceptions.types import NotFound404
+from app.core.exceptions.types import NotFound404, ValidationException
+from app.services.model.credentials import dump_credentials
 from app.models.model import Provider
 from app.models.user import User
 from app.schemas.model import ProviderCreate, ProviderUpdate
@@ -30,7 +30,7 @@ class ProviderService:
             name=data.name,
             provider_type=data.provider_type,
             base_url=data.base_url,
-            api_key_encrypted=encrypt(data.api_key),
+            credentials_encrypted=dump_credentials(data.provider_type, data.credentials),
             description=data.description,
         )
 
@@ -44,8 +44,16 @@ class ProviderService:
             update_fields["provider_type"] = data.provider_type
         if data.base_url is not None:
             update_fields["base_url"] = data.base_url
-        if data.api_key is not None:
-            update_fields["api_key_encrypted"] = encrypt(data.api_key)
+        # 凭证形状跟着 provider_type 走：本次改了就按新类型打包，没改按原类型
+        provider_type = data.provider_type or provider.provider_type
+        if data.credentials is not None:
+            update_fields["credentials_encrypted"] = dump_credentials(
+                provider_type, data.credentials,
+            )
+        elif provider_type != provider.provider_type:
+            raise ValidationException(
+                "改供应商类型时必须同时重填凭证——不同供应商的凭证字段不同",
+            )
         if data.description is not None:
             update_fields["description"] = data.description
 
@@ -64,9 +72,6 @@ class ProviderService:
         provider = await self.get_by_id(user, provider_id)
         await provider.delete()
 
-    async def get_decrypted_key(self, provider: Provider) -> str:
-        """解密 API Key（仅内部调用，不暴露给路由层）。"""
-        return decrypt(provider.api_key_encrypted)
 
 
 async def get_provider_service() -> ProviderService:

@@ -44,11 +44,11 @@ async def rerank_hits(
     if not hits:
         return hits
 
-    base_url, api_key = ModelClient.resolve_credentials(model)
+    base_url, creds = ModelClient.resolve_credentials(model)
     client = get_rerank_client(model.provider.provider_type)
     scored = await client.rerank(
         base_url=base_url,
-        api_key=api_key,
+        api_key=creds.api_key,
         model_name=model.model_name,
         query=query,
         # 送交货单元 content：keyword 路命中无 chunk_text，且 reranker 评的
