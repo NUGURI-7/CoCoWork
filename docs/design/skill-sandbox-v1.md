@@ -13,6 +13,14 @@
 > 工作区不再整体同步。连带改判 **决策 14**（持久化对象从「整个工作区」缩小为「产物」）、
 > **C.1**（加第四个挂载点：交付区）、**C.2**（快照比对整段作废）、**§5.5**（ArtifactMiddleware 推翻）。
 > **推翻的根因记在 C.2 末尾，是本片最值得复用的一条**：两个不同的需求被一套机制同时回答了。
+>
+> **2026-07-27 修订 ③**（LocalDocker 落地前的方案讨论，用户拍板三条）：
+> ① **LocalShell 不是脚手架，是发布的一个 driver** —— 面向 clone 项目的开发者（不装 docker 也能跑通
+> 整条 skill 链路），生产部署走 docker。连带 **决策 18** 补一档、**§5.5 片 2a** 的「脚手架」措辞作废。
+> ② **docker daemon 可以是远程的**（`DOCKER_HOST=ssh://`），开发机不必装 Docker Desktop。
+> 连带 **§3** 补开发形态。这条能成立的**前提**正是不用 bind mount，见新增的 **C.3**。
+> ③ **`/workspace` 不再铺入全部历史产物**：本对话的自动铺、跨对话的给模型一个工具按需取。
+> 连带改判 **决策 14**（新增 14a）与 **C.1**。改判处一律保留原文与理由。
 
 ---
 
@@ -135,17 +143,18 @@ metadata:
 | 11 | **一次性容器**：起 → 跑 → `docker rm`。不用 restart 复用（省的几秒不值），池化推后 | 销毁式清理使「清理漏网 = 跨用户数据泄露」这类 bug 不存在。RAGFlow 池化可行的前提是 read-only + tmpfs（清理近乎免费），与本项目取舍不同 |
 | 12 | **借还粒度 = 一次完整回复**（一条用户消息 → agent 与 LLM 转 N 圈 → 吐完回复）。轮内所有命令打进**同一容器** | 若按单条命令借还，一轮十几步就要解包/打包十几次，方案作废 |
 | 13 | 命令执行 = **`docker exec`**，不上容器内守护进程 | 守护进程唯一多买到的是 shell 会话态（cwd 延续 / 后台常驻），Dify 需要（tmux 长会话）、OpenHands 需要（`npm run dev` 后测网页）；本项目 skill 是跑完即止的脚本，用不上。**产物跨命令传递靠文件、与此选择无关**（文件在容器磁盘，活得比 shell 进程久） |
-| 14 | **持久化的是产物，不是工作区**（绑 workspace，不绑容器、不绑对话）：产物活在对象存储，容器与工作区随时可销毁 | **2026-07-26 修订 ②**（原文：「**工作区状态**绑 workspace……状态活在对象存储」）。**改的是持久化的对象，不是绑定粒度** —— 绑 workspace 这条不变（Letta 绑 agent、Dify 绑 `agent-<agent_id>`，本项目 workspace 才是那个持久实体：自带 supervisor + 招募成员 + 跨多个 conversation）。改的是「留什么」：中间文件任何情况都不留，只有**被显式交付到交付区的成果**才活得过这一轮（产品决策，2026-07-26 用户拍板）。**连带效果**：跨对话可见的东西 = 历史**产物**（容器启动时铺回工作区），不再是 agent 的全部工作痕迹；OpenHands `sandbox/workspace_archive.py` 那套「整个工作区打包传对象存储」**不再适用**，它服务的是 coding agent（工作区就是 repo、每个文件都是成果），与本项目形态不同 |
+| 14 | **持久化的是产物，不是工作区**（绑 workspace，不绑容器、不绑对话）：产物活在对象存储，容器与工作区随时可销毁 | **2026-07-26 修订 ②**（原文：「**工作区状态**绑 workspace……状态活在对象存储」）。**改的是持久化的对象，不是绑定粒度** —— 绑 workspace 这条不变（Letta 绑 agent、Dify 绑 `agent-<agent_id>`，本项目 workspace 才是那个持久实体：自带 supervisor + 招募成员 + 跨多个 conversation）。改的是「留什么」：中间文件任何情况都不留，只有**被显式交付到交付区的成果**才活得过这一轮（产品决策，2026-07-26 用户拍板）。**连带效果**：跨对话可见的东西 = 历史**产物**（~~容器启动时铺回工作区~~，铺回策略见 14a），不再是 agent 的全部工作痕迹；OpenHands `sandbox/workspace_archive.py` 那套「整个工作区打包传对象存储」**不再适用**，它服务的是 coding agent（工作区就是 repo、每个文件都是成果），与本项目形态不同 |
+| 14a | **铺回分两档：本对话的产物容器启动时自动铺进 `/workspace`；跨对话的不铺，给模型一个取回工具按需拉**（工具内部走 service 层从对象存储取 → 塞进容器，容器永不持有存储凭据） | **2026-07-27 修订 ③**（原文：「容器启动时铺入历史产物」，即全量铺）。**为什么原方案不成立**：本地 driver 时 `/workspace` 是宿主机目录、天然一直在，「铺回」是免费的；换容器后每轮都是全新空容器，铺回变成**每轮按产物条数拉一遍对象存储**，开销随历史线性增长，而绝大多数轮次一个历史文件都用不上。**为什么切在「本对话」这条线上**：「刚才那张图再改改」是高频且模型不该为它多绕一次工具调用，而它的量级恒定在几个；真正会膨胀的是跨对话那部分（一个 workspace 攒几十上百个产物），恰好也是低频。**代价照实记**：跨对话那档押在「模型看得到清单且想得起来取」上，会漏 —— 但漏的后果是「没用上旧文件」，不是「产物丢了」，与 notes §9 里 `publish_artifact` 那条软肋不同量级 |
 | 15 | 带 key 的 skill：**Fernet 加密存 DB → 运行时解密 → `docker run -e` 启动注入** | 同本项目 Provider API key、MCPServer headers 既有做法。注入时机是「起容器时」，故与命令怎么跑无关 |
-| 16 | 容器加固：`--read-only` + tmpfs + `--user nobody` + `--memory 256m` + `--cpus`；装 Python + Node | 直接抄 RAGFlow `executor_manager/core/container.py:82` 的 `create_container` 参数 |
+| 16 | 容器加固：`--read-only` + tmpfs + `--user nobody` + **`--memory 512m`（含 `--memory-swap` 同值）** + `--cpus` + **`--pids-limit` + `--cap-drop ALL` + `--security-opt no-new-privileges`**；装 Python + Node | 前五条直接抄 RAGFlow `executor_manager/core/container.py:82` 的 `create_container`。**2026-07-27 修订 ③ 改两处**：① **256m → 512m** —— 原数是按「脚本自己吃多少」估的（§5 那条实测：裸解释器 15MB、`import pandas` 73MB），**没算 tmpfs**：四个可写挂载点都是内存盘，落进去的文件占的是同一份 cgroup 额度，故上限要覆盖「脚本内存 + 文件」。同时补 `--memory-swap` 同值，否则超限会去吃 swap，`--memory` 形同虚设。② 补三条 RAGFlow 没有但属标配的：`--pids-limit`（防 fork 炸弹）、`--cap-drop ALL`（收掉全部内核特权）、`--security-opt no-new-privileges`（容器内提不了权）|
 | 17 | **网络**：沙箱容器接**专用 docker network**（网络内只有沙箱自己，PG / Redis / web 都不在）→ 能出公网、连不到内部服务。**外加一条防火墙规则**拦云元数据地址：`iptables -I DOCKER-USER -d 169.254.169.254 -j DROP` | 靠网络拓扑而非 iptables 规则集，Mac / Linux 一致。**元数据地址必须单独拦** —— 它返回的是可直接调云 API 的 IAM 临时凭据，不是配置信息；Capital One 2019 即由 SSRF 打到该地址窃取凭据、泄露约 1 亿条客户数据（AWS 因此推出 IMDSv2）。**RAGFlow 的做法不可照搬**：它靠 AST 静态分析禁 `socket`/`http.client`/`os`/`subprocess` 等 import（`services/security.py`），那是纯计算节点的做法，skill 要调外部服务、禁不得 |
-| 18 | **抽象层 + 多 driver**：首发 LocalDocker；远程执行机 / E2B / 阿里云 FC **留实现位不做**。gVisor 是 Linux 上的启动参数，代码不动 | RAGFlow 5 provider、Letta 3、OpenHands 3 — 四家一致。同本项目 Storage(R2/Local)、Splitter、Parser 既有姿势 |
+| 18 | **抽象层 + 多 driver**：**LocalShell（面向开发者，随项目发布，不装 docker 即可跑通）+ LocalDocker（生产）**；远程执行机 / E2B / 阿里云 FC **留实现位不做**。gVisor 是 Linux 上的启动参数，代码不动 | **2026-07-27 修订 ③**：原文只列 LocalDocker 为首发，把 LocalShell 当片 2a 的一次性脚手架。改判理由是**产品定位**（用户拍板）：clone 项目的人不该被「先装 Docker Desktop」挡在门外，本地那档跑的本来就是他自己的东西 —— 同 notes §18 记的 runify 形态（Local / Docker 两个 runner 并存，且**本地那档不冒充隔离**）。**故 LocalShell 一行不改、原样保留**，只是不再叫脚手架。多 driver 依据：RAGFlow 5 provider、Letta 3、OpenHands 3 — 四家一致。同本项目 Storage(R2/Local)、Splitter、Parser 既有姿势 |
 
 #### C.1 容器目录布局
 
 ```
 /skills               ← 挂载的 skill 解压于此（只读）
-/workspace            ← 工作台：容器启动时铺入历史产物，跨对话可见；本身不持久化
+/workspace            ← 工作台：容器启动时铺入**本对话**的历史产物；跨对话的按需取（决策 14a）。本身不持久化
 /outputs/<本轮 id>/   ← 交付区：每轮新建的空目录。放进来的才是产物
 /tmp                  ← 本轮草稿（tmpfs 内存盘）：销毁即弃
 ```
@@ -163,7 +172,7 @@ metadata:
 
 | driver | 模型看到的路径 |
 |---|---|
-| LocalShell（片 2a 脚手架） | `<root>/skills`、`<root>/workspace`、`<root>/outputs/<id>`、`<root>/tmp` —— 宿主机真实绝对路径 |
+| LocalShell（开发者 driver，决策 18） | `<root>/skills`、`<root>/workspace`、`<root>/outputs/<id>`、`<root>/tmp` —— 宿主机真实绝对路径 |
 | LocalDocker | `/skills`、`/workspace`、`/outputs/<id>`、`/tmp` —— 容器内路径 |
 
 **「本地与容器路径字面相同」这个目标拿不到，别再尝试。** 曾想用 `LocalShellBackend(virtual_mode=True)` 造一个假根让本地也显示 `/skills`，**实测失败**：`virtual_mode` 只映射那 7 个工具里的文件类工具，`execute` 交给 `sh -c` 执行、由操作系统按真实文件系统解析，直接报 `can't open file '/skills/svg-chart/scripts/bar.py'`。deepagents 自己的告警原话即 *"virtual_mode does not restrict shell execution"*，且其自带 prompt 明写 *"All file paths must start with a /"* —— **文件工具与 shell 必须共用同一个路径空间**，本地只能用 `virtual_mode=False` + 宿主机绝对路径。真正要保住的性质是「prompt 里的路径与实际路径一致」，那个两种 driver 下都成立；字面相同只是曾经以为能白拿的东西。
@@ -215,6 +224,52 @@ metadata:
 **可迁移的判据**：拿到一个「怎么做」时，先确认它服务的「要什么」——
 尤其当那个「怎么做」是从旧文档抄来的，文档里的机制很可能是为另一个目标设计的。
 
+#### C.3 文件怎么进出容器：不用 bind mount（2026-07-27 修订 ③ 新增）
+
+**tar 字节经 `docker exec` 的 stdin / stdout 进出，由容器内的 `tar` 解包与打包；一处 bind mount 都不用。**
+落点即决策 21 的 `upload_files()` / `download_files()`，`BaseSandbox` 的抽象面本来就长这样。
+
+| 时机 | 动作 |
+|---|---|
+| 容器起来后 | skill 目录在 web 进程内打成 tar → 灌进 `exec("tar -x -C /skills")` 的 stdin（决策 21a） |
+| 本对话有历史产物时 | 从对象存储取字节 → 同法送进 `/workspace`（决策 14a） |
+| 一轮结束 | `exec("tar -c -C /outputs <mid>")` 收 stdout → 进对象存储（C.2） |
+
+> **~~原文：全部走 docker API 的 `put_archive` / `get_archive`（即 `docker cp` 的程序形态）~~
+> —— 2026-07-28 实测推翻。** `docker cp` 那套接口读写的是**容器的可写层**，够不着 tmpfs 挂载：
+> 实测同一个容器里 `put_archive` 报 500、`get_archive` 报 404，而容器内 `ls` 明明看得见文件
+> （tmpfs 归内核管，不归 docker 的存储驱动管；docker 文档亦列明 `/proc`、`/sys`、tmpfs、
+> 用户挂载都拷不了）。**病根不是这条决策本身错，是它与决策 16（四个可写目录全 tmpfs）
+> 各自成立、交集为空 —— 而两条决策没被放在一起验过。**
+> 换 exec + tar 后加固参数一条不用让步，反而更快（实测 51KB 上传 / 下载各 0.55s）。
+> 顺带对齐了真实产品：RAGFlow / Dify 都不用 docker cp，文件走容器内的进程收发；
+> deepagents 自带 backend 亦然（它用 base64 塞命令行，我们直接灌裸字节，省掉 33% 膨胀，
+> 也不受 argv 单参数 128KB 上限）。
+> **另一个选项是把四个目录换成 docker volume（cp 接口对 volume 实测可用），已否决** ——
+> 那要拿内存盘语义、tmpfs 的 size 上限（zip bomb 的最后一道闸）和「容器一停即消失」去换
+> 「代码不用改」。
+
+**为什么这条路上的关键实现细节要记下来**（都是不实测发现不了的）：
+
+- **上传靠关闭 socket 写端**（`shutdown(SHUT_WR)`）告诉容器内的 `tar` 数据到齐了，不关它会一直等。
+- **下载必须 `stderr=False`**：docker 会把 stdout 与 stderr 合进同一个流，`tar` 一旦有警告文本，
+  包就废了。而给模型跑命令的 `exec` 恰恰相反，要合并（那才是「终端里看到的样子」）。
+- **`use_ssh_client=True` 不能开**（仅影响远程 daemon 的开发形态，见 §3）。
+
+**为什么不用 bind mount（按强度）**：
+
+1. **bind 的路径是「docker daemon 那台机器」上的路径，不是调用方的。** 一旦 daemon 不在本机
+   （远程 daemon、或 sandboxd 自己在容器里跑 = §3 的 DooD 形态），宿主机 `data/sandbox/...`
+   在那边根本不存在，挂上去是空目录 —— **这是 DooD 最常见的一个坑**。
+2. **不用它就没有东西要「两边对上」**：容器里四个目录全是 tmpfs，`/workspace` 的内容来自
+   对象存储、产物回对象存储，**没有任何长期存在的目录**（持久化早在决策 14 就收进对象存储了）。
+   所以本地跑、远程跑、将来 E2B / 云函数，同一套接口。
+3. `--user nobody` 写宿主机目录会撞 uid 归属问题，Linux 上尤其麻烦；tmpfs 没有这问题。
+
+**代价照实记**：`/skills` 因此做不到设计稿 C.1 写的「只读」—— 没有 bind mount 就只能是可写 tmpfs。
+不为这点收益引入 per-run docker volume（灌数据还得再起一个容器）。**这一层的安全收益本来就低**：
+`/skills` 里跑的就是那个 skill 自己的代码，防它改自己没有意义。
+
 ### D. agent 侧 —— 轮子 deepagents 已造完
 
 | # | 决策 | 依据 |
@@ -260,6 +315,21 @@ metadata:
   > ③ 判据始终是生产标准，不是「本地能跑就行」。
 - **不走 SAQ**：工具调用要同步拿结果，队列是异步投递，形态不匹配。
 - 本片验证只在本地 Mac 上做，但拓扑按可部署来搭。
+- **开发形态：daemon 可以是远程的**（2026-07-27 修订 ③）。sandboxd 就是本机第三个终端里的
+  普通进程（`uv run sandboxd`），但它指挥哪个 docker 由 `DOCKER_HOST` 决定：
+  留空 = 本机 Docker Desktop；`ssh://user@服务器` = 沙箱容器起在服务器上，**开发机不必装 Docker**。
+  这是 docker 官方支持的标准用法（`docker context` / `DOCKER_HOST`），代码零分支。
+  **它能成立完全依赖 C.3「不用 bind mount」** —— 有 bind mount 时远程 daemon 当场失效。
+  沙箱容器接专用网络、连不到 PG / Redis（决策 17），故「daemon 与数据库同机」不构成新的暴露面。
+  **一个实测坑**：docker SDK 连 `ssh://` 有两条路，**必须走默认的 paramiko，不能开
+  `use_ssh_client=True`** —— 后者调系统 `ssh`，能吃到 `~/.ssh/config` 的 ControlMaster 连接复用，
+  但**不支持 exec 所需的劫持连接**（docker 要把 HTTP 升级成双向裸流），实测 `exec_start` 永远挂住。
+  paramiko 同样读 `~/.ssh/config` 的 hostname / user / identityfile，主机别名照常生效；
+  代价是没有连接复用，每条命令约 0.5s（系统 ssh 复用后是 0.1s）。**这条只影响远程开发形态** ——
+  同机部署走 unix socket，paramiko 根本不参与。
+  **这笔往返成本会累积**（2026-07-28 实测 **0.68s/趟**，见 §5）：一轮回复里模型读 SKILL.md、
+  落数据、跑脚本、回读产物，十几条 `exec` 就是七八秒纯网络等待。**接完 web 侧自己试用时
+  别把它当成代码慢** —— 它是这个开发形态的固定开销，同机部署下不存在。
 
 ---
 
@@ -280,10 +350,26 @@ metadata:
 
 ## 5. 未定 / 待实测替换
 
-- **容器 256MB**：实测 `python3 -m venv` 裸解释器 15MB，`import pandas` 后 73MB（pandas 约 59MB）。
-  纯脚本 128MB 够，数据分析类会偶发 OOM，故取 256MB。**跑起来后用真实峰值替换。**
+- **容器 512MB**（2026-07-27 修订 ③，原 256MB）：实测 `python3 -m venv` 裸解释器 15MB，
+  `import pandas` 后 73MB（pandas 约 59MB）—— 但这些只是**脚本自己**吃的。
+  四个可写挂载点都是 tmpfs，文件占的是同一份额度，故上限须覆盖两者之和，取 512MB。
+  当前 tmpfs 分配：skills 64m / workspace 128m / outputs 128m / tmp 128m。**跑起来后用真实峰值替换。**
 - **池子 3 个**：本机开发数量，非容量测算结果。
-- **容器启动 1-3 秒**：经验值，未实测。
+- ~~**容器启动 1-3 秒**：经验值，未实测。~~ → **2026-07-28 实测替换**
+  （`scripts/probe_sandbox_startup.py`，远程 daemon `ssh://`，5 轮取中位）：
+
+  | 段 | 中位 |
+  |---|---|
+  | 建容器 + 启动 | 0.75s |
+  | 第一条命令跑通 | 0.71s |
+  | 灌 skill 进 `/skills`（110KB） | 0.57s |
+  | 销毁 | 0.22s |
+  | **首次调用总阻塞**（前三段之和，即决策 22a 关心的那个数） | **2.10s** |
+
+  **落在原估区间内，决策 11 / 22a / §4 三条都站得住**，且比原估更稳 ——
+  同一轮里在**已就绪**容器上再跑一条空命令 `true` 也要 **0.68s**，说明 2.10s 的大头
+  是 ssh 往返而非容器本身（前三段各含至少一趟往返）。换同机 unix socket 部署，
+  这部分几乎归零，真实启动成本约在零点几秒量级，**池化的收益比原以为的更小**。
 - **前端渲染**：`ls` / `read_file` 这类块在现有 chat UI 的呈现效果，跑起来再看。
 
 ---
@@ -332,7 +418,24 @@ metadata:
 - 站内预览挂账不排期，见 `issues/003-artifact-inline-preview.md`；先用下载接口的
   `Content-Disposition: inline` 让浏览器自己渲染。
 
-**还没做的（P5 剩余）**：产物回传（交付区目录 + 收产物 + 产物表与迁移 + SSE + 前端卡片 + 下载接口）；workspace 那条路的接线（`build_workspace_graph` 直接调 `create_agent`、不走模板，需 supervisor + 各成员**共用同一个 mount**、skills 取并集 —— 决策 12「借还粒度=一次完整回复」的直接约束）；用户上传（zip 层把关 + 对象存储 + CRUD + 前端）；**LocalDocker driver（真沙箱，当前零隔离）**。
+- **片 2b：产物回传 ✅**（2026-07-27）：交付区目录 + `app/services/sandbox/artifact.py` 收产物 +
+  `SandboxArtifact` 表与迁移 + SSE `artifacts` 帧 + 前端卡片 + 下载接口（预签名直链，
+  Local 后端那条加 `Content-Security-Policy: sandbox`）。设计过程本身的教训见 notes §22–§25。
+- **片 2c：workspace 接线 + 产出物面板 ✅**（2026-07-27）：supervisor 与各成员**共用同一个 mount**、
+  skills 取并集（决策 12 的直接约束），挂载判据从「mount 在不在」改成 `mount.has_skills(cfg)`；
+  跨对话产出物面板，SSE 帧只当刷新信号、数据仍只从接口来。见 notes §26–§28。
+
+- **片 3a：沙箱镜像 + sandboxd ✅**（2026-07-28）：`docker/sandbox/Dockerfile`（python3 + node22 + uv，
+  非 root，不预装重包 —— 实测本机 36 个真实 skill 无一带第三方依赖，依赖机制留到用户上传那一刀）；
+  `app/sandbox/`（`container.py` docker 操作 + `session.py` 会话表 + `api.py` 五个端点 + `app.py` 装配），
+  `uv run sandboxd` 第三个进程入口。**17 项实测全绿**：令牌鉴权、`nobody`、根只读、四个 tmpfs 可写、
+  凭据注入、能出公网、退出码透传、超时 124、文件进出、销毁幂等、启动清孤儿。
+  途中撞出两个不实测发现不了的坑，都已写进 C.3 / §3：`use_ssh_client` 与 exec 冲突、
+  `docker cp` 与 tmpfs 互斥。
+
+**还没做的（P5 剩余）**：**LocalDocker driver 的 web 侧**（`DockerSandbox` 客户端 + 懒启动 + skill 打包
++ `mount.py` 按 `SANDBOX_DRIVER` 选后端 + 产物回收改走容器 + 三层降级）；工作区铺回（决策 14a）；
+用户上传（zip 层把关 + 对象存储 + CRUD + 前端）。
 
 ## 6. 范围与排期
 

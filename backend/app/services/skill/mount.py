@@ -4,7 +4,8 @@
 - 工具不自己设计，用 FilesystemMiddleware 自带的 7 个（ls/read_file/write_file/
   edit_file/glob/grep/execute），且**仅当挂了 skill 才装**，没挂一个都不装。
 - 不用 SkillsMiddleware，清单 prompt 自己拼。
-- 片 2a 的执行后端是 LocalShellBackend（不起容器），docker 落地时只换这一处。
+- 执行后端按 driver 选：LocalShellBackend（不起容器，面向开发者）/ 容器 driver
+  （生产）。换 driver 只换这一处，上面两条与 prompt 片段一行不动。
 """
 
 import os
@@ -125,7 +126,7 @@ def _sandbox_env(paths: SandboxPaths) -> dict[str, str]:
     """
     return {
         # 空 PATH 会让 python3 都找不到。带上当前解释器所在目录，保证脚本跑得起来；
-        # 换成容器后这一项由镜像决定，此处的拼接随之删除。
+        # 这是 LocalShell driver 专有的：容器 driver 的 PATH 由镜像决定，不走这里。
         "PATH": os.pathsep.join(
             [str(Path(sys.executable).parent), os.defpath.lstrip(os.pathsep)]
         ),

@@ -36,3 +36,22 @@ def worker() -> None:
 
     setup_logging()
     start("app.tasks.worker.settings")
+
+
+def sandboxd() -> None:
+    """启动 sandboxd —— 全项目唯一挂 docker.sock 的进程。
+
+    与 web 分开是硬边界（§3），不是「先这么放着」：这个进程能起任意容器，
+    绝不能和对外的 API 挤在一起。
+    """
+    import uvicorn
+
+    from app.core.logging import setup_logging
+
+    setup_logging()
+    uvicorn.run(
+        "app.sandbox.app:app",
+        host=settings.SANDBOXD_HOST,
+        port=settings.SANDBOXD_PORT,
+        access_log=False,
+    )

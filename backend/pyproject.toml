@@ -32,6 +32,7 @@ dependencies = [
     "charset-normalizer>=3.4.7",
     "skills-ref>=0.1.1",
     "pdfplumber>=0.11.10",
+    "docker[ssh]>=7.1.0",
 ]
 
 # 进程入口：uv sync 时据此在 .venv/bin/ 生成同名可执行文件，
@@ -39,6 +40,7 @@ dependencies = [
 [project.scripts]
 dev = "app.cli:dev"
 worker = "app.cli:worker"
+sandboxd = "app.cli:sandboxd"
 
 [dependency-groups]
 benchmarks = [

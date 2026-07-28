@@ -6,9 +6,12 @@
     /outputs/<message_id>  交付区：每轮新建的空目录，放进来的才是产物
     /tmp                   本轮草稿（execute 的工作目录），销毁即弃
 
-片 2a 用 deepagents 的 LocalShellBackend 打通链路、暂不起容器，故在本地
-镜像同一套布局。布局保持一致，是为了 docker 落地时 prompt 里的路径、
-SKILL.md 里写的相对路径一个字都不用改 —— 换掉的只有 backend 实现。
+本模块是 **LocalShell driver** 的那一份实现：不起容器，在宿主机目录上镜像
+同一套布局（决策 18 —— LocalShell 面向 clone 项目的开发者，不装 docker 也能
+跑通整条 skill 链路；生产走 LocalDocker）。
+
+布局两边保持一致，是为了 prompt 里的路径、SKILL.md 里写的相对路径一个字
+都不用改 —— 换 driver 换掉的只有 backend 实现。
 """
 
 import shutil
