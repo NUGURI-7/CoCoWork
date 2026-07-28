@@ -1,6 +1,9 @@
 # PDF 解析切片（roadmap P1）—— 工作文档
 
-> 状态：**本地 PDF 路（pdfplumber）+ 定位信息已完工**（2026-07-27）。目录页 / 封面页 /
+> 状态：**第 4 步进行中**（2026-07-28）——云端路的凭证地基（片①）已完工，
+> 百度 API 的真实形状与解析质量已实测确认（见下方两节），`BaiduDocParser` 只剩骨架。
+>
+> 本地 PDF 路（pdfplumber）+ 定位信息已完工（2026-07-27）。目录页 / 封面页 /
 > 整页旋转文本三类非正文内容按页剔除，标题链干净；页码从解析一路通到检索结果
 > （`Paragraph.meta` → `RetrievalHit.page` → 前端「出自 … · 第 44 页」）。
 > 单测 73 条（17 条依赖真语料，缺则跳过）。**只剩第 4 步云端路。**
@@ -291,11 +294,17 @@ v1 的 `raw.decode("utf-8")` 一行藏了三个洞，全部实测确认：
 
 三片，按顺序做，每片自己能验：
 
-| 片 | 内容 | 卡点 |
+| 片 | 状态 | 内容 |
 |---|---|---|
-| ① | **凭证包重构** + `baidu` provider_type + `doc_parse` model_type + 验证器 | Provider 凭证列是一列裸字符串，装不下 AK+SK。**已定走方案 A** |
-| ② | `BaiduDocParser`：提交 + 轮询 + access_token 缓存 + `layouts` → `DocumentBlock` | 无 |
-| ③ | 路由接线：KB 级选 `doc_parse_model`（同 `rerank_model` 那套）+ 本地解析空手而归时升级云端 | 无 |
+| ① | ✅ 2026-07-28 | **凭证包重构** + `baidu` provider_type + `doc_parse` model_type。落地：`services/model/credentials.py`（图纸 + dump/load + 表单字段导出）、迁移 `0021_provider_credentials_bundle`（`RenameField` ×2 + `RunPython` 重打包，6 个存量 provider 逐个核对无误）、validator 签名 `api_key: str` → `credentials: BaseCredentials`、端点 `GET /providers/credential-definitions`、前端表单按下发的字段清单渲染 |
+| ② | 🔄 骨架 | `BaiduDocParser`：`parse_result` → `DocumentBlock` 映射 + HTTP 客户端（换 token / 提交 / 轮询 / 下载）。**已写 type 映射表与层级解析，映射主体和客户端未写** |
+| ③ | ⬜ | 路由接线：KB 级选 `doc_parse_model`（同 `rerank_model` 那套）+ 本地解析空手而归时升级云端。**连带待定**：换解析路意味着存量文档要重跑，同「换 embedding 模型 = 全库重建」一类 |
+
+**分工修正（2026-07-28）**：`Parser` 实现归 Claude 写（原文「各 `Parser` 实现待定」）。
+理由不是工作量，是**这类代码的验收方式与业务代码不同**——`_TOC_LINE_RATIO = 0.5`
+这种阈值读一百遍代码也看不出对错，正确性只存在于真实语料里。故用户对本层的把关
+方式是**审输出不审代码**：给出段数 / 标题链 / 页码，对着真实 PDF 判断，这个判断
+只有见过原文的人做得了。
 
 **方案 A（凭证包，Dify 形态）**：凭证列语义统一改成「加密的凭证 JSON」——普通供应商是
 `{"api_key": "sk-xxx"}`，百度是 `{"api_key": ..., "secret_key": ...}`，存量数据一条
@@ -307,16 +316,69 @@ AK/SK/region 一起塞进 `api_key` 字段）：B 省下的只是一次迁移（
 Azure OpenAI / Bedrock 这类多凭证供应商不是特例，是离开 OpenAI 兼容协议之后的常态，早晚
 要统一。
 
-### 百度云文档解析 API 返回结构（据官方文档）
+### 百度云文档解析 API —— 实测确认的形状（2026-07-28）
 
-异步两步：`POST .../paddle-vl-parser/task` 提交 → `POST .../task/query` 查询。鉴权 API Key + Secret Key 换 access_token。提交 QPS 2 / 查询 QPS 5。
+探测脚本 `backend/scripts/probe_baidu_docparse.py`（**长期保留**）。原始返回存
+`backend/out/`（gitignored），`--replay` 可离线重看，不再烧额度。两轮共 9 页
+（合成文档 4 页 + 论文裁剪 5 页），免费额度 200 页。
 
-```
-layouts: [{ layout_id, text, type, sub_type, page_num, position[x,y,w,h], polygon, span_boxes }]
-tables:  [{ markdown }]
-```
+**四处与文档推断不符，都是实测踩出来的**：
 
-`type` = text/table/image/title；`sub_type` = 标题层级（需开 `relevel_titles`）；`page_num` 从 0 起；layouts 列表顺序即阅读顺序。**与本片 IR 设计一一对应。**
+| # | 以为 | 实际 |
+|---|---|---|
+| 1 | body 发 JSON | **form-urlencoded**，发 JSON 回 `282003 missing parameters`；布尔值要写成字符串 `"true"` |
+| 2 | 接口直接返回 `layouts` | 只返回 `markdown_url` + `parse_result_url` 两个链接（30 天有效），结构化数据**要再发一次 HTTP 下载** |
+| 3 | `layouts` 平铺、每块自带 `page_num` | **`pages[] → layouts[]` 两层嵌套**，`page_num` 在页这级 |
+| 4 | `sub_type` 是层级 | 是字符串 **`title_1` / `title_2` …**，正文块为空串；`parent` / `children` 字段**实测恒空**，树形关系没给，标题链仍需自己拼（复用现有 `assembler`） |
+
+`page_num` **从 0 起**（实测 `[0,1,2,3]`），落 `DocumentBlock.page` 要 +1。
+
+**`type` 的完整取值**（两轮实测见到的全部）：
+
+| type | 处置 | 说明 |
+|---|---|---|
+| `text` | → PARAGRAPH | 正文 |
+| `paragraph_title` | → HEADING | 层级取 `sub_type` 尾数 |
+| `table` | → TABLE | 表格另有 `tables[]`，带 `markdown` / `table_html` / `cells` / `matrix` / `table_title_id` |
+| `figure_title` | → PARAGRAPH | **实测在论文里全是表标题**（「表2-3 粉煤灰基本性能参数」+ 英文对照）。保留——表标题是「这张表讲什么」的唯一线索，丢了下游只剩裸数字 |
+| `vision_footnote` | → PARAGRAPH | 脚注，常含引用出处 |
+| `header` / `footer` / `number` | **丢** | 页眉 / 页脚 / 页码，纯噪声 |
+
+认不出的 `type` **一律丢弃而非降级成正文**——与本地路的 parse-don't-validate 刻意相反：
+百度的 `type` 是封闭枚举，冒出没见过的值多半是印章、水印这类新的非正文元素，收进正文
+是污染。**宁可漏不可脏**。
+
+**一个已知风险**：合成测试文档里 `一、绪论`（H1）与页眉文字粘成了同一个 `header` 块，
+按 type 丢就把标题一起丢了。真实论文（页眉有独立页边距）未复现。判断同第 3 步「待办 5
+不修」：页眉垃圾污染检索的伤害大于偶尔丢个标题，**丢，但记日志**。
+
+### 云端路 vs 本地路 —— 同一份 5 页实测（2026-07-28）
+
+样本 `data/pdf/00059_5p.pdf`，从 54 页学位论文裁出第 14/15/27/28/41 页
+（覆盖章标题、三级小节、三层同页、三线表、编号重复的真实错误）。
+
+| | 本地 pdfplumber | 百度云端 |
+|---|---|---|
+| 标题总数 | **8** | **20** |
+| 层级 | H1×3、H2×5，**三级一个没有** | title_1×3、title_2×5、**title_3×7、title_4×5** |
+| 表格 | **0 张**（三线表无框线，`find_tables()` 抓不到） | **5 张**，带 markdown（化学式还给了 LaTeX） |
+| 页眉页脚 | 靠 top 分桶 + 重复页数猜 | `type` 直接标 |
+| 耗时 | **0.2 秒** | 十几秒量级（提交 + 轮询） |
+
+**云端是本地的严格超集，不是各有胜负**：本地抓到的 8 个标题百度全部也抓到、且层级
+判定完全一致，无一反例；多出的 12 个全是本地原理上够不着的三、四级。这坐实了第 3 步
+那句「能靠排版信号解决的已经解决完了，再往上只能拿真结构」——本地路认不出的
+`1.2.1 泡沫的生成与稳定机制`（12pt 不加粗、与正文逐字段同形），云端给的是 `title_3`。
+
+**本地那 4774 字符的可比性是假的**：表格识别为 0 意味着表里的数字被当成普通文本行
+走了正文流程，字符数不少，但「粉煤灰的烧失量是多少」照样查不到——表头与数值的对应
+关系在解析这一步就已经丢了。正是面试清单里那条坑，本地路现在就在这个状态。
+
+**效果影响的粗略判断**（推理，非测量，理由见「定位」节）：章节级问题两条路几乎无差别；
+要定位到具体小节时差距明显（本地标题链止步二级，2.1.1~2.1.3 会并成一个大段）；
+查表里的数则是从「不可能」到「可能」的质变。**平时看不出差距，一碰表格是天壤之别。**
+
+**D4「猜字号保留」经实测仍然成立**——本地路留着的理由从来不是效果，是零配置可用。
 
 ---
 
