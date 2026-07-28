@@ -9,6 +9,7 @@ export type ProviderType =
   | 'siliconflow'
   | 'deepseek'
   | 'anthropic'
+  | 'baidu'
   | 'custom'
 
 /** 模型类型枚举 */
@@ -21,6 +22,21 @@ export type ModelType =
   | 'stt'
   | 'image'
   | 'multimodal'
+  | 'doc_parse'
+
+/**
+ * 凭证字段定义（对齐后端 CredentialField）。
+ *
+ * 各家供应商要填的凭证不同（OpenAI 一个 api_key、百度要 api_key + secret_key），
+ * 由后端 `/providers/credential-definitions` 下发，表单据此渲染，不在前端写死。
+ */
+export interface CredentialField {
+  key: string
+  label: string
+  /** 是否敏感字段：true 渲染成密码框 */
+  secret: boolean
+  required: boolean
+}
 
 /** 参数字段定义（对齐后端 ParamField） */
 export interface ParamField {
@@ -61,7 +77,7 @@ export interface AIModel {
   /** 类型相关元数据：embedding 模型带 embedding_dim */
   meta?: { embedding_dim?: number } | null
   has_custom_base_url: boolean
-  has_custom_api_key: boolean
+  has_custom_credentials: boolean
   is_enabled: boolean
   created_at: string
   updated_at: string

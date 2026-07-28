@@ -8,6 +8,7 @@ import { del, get, post } from '@/request'
 import type {
   AIModel,
   CatalogItem,
+  CredentialField,
   ModelType,
   ModelTypeParams,
   Provider,
@@ -22,7 +23,8 @@ export interface ProviderCreatePayload {
   name: string
   provider_type: ProviderType
   base_url: string
-  api_key: string
+  /** 凭证明文，字段随 provider_type 而定（见 getCredentialDefinitions）；后端加密存储 */
+  credentials: Record<string, string>
   description?: string
 }
 
@@ -32,9 +34,18 @@ export function listProviders() {
 }
 
 /**
+ * 获取各供应商的凭证字段定义（按 provider_type 索引）。
+ *
+ * 静态数据，一次拉全量即可，切换供应商类型时从内存取。
+ */
+export function getCredentialDefinitions() {
+  return get<Record<string, CredentialField[]>>('/providers/credential-definitions')
+}
+
+/**
  * 创建 Provider。
  *
- * 后端会在创建时做连通性验证（base_url + api_key），失败则不入库并返回业务错误。
+ * 后端会在创建时做连通性验证（base_url + 凭证），失败则不入库并返回业务错误。
  * 走 silent 由表单层 toast，方便显示后端具体原因。
  */
 export function createProvider(payload: ProviderCreatePayload) {
@@ -62,7 +73,8 @@ export interface ModelCreatePayload {
   model_type: ModelType
   config?: Record<string, unknown>
   base_url?: string | null
-  api_key?: string | null
+  /** 整包覆盖 Provider 的凭证；不传则继承 */
+  credentials?: Record<string, string> | null
   is_enabled?: boolean
 }
 

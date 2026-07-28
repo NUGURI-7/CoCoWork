@@ -18,6 +18,7 @@ export type { User, UserRegisterPayload, UserLoginPayload, TokenPayload } from '
 export type {
   ProviderType,
   ModelType,
+  CredentialField,
   ParamField,
   ModelTypeParams,
   Provider,
