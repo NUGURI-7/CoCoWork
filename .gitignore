@@ -237,3 +237,6 @@ __marimo__/
 
 # 基准测试 / RAG 数据集（Multi-CPR 等，几百 MB，不入仓库）
 /data/
+
+# 探测脚本产物（原始 API 返回、下载的解析结果），不进版本库
+backend/out/
