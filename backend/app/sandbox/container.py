@@ -98,9 +98,17 @@ def create_container(session_id: str, env: dict[str, str]) -> Container:
 import shlex
 from dataclasses import dataclass
 
-# 单条命令的输出上限。deepagents 那边还会再按 token 截一道，这里挡的是更粗暴的
-# 情况：一个脚本 print 出几百兆，把 sandboxd 自己的内存吃光。
-_MAX_OUTPUT_BYTES = 256 * 1024
+# 单条命令的输出上限。这里挡的是粗暴情况：一个脚本 print 出几百兆，把 sandboxd
+# 自己的内存吃光。
+#
+# **必须高于 deepagents 那层的 500KB**（原为 256KB，2026-07-29 上调）：它的 read
+# 是在容器里跑 python、把文件内容包成**一行 JSON** 打到 stdout。一个 300KB 的文件页
+# 在那边不算超限、正常吐 JSON，到我们这里却被砍在 JSON 字符串中间 —— 回去解析直接
+# 失败，模型收到的是一句看不懂的解析错误，而不是「文件太大」。
+#
+# 可迁移的判据：**两层各有截断上限时，外层必须比内层松。** 外层截的是内层已经包装
+# 好的字节，一刀下去破坏的是结构而非内容，报出来的错会指向完全错误的方向。
+_MAX_OUTPUT_BYTES = 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)

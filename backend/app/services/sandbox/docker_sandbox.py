@@ -219,7 +219,7 @@ class DockerSandbox(BaseSandbox):
             )
             resp.raise_for_status()
         except SandboxUnavailable as exc:
-            return _failed(f"沙箱不可用：{exc}")
+            return _failed(str(exc))
         except httpx.HTTPStatusError as exc:
             return self._explain_status(exc)
         except httpx.HTTPError as exc:

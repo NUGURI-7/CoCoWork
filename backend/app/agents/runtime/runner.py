@@ -315,6 +315,7 @@ async def prepare_stream(
         # Playground 的产物不挂对话（消息本身就不入库），conversation_id 留空
         collect = partial(
             collect_artifacts,
+            mount.backend,
             mount.paths,
             user=user,
             scope_id=user.id,

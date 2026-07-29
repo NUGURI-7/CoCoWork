@@ -337,6 +337,7 @@ async def build_workspace_graph(
     if mount is not None:
         collect = partial(
             collect_artifacts,
+            mount.backend,
             mount.paths,
             user=user,
             scope_id=workspace.id,

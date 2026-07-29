@@ -8,11 +8,15 @@
 是本末倒置。但只要有任何一个失败，就不删交付区目录，留着可人工排查。
 """
 
+import base64
+import io
+import json
 import logging
 import mimetypes
-import shutil
-from pathlib import Path
+import shlex
 from uuid import UUID
+
+from deepagents.backends.protocol import SandboxBackendProtocol
 
 from app.core.config import settings
 from app.core.storage import storage
@@ -24,8 +28,52 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_CONTENT_TYPE = "application/octet-stream"
 
+# 列交付区用的命令模板。**用 python3 而不是 `find -printf`**：后者是 GNU 专有参数，
+# 容器（Linux/GNU）有、开发机（macOS/BSD）没有，而这条命令两个 driver 都要跑。
+# 路径走 base64 传进去，免得文件名里的引号空格把 shell 引用规则搅烂 ——
+# 这个套路是照抄 deepagents 自己的 BaseSandbox.ls。
+_LIST_DELIVERY = """python3 -c "
+import base64, json, os
+
+path = base64.b64decode('{path_b64}').decode('utf-8')
+found = []
+try:
+    with os.scandir(path) as it:
+        for entry in it:
+            # follow_symlinks=False：符号链接不算普通文件，直接落选。
+            # 它可能指向沙箱外的任意文件，收了等于把宿主机文件当产物送出去
+            if entry.is_file(follow_symlinks=False):
+                found.append([entry.name, entry.stat().st_size])
+except FileNotFoundError:
+    pass
+print(json.dumps(found))
+" 2>/dev/null"""
+
+
+async def _list_delivery(backend: SandboxBackendProtocol, outputs: str) -> list[tuple[str, int]]:
+    """列出交付区里的普通文件，返回 [(文件名, 字节数)]。
+
+        **先拿大小、再决定下不下载**：一个超限的大文件如果先下回来再判断，
+        那几十兆已经进了 web 进程的内存 —— 判断本身就失去了意义。
+
+        交付区不存在（这一轮没挂 skill / 没起容器）不是错误，返回空。
+        """
+    path_b64 = base64.b64encode(outputs.encode("utf-8")).decode("ascii")
+    result = await backend.aexecute(_LIST_DELIVERY.format(path_b64=path_b64))
+
+    if result.exit_code != 0:
+        logger.warning("列交付区失败 path=%s exit=%s", outputs, result.exit_code)
+        return []
+
+    try:
+        return [(name, size) for name, size in json.loads(result.output.strip() or "[]")]
+    except (ValueError, TypeError):
+        logger.warning("交付区清单解析失败 path=%s output=%r", outputs, result.output[:200])
+        return []
+
 
 async def collect_artifacts(
+        backend: SandboxBackendProtocol,
         paths: SandboxPaths,
         *,
         user: User,
@@ -36,6 +84,7 @@ async def collect_artifacts(
     """回收本轮交付区里的产物；没有产物就返回空列表。
 
     Args:
+        backend: 本轮的执行后端 —— 交付区只有它够得着
         paths: 本轮的沙箱路径，只用到 `outputs`
         user: 产物归属人，下载鉴权的依据
         scope_id: 工作区归属键，只用于拼 storage_key（Playground=user.id / workspace=workspace.id）
@@ -45,45 +94,57 @@ async def collect_artifacts(
     Returns:
         已成功入库的产物列表，供 SSE 发给前端
     """
-    outputs = Path(paths.outputs)
-
-    if not outputs.is_dir():
+    entries = await _list_delivery(backend, paths.outputs)
+    if not entries:
         return []
 
-    collected: list[SandboxArtifact] = []
     failed = False
+    wanted: list[str] = []
 
-    for entry in sorted(outputs.iterdir()):
-        if not entry.is_file() or entry.is_symlink():
-            # 子目录不收（交付区是扁平的交付口）；符号链接更不能收 ——
-            # 它可能指向沙箱外的任意文件，收了等于把宿主机文件当产物送出去
-            logger.info("交付区跳过非普通文件 message_id=%s name=%s", message_id, entry.name)
-            continue
-
-        size = entry.stat().st_size
+    for name, size in entries:
         if size > settings.SANDBOX_ARTIFACT_MAX_SIZE:
             mb = settings.SANDBOX_ARTIFACT_MAX_SIZE // (1024 * 1024)
             logger.warning(
                 "产物超出 %dMB 上限，跳过 message_id=%s name=%s size=%d",
-                mb, message_id, entry.name, size,
+                mb, message_id, name, size,
+            )
+            failed = True
+            continue
+        wanted.append(name)
+
+    if not wanted:
+        return []
+
+    # 一次把该要的都要回来。取回的顺序与请求顺序一一对应，strict=True 让
+    # 「万一对不齐」当场炸掉，而不是安静地把 A 的字节存成 B 的产物
+    responses = await backend.adownload_files([f"{paths.outputs}/{name}" for name in wanted])
+
+    collected: list[SandboxArtifact] = []
+
+    for name, response in zip(wanted, responses, strict=True):
+        if response.error or response.content is None:
+            logger.warning(
+                "产物取回失败 message_id=%s name=%s error=%s", message_id, name, response.error
             )
             failed = True
             continue
 
-        content_type = mimetypes.guess_type(entry.name)[0] or _DEFAULT_CONTENT_TYPE
-        storage_key = f"sandbox/{scope_id}/{message_id}/{entry.name}"
+        content_type = mimetypes.guess_type(name)[0] or _DEFAULT_CONTENT_TYPE
+        storage_key = f"sandbox/{scope_id}/{message_id}/{name}"
 
         try:
-            with entry.open("rb") as fp:
-                await storage.save(storage_key, fp, content_type=content_type)
-
+            await storage.save(
+                storage_key, io.BytesIO(response.content), content_type=content_type
+            )
             collected.append(
                 await SandboxArtifact.create(
                     created_by=user,
                     conversation_id=conversation_id,
                     message_id=message_id,
-                    filename=entry.name,
-                    size=size,
+                    filename=name,
+                    # 记实际收到的字节数，不用列清单时那个 —— 两者理论上相等，
+                    # 但入库的该是「真正存进去的那份」有多大
+                    size=len(response.content),
                     content_type=content_type,
                     storage_key=storage_key,
                 )
@@ -91,19 +152,14 @@ async def collect_artifacts(
         except Exception:
             # 存储抖动 / 唯一约束撞车 —— 记下来跳过，不连累其余产物，更不连累这轮回复
             logger.exception(
-                "产物回收失败 message_id=%s name=%s key=%s",
-                message_id, entry.name, storage_key,
+                "产物回收失败 message_id=%s name=%s key=%s", message_id, name, storage_key
             )
             failed = True
     if not failed:
-        # 全部收走了，交付区没有留存价值 —— 删掉，免得目录逐轮堆积。
-        # 有失败时刻意保留：那些文件还没有任何下载入口，删了就真没了。
-        shutil.rmtree(outputs, ignore_errors=True)
+        # 全收走了，交付区没有留存价值。有失败时刻意保留：那些文件还没有任何
+        # 下载入口，删了就真没了。
+        # docker driver 下容器马上就销毁，删不删都一样；但 local driver 的目录
+        # 会逐轮堆在磁盘上，所以这一步不能省。
+        await backend.aexecute(f"rm -rf {shlex.quote(paths.outputs)}")
 
     return collected
-
-
-
-
-
-

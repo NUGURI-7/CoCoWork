@@ -8,17 +8,17 @@
   （生产）。换 driver 只换这一处，上面两条与 prompt 片段一行不动。
 """
 
+import asyncio
 import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-import asyncio
 from typing import Sequence
 from uuid import UUID
 
 from deepagents import FilesystemMiddleware
 from deepagents.backends import LocalShellBackend
-from deepagents.backends.protocol import BackendProtocol
+from deepagents.backends.protocol import SandboxBackendProtocol
 
 from app.core.config import settings
 from app.models import User
@@ -41,7 +41,7 @@ class SkillMount:
 
     middleware: FilesystemMiddleware
     paths: SandboxPaths  # 工作区路径，供日志与排查用
-    backend: BackendProtocol  # 收尾要用：docker driver 得把容器销毁掉
+    backend: SandboxBackendProtocol  # 收尾要用：docker driver 得把容器销毁掉
 
     async def close(self) -> None:
         """一轮回复的收尾。docker driver 销毁容器，local driver 无事可做。
