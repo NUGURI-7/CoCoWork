@@ -3,7 +3,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
-from app.models.knowledge import RetrievalMode
+from app.models.knowledge import ParseBackend, RetrievalMode
 
 
 class ChunkConfig(BaseModel):
@@ -21,6 +21,10 @@ class KnowledgeBaseCreate(BaseModel):
     description: str = Field(default="", max_length=500, description="描述")
     embedding_model_id: UUID = Field(description="锁定的 embedding 模型（type=embedding）")
     chunk_config: ChunkConfig = Field(default_factory=ChunkConfig, description="切块配置")
+    parse_backend: ParseBackend = Field(
+        default=ParseBackend.LOCAL,
+        description="文档解析后端；哪些可选随部署配置而定，见 GET /knowledge-bases/parse-backends",
+    )
 
 
 class KnowledgeBaseUpdate(BaseModel):
@@ -31,6 +35,9 @@ class KnowledgeBaseUpdate(BaseModel):
     chunk_config: ChunkConfig | None = None
     retrieval_mode: RetrievalMode | None = None
     rerank_model_id: UUID | None = None
+    parse_backend: ParseBackend | None = Field(
+        default=None, description="改了只影响此后新传的文档，存量文档需重跑才生效",
+    )
 
 
 class KnowledgeBaseOut(BaseModel):
@@ -49,6 +56,7 @@ class KnowledgeBaseOut(BaseModel):
     retrieval_mode: str
     rerank_model_id: UUID | None = None
     rerank_model_name: str | None = None
+    parse_backend: str
     created_at: datetime
     updated_at: datetime
 

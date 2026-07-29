@@ -5,7 +5,7 @@ from tortoise.functions import Count, Sum
 from tortoise.queryset import QuerySet
 
 from app.core.exceptions.types import NotFound404, ValidationException
-from app.models.knowledge import KnowledgeBase, KBStatus
+from app.models.knowledge import KnowledgeBase, KBStatus, ParseBackend
 from app.models.model import AIModel
 from app.models.user import User
 from app.schemas.knowledge import (
@@ -13,6 +13,7 @@ from app.schemas.knowledge import (
     KnowledgeBaseOut,
     KnowledgeBaseUpdate,
 )
+from app.services.knowledge.parser import available_backends
 from app.services.model.model_client import ModelClient
 
 logger = logging.getLogger(__name__)
@@ -60,6 +61,7 @@ class KnowledgeBaseService:
                 retrieval_mode=kb.retrieval_mode,
                 rerank_model_id=kb.rerank_model_id,
                 rerank_model_name=name_map.get(kb.rerank_model_id) if kb.rerank_model_id else None,
+                parse_backend=kb.parse_backend,
             )
             for kb in kbs
         ]
@@ -76,7 +78,22 @@ class KnowledgeBaseService:
         kbs = await self._annotated_query(user).order_by("-created_at")
         return await self._assemble(kbs)
 
+    @staticmethod
+    def _ensure_backend_available(backend: ParseBackend) -> None:
+        """选中的解析后端在这台机器上必须真的可用。
+
+        枚举只保证「值合法」，保证不了「这台机器配了 Key」。前端置灰只是体验，
+        绕过前端直接打 API 的，靠这道拦。
+        """
+        if backend not in available_backends():
+            raise ValidationException(
+                f"解析后端 '{backend.value}' 不可用：部署侧未配置对应凭证",
+            )
+
     async def create(self, user: User, data: KnowledgeBaseCreate) -> KnowledgeBaseOut:
+        # 0. 先拦不可用的解析后端 —— 别等探测完维度、白跑一次 embedding 请求才发现
+        self._ensure_backend_available(data.parse_backend)
+
         # 1. 校验 embedding 模型归属 + 类型
         model = (
             await AIModel.filter(id=data.embedding_model_id, provider__created_by=user)
@@ -102,6 +119,7 @@ class KnowledgeBaseService:
             embedding_dim=dim,
             chunk_config=data.chunk_config.model_dump(),
             status=KBStatus.READY,
+            parse_backend=data.parse_backend,
         )
 
         return await self.get_by_id(user, kb.id)
@@ -134,6 +152,9 @@ class KnowledgeBaseService:
             update_fields["chunk_config"] = data.chunk_config.model_dump()
         if data.retrieval_mode is not None:
             update_fields["retrieval_mode"] = data.retrieval_mode.value
+        if data.parse_backend is not None:
+            self._ensure_backend_available(data.parse_backend)
+            update_fields["parse_backend"] = data.parse_backend.value
 
         if "rerank_model_id" in data.model_fields_set:
             if data.rerank_model_id is None:

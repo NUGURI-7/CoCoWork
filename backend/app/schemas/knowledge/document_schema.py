@@ -34,6 +34,7 @@ class DocumentOut(BaseModel):
     status: str
     stage: str
     error_message: str
+    parse_backend: str  # 实际解析后端；与库设置不一致 = 这份降级过
     created_at: datetime
     updated_at: datetime
 

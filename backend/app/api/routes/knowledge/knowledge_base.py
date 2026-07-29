@@ -18,6 +18,7 @@ from app.services.knowledge import (
     get_knowledge_base_service,
     get_retrieval_service,
 )
+from app.services.knowledge.parser import available_backends
 from app.services.knowledge.retrieval import RetrievalParams
 
 router = APIRouter(prefix="/knowledge-bases", tags=["knowledge-bases"])
@@ -48,6 +49,20 @@ async def list_knowledge_bases(
 ) -> ResponseModel[list[KnowledgeBaseOut]]:
     kbs = await svc.list_own(current_user)
     return success(data=kbs)
+
+
+# 必须注册在 /{kb_id} 之前：FastAPI 按顺序匹配，放到后面会先撞上路径参数，
+# 拿 "parse-backends" 去解析 UUID 直接 422
+@router.get("/parse-backends", summary="可用的文档解析后端")
+async def list_parse_backends(
+        _current_user: CurrentUserDep,
+) -> ResponseModel[list[str]]:
+    """按部署侧配置返回可用后端，前端据此禁用选不了的选项。
+
+    只反映「配没配 Key」，不代表上游此刻通不通 —— 建库页面不该卡在
+    别人家服务的响应时间上。
+    """
+    return success(data=[backend.value for backend in available_backends()])
 
 
 @router.get("/{kb_id}", summary="知识库详情")
