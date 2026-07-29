@@ -30,7 +30,6 @@ const providerTypes: { value: ProviderType; label: string }[] = [
   { value: 'siliconflow', label: '硅基流动' },
   { value: 'deepseek', label: 'DeepSeek' },
   { value: 'anthropic', label: 'Anthropic' },
-  { value: 'baidu', label: '百度智能云' },
   { value: 'custom', label: '自定义' },
 ]
 
@@ -41,7 +40,6 @@ const defaultBaseUrl: Record<string, string> = {
   siliconflow: 'https://api.siliconflow.cn/v1',
   deepseek: 'https://api.deepseek.com/v1',
   anthropic: 'https://api.anthropic.com/v1',
-  baidu: 'https://aip.baidubce.com',
 }
 
 /** 兜底字段定义：定义还没拉到时先渲染一个 API Key 框，别让表单空着 */

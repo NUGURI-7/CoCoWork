@@ -9,7 +9,6 @@ export type ProviderType =
   | 'siliconflow'
   | 'deepseek'
   | 'anthropic'
-  | 'baidu'
   | 'custom'
 
 /** 模型类型枚举 */
@@ -22,7 +21,6 @@ export type ModelType =
   | 'stt'
   | 'image'
   | 'multimodal'
-  | 'doc_parse'
 
 /**
  * 凭证字段定义（对齐后端 CredentialField）。

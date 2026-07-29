@@ -7,7 +7,7 @@
 **额度有限（免费 200 页），跑一次就把原始返回整个存到 `out/`**，之后所有分析
 走 `--replay` 读本地文件，不重复烧额度。
 
-凭证从库里的 baidu provider 读，不走命令行参数——AK/SK 不该出现在 shell history 里。
+凭证从 `.env`（config）读，不走命令行参数——AK/SK 不该出现在 shell history 里。
 """
 
 import argparse
@@ -20,10 +20,9 @@ from pathlib import Path
 
 import httpx
 
-from app.db.postgresql import pg_client
-from app.models.model import Provider
-from app.services.model.credentials import load_credentials
+from app.core.config import settings
 
+BASE_URL = "https://aip.baidubce.com"
 TOKEN_URL = "https://aip.baidubce.com/oauth/2.0/token"
 SUBMIT_PATH = "/rest/2.0/brain/online/v2/paddle-vl-parser/task"
 QUERY_PATH = "/rest/2.0/brain/online/v2/paddle-vl-parser/task/query"
@@ -108,22 +107,19 @@ async def _poll(
 
 
 async def _run(pdf: Path) -> None:
-    await pg_client.connect()
-    provider = await Provider.filter(provider_type="baidu").first()
-    if provider is None:
-        sys.exit("！库里没有 baidu provider，先在页面上建一个")
-    creds = load_credentials(provider.provider_type, provider.credentials_encrypted)
-    secret_key = getattr(creds, "secret_key", "")
-    if not secret_key:
-        sys.exit("！这个 provider 的凭证里没有 secret_key")
+    # 凭证是**部署者**的，走 config —— 不进 Provider 体系（用户不必自己开百度账号）
+    api_key = settings.BAIDU_DOCPARSE_API_KEY
+    secret_key = settings.BAIDU_DOCPARSE_SECRET_KEY
+    if not (api_key and secret_key):
+        sys.exit("！.env 里没配 BAIDU_DOCPARSE_API_KEY / BAIDU_DOCPARSE_SECRET_KEY")
 
-    print(f"→ provider={provider.name}  base_url={provider.base_url}")
+    print(f"→ base_url={BASE_URL}")
     print(f"→ 文件={pdf.name}（{pdf.stat().st_size / 1024:.0f} KB）\n")
 
     async with httpx.AsyncClient(timeout=120.0) as client:
-        token = await _fetch_token(client, creds.api_key, secret_key)
-        task_id = await _submit(client, provider.base_url, token, pdf)
-        result = await _poll(client, provider.base_url, token, task_id)
+        token = await _fetch_token(client, api_key, secret_key)
+        task_id = await _submit(client, BASE_URL, token, pdf)
+        result = await _poll(client, BASE_URL, token, task_id)
 
         # 文件名带上源 PDF 名——跑第二份文档时不会把第一份的结果盖掉
         OUT_DIR.mkdir(exist_ok=True)
@@ -148,7 +144,6 @@ async def _run(pdf: Path) -> None:
             (OUT_DIR / name).write_bytes(r.content)
             print(f"✓ 已下载 → out/{name}（{len(r.content) / 1024:.0f} KB）")
 
-    await pg_client.close()
     _report(json.loads((OUT_DIR / f"{stem}_parse_result.json").read_text()))
 
 

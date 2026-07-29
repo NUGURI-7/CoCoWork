@@ -5,12 +5,11 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 ProviderType = Literal[
-    "openai", "dashscope", "siliconflow", "deepseek", "anthropic", "baidu", "custom"
+    "openai", "dashscope", "siliconflow", "deepseek", "anthropic", "custom"
 ]
 
 ModelType = Literal[
-    "chat", "embedding", "rerank", "vision", "tts", "stt", "image",
-    "multimodal", "doc_parse",
+    "chat", "embedding", "rerank", "vision", "tts", "stt", "image", "multimodal"
 ]
 
 

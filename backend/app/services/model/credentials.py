@@ -43,25 +43,14 @@ class ApiKeyCredentials(BaseCredentials):
     """
 
 
-class BaiduCredentials(BaseCredentials):
-    """百度智能云：API Key + Secret Key 换 access_token（30 天有效）。"""
-
-    api_key: str = Field(
-        min_length=1,
-        json_schema_extra={"label": "API Key", "secret": True},
-    )
-    secret_key: str = Field(
-        min_length=1,
-        json_schema_extra={"label": "Secret Key", "secret": True},
-    )
-
-
 # 装配硬编码：凭证形状是代码事实、不是部署变量，同 validators 的注册表。
 # 未登记的 provider_type 一律按单 key 兜底——OpenAI 兼容是这行当的默认形状，
 # `custom` 那类自定义端点也归这里。
-_CREDENTIAL_MODELS: dict[str, type[BaseCredentials]] = {
-    "baidu": BaiduCredentials,
-}
+#
+# 目前全都走兜底：多凭证的供应商（百度文档解析要 AK+SK）最终没进 Provider 体系，
+# 它的凭证是**部署者**的、走 config，不是用户一人一份。这张表留着是因为
+# Azure OpenAI / Bedrock 那类多凭证供应商迟早会来，届时在此加一行即可。
+_CREDENTIAL_MODELS: dict[str, type[BaseCredentials]] = {}
 
 
 def credential_model(provider_type: str) -> type[BaseCredentials]:
