@@ -78,6 +78,12 @@ class Settings(BaseSettings):
     STORAGE_LOCAL_ROOT: str = "data/uploads"  # local 后端根目录（相对 backend/）
     STORAGE_MAX_UPLOAD_SIZE: int = 50 * 1024 * 1024  # 单文件上传上限，默认 50MB
 
+    # ==================== 文档解析（云端路）====================
+    # 部署者的凭证，不是用户的：用户建库时只选「走哪个后端」，不必自己去百度开账号。
+    # 留空 = baidu 后端在 UI 上不可选（本地 pdfplumber 那条路永远可用，零配置底线）
+    BAIDU_DOCPARSE_API_KEY: str = ""
+    BAIDU_DOCPARSE_SECRET_KEY: str = ""
+
     # ---------- 沙箱：与 driver 无关 ----------
     SANDBOX_DRIVER: str = "local"  # local（开发者，宿主机直跑）| docker（生产，容器隔离）
     SANDBOX_LOCAL_ROOT: str = "data/sandbox"  # local driver 的工作区根目录（相对 backend/，也可填绝对路径）

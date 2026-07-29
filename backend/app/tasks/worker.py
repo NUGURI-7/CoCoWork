@@ -13,6 +13,7 @@ worker 是独立进程,靠 `uv run worker` 启动(见 app/cli.py);SAQ 读这里�
 import jieba
 from tortoise import Tortoise
 
+from app.core.redis import redis_client
 from app.db.postgresql import TORTOISE_CONFIG
 from app.tasks.document_task import process_document_task
 from app.tasks.registry import PROCESS_DOCUMENT
@@ -20,14 +21,17 @@ from app.tasks.queue import queue
 
 
 async def startup(ctx: dict) -> None:
-    """worker 进程启动时跑一次:开数据库连接 + 预热分词词典。"""
+    """worker 进程启动时跑一次:开数据库连接 + Redis + 预热分词词典。"""
     await Tortoise.init(config=TORTOISE_CONFIG)
-    jieba.initialize()  # ~0.3s，开门前付掉，别让第一个任务替大家付（与 web 侧 lifespan 对齐）
+    await redis_client.connect()   # ← 新增：云端解析的 token 缓存要用
+    jieba.initialize()
+
 
 
 async def shutdown(ctx: dict) -> None:
-    """worker 进程退出时跑一次:关数据库连接。"""
+    """worker 进程退出时跑一次:关数据库连接 + Redis。"""
     await Tortoise.close_connections()
+    await redis_client.close()     # ← 新增
 
 
 settings = {

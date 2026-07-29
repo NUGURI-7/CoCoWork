@@ -17,10 +17,12 @@ from uuid import UUID
 
 from app.core.storage import storage
 from app.models.knowledge import SourceType
-from app.models.knowledge import Document, DocStage, DocStatus, Embedding, Paragraph
+from app.models.knowledge import (
+    Document, DocStage, DocStatus, Embedding, Paragraph, ParseBackend,
+)
 from app.schemas.knowledge import ChunkConfig
 from app.services.knowledge.splitter import splitter
-from app.services.knowledge.parser import get_parser
+from app.services.knowledge.parser import DocumentBlock, get_parser
 from app.services.knowledge.assembler import assemble_paragraphs
 from app.services.knowledge.tokenization import tokenize
 from app.services.model.model_client import ModelClient
@@ -30,6 +32,34 @@ logger = logging.getLogger(__name__)
 # 与 Paragraph.title 的 max_length 对齐。实测本项目标题链最长 129 字、远不到上限，
 # 但 PDF 那条路的层级深度未知——落库前截一刀，免得一条超长链让整份文档处理失败。
 _TITLE_MAX = 256
+
+
+async def _parse_with_fallback(
+        doc: Document, raw: bytes,
+) -> tuple[list[DocumentBlock], ParseBackend]:
+    """按库设置解析；云端路失败则退回本地。返回块列表与**实际**用的后端。
+
+    降级而非直接失败，是因为「有内容」比「整份处理失败」有用。但降级后表格与
+    三四级标题都没了，所以实际后端必须记回 `Document.parse_backend` —— 用户
+    得看得见这份文档的质量打过折，才知道该不该重跑。静默降级比失败更糟。
+    """
+    wanted_backend = doc.knowledge_base.parse_backend
+    try:
+        blocks = await get_parser(doc.file_type, wanted_backend).parse(raw)
+        return blocks, wanted_backend
+    except Exception:
+        if wanted_backend is ParseBackend.LOCAL:
+            # 本地路就是兜底本身，它炸了没有下一层可退 —— 照常抛给任务层重试
+            raise
+        # 抓得宽是有意的：网络 / 鉴权 / 超时，任何原因导致云端没结果，处置都一样。
+        # 细分错误类型的价值在「要不要重试」，而重试这件事已经决定不做了。
+        # 用 exception 而非 warning：降级是静默发生的，traceback 是事后唯一的线索
+        logger.exception(
+            "云端解析失败，降级本地 doc_id=%s backend=%s", doc.id, wanted_backend,
+        )
+
+    blocks = await get_parser(doc.file_type, ParseBackend.LOCAL).parse(raw)
+    return blocks, ParseBackend.LOCAL
 
 
 async def process_document(doc_id: UUID) -> None:
@@ -56,7 +86,7 @@ async def process_document(doc_id: UUID) -> None:
     await doc.save(update_fields=["status","stage"])
 
     raw = await storage.read(doc.storage_key)
-    blocks = await get_parser(doc.file_type).parse(raw)
+    blocks, used_backend = await _parse_with_fallback(doc, raw)
 
     # === 切段 ===
     doc.stage = DocStage.SPLITTING
@@ -128,12 +158,14 @@ async def process_document(doc_id: UUID) -> None:
     doc.chunk_count = len(chunk_items)
     doc.status = DocStatus.COMPLETED
     doc.stage = DocStage.NONE
+    doc.parse_backend = used_backend  # 事实，非期望：降级时与库设置不一致
 
     await doc.save(update_fields=[
         "char_length", "paragraph_count", "chunk_count", "status", "stage",
+        "parse_backend",
     ])
 
     logger.info(
-        "process_document doc_id=%s 完成，%d 段 / %d 子块",
-        doc.id, len(paragraphs), len(chunk_items),
+        "process_document doc_id=%s 完成，%d 段 / %d 子块（解析后端 %s）",
+        doc.id, len(paragraphs), len(chunk_items), used_backend,
     )
