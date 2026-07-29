@@ -45,6 +45,18 @@ class RetrievalMode(StrEnum):
     HYBRID = "hybrid"
 
 
+class ParseBackend(StrEnum):
+    """PDF 解析后端（扩后端时此处加值 + 配一份 Parser 实现）。
+
+    值是**具体后端名**而不是 local / cloud —— 「云端」是哪家会变，枚举里的
+    名字不该撒谎；日后加 MinerU 是多一个值，而不是把 cloud 的含义偷偷换掉。
+
+    只登记已实现的后端：放一个选了必定失败的值，比没有这个值更糟。
+    """
+    LOCAL = "local"  # pdfplumber，零配置可用（别人 clone 不配任何 key 也能跑）
+    BAIDU = "baidu"  # 百度文档解析 API，需部署侧配 AK/SK
+
+
 class KnowledgeBase(UUIDBaseModel, TimestampMixin):
     """知识库：一组文档的集合，建库时锁定一个 embedding 模型。
 
@@ -52,6 +64,7 @@ class KnowledgeBase(UUIDBaseModel, TimestampMixin):
     - `chunk_config`：库级切块配置（chunk_size / overlap / strategy），改了需重切
     - `status`：库级状态（ready / reindexing，给换模型重建用）
     - `retrieval_mode` / `rerank_model`：库级检索设置（默认 mode + 精排模型；rerank 无状态可热换，故 SET_NULL）
+    - `parse_backend`：PDF 解析后端（换后端 = 存量文档需重跑，同换 embedding 模型）
     """
 
     created_by = fields.ForeignKeyField(
@@ -79,6 +92,11 @@ class KnowledgeBase(UUIDBaseModel, TimestampMixin):
         on_delete=fields.SET_NULL,
         description="精排模型；空 = 不开 rerank（选了即开，无独立开关）",
     )
+    parse_backend = fields.CharEnumField(
+        ParseBackend, max_length=20, default=ParseBackend.LOCAL,
+        db_default=ParseBackend.LOCAL.value,
+        description="PDF 解析后端；local 零配置可用，baidu 结构更准但需部署侧配 Key",
+    )
 
     class Meta:
         table = "knowledge_bases"
@@ -90,6 +108,8 @@ class Document(UUIDBaseModel, TimestampMixin):
     原文件存对象存储（`storage_key` 指向）；文本解析、切段、切块、向量化后
     分别落到 Paragraph / Embedding。`status` + `stage` + `error_message`
     跟踪异步处理管线。v1 手动向量化：上传只建记录（status=pending）。
+
+    - `parse_backend`：实际解析后端；与库设置不一致 = 这份降级过，或建库后改过设置
     """
 
     knowledge_base = fields.ForeignKeyField(
@@ -114,6 +134,11 @@ class Document(UUIDBaseModel, TimestampMixin):
         description="处理阶段（pending / completed 时为空）",
     )
     error_message = fields.TextField(default="", description="失败原因")
+    parse_backend = fields.CharEnumField(
+        ParseBackend, max_length=20, default=ParseBackend.LOCAL,
+        db_default=ParseBackend.LOCAL.value,
+        description="实际用的解析后端 —— 库上那个是期望，这里是事实（降级时两者不一致）",
+    )
 
     class Meta:
         table = "documents"
