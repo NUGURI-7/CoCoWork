@@ -4,7 +4,7 @@ import { Lock, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { listAllModels } from '@/api/model'
-import { deleteKnowledgeBase, updateKnowledgeBase } from '@/api/knowledge'
+import { deleteKnowledgeBase, getParseBackends, updateKnowledgeBase } from '@/api/knowledge'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,7 +28,15 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { RETRIEVAL_MODE_LABEL } from '@/lib/retrieval'
 import { useWorkspaceTabsStore } from '@/stores/tab-store'
-import type { AIModel, KnowledgeBase, RetrievalMode } from '@/types'
+import {
+  ALL_PARSE_BACKENDS,
+  PARSE_BACKEND_HINTS,
+  PARSE_BACKEND_LABELS,
+  type AIModel,
+  type KnowledgeBase,
+  type ParseBackend,
+  type RetrievalMode,
+} from '@/types'
 
 /** Radix Select 的 value 不允许空字符串，用哨兵值表示「不配精排模型」 */
 const SENTINEL_NONE = '__none__'
@@ -59,6 +67,16 @@ export function KnowledgeSettings({ kb, onUpdated }: KnowledgeSettingsProps) {
     retrievalMode !== kb.retrieval_mode ||
     (rerankModelId === SENTINEL_NONE ? kb.rerank_model_id !== null : rerankModelId !== kb.rerank_model_id)
 
+  // 解析设置
+  const [parseBackend, setParseBackend] = useState<ParseBackend>(kb.parse_backend)
+  // 初值取当前库在用的那个：它既然已经生效，至少它是可选的。等接口回来再覆盖
+  const [availableBackends, setAvailableBackends] = useState<ParseBackend[]>([
+    kb.parse_backend,
+  ])
+  const [parseSaving, setParseSaving] = useState(false)
+
+  const parseDirty = parseBackend !== kb.parse_backend
+
   // 加载精排模型列表
   useEffect(() => {
     setRerankModelsLoading(true)
@@ -66,6 +84,11 @@ export function KnowledgeSettings({ kb, onUpdated }: KnowledgeSettingsProps) {
       .then(setRerankModels)
       .catch(() => {})
       .finally(() => setRerankModelsLoading(false))
+  }, [])
+
+  // 可选解析后端取决于部署侧配没配 Key，前端看不见，只能问后端
+  useEffect(() => {
+    getParseBackends().then(setAvailableBackends).catch(() => {})
   }, [])
 
   const dirty =
@@ -108,6 +131,19 @@ export function KnowledgeSettings({ kb, onUpdated }: KnowledgeSettingsProps) {
       toast.error(e instanceof Error ? e.message : '保存检索设置失败')
     } finally {
       setRetrievalSaving(false)
+    }
+  }
+
+  async function handleParseSave() {
+    setParseSaving(true)
+    try {
+      const updated = await updateKnowledgeBase(kb.id, { parse_backend: parseBackend })
+      toast.success('解析设置已保存')
+      onUpdated?.(updated)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '保存解析设置失败')
+    } finally {
+      setParseSaving(false)
     }
   }
 
@@ -231,7 +267,52 @@ export function KnowledgeSettings({ kb, onUpdated }: KnowledgeSettingsProps) {
         </div>
       </Section>
 
-      {/* 分区3 · 向量化配置（只读锁定） */}
+      {/* 分区3 · 解析设置 */}
+      <Section
+        title="解析设置"
+        desc="决定 PDF 走哪条路解析。改了只影响此后新传的文档——存量文档要重新处理才按新设置生效。"
+      >
+        <div className="grid gap-2">
+          <Label className="text-xs">PDF 解析方式</Label>
+          <Select
+            value={parseBackend}
+            onValueChange={(v) => setParseBackend(v as ParseBackend)}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {ALL_PARSE_BACKENDS.map((backend) => {
+                const usable = availableBackends.includes(backend)
+                return (
+                  <SelectItem key={backend} value={backend} disabled={!usable}>
+                    <span>{PARSE_BACKEND_LABELS[backend]}</span>
+                    {!usable && (
+                      <span className="text-muted-foreground ml-2 text-xs">
+                        未配置凭证
+                      </span>
+                    )}
+                  </SelectItem>
+                )
+              })}
+            </SelectContent>
+          </Select>
+          <p className="text-muted-foreground text-xs">
+            {PARSE_BACKEND_HINTS[parseBackend]}
+          </p>
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
+          <Button
+            size="sm"
+            onClick={handleParseSave}
+            disabled={!parseDirty || parseSaving}
+          >
+            {parseSaving ? '保存中…' : '保存解析设置'}
+          </Button>
+        </div>
+      </Section>
+
+      {/* 分区4 · 向量化配置（只读锁定） */}
       <Section
         title="向量化配置"
         desc="建库后锁定。更换 embedding 模型或切块参数需重新向量化全部文档（后续支持）。"
@@ -248,7 +329,7 @@ export function KnowledgeSettings({ kb, onUpdated }: KnowledgeSettingsProps) {
         <ReadonlyField label="切分策略" value="递归切分" />
       </Section>
 
-      {/* 分区4 · 危险操作 */}
+      {/* 分区5 · 危险操作 */}
       <Section
         title="危险操作"
         tone="destructive"

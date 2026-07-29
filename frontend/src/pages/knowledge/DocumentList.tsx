@@ -36,7 +36,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import type { Document } from '@/types'
+import { PARSE_BACKEND_LABELS, type Document } from '@/types'
 import { DocumentPreviewSheet } from './DocumentPreviewSheet'
 import { docStatusMeta, getDocDisplayStatus } from './mock'
 
@@ -47,6 +47,20 @@ interface DocumentListProps {
   onDeleted?: () => void
   /** 触发向量化成功后回调，父组件乐观更新 + 启动轮询 */
   onProcessed?: (docId: string) => void
+}
+
+/**
+ * 要不要显示这份文档的解析方式。
+ *
+ * 只对已解析完的 PDF 显示：md / txt 两条路结果完全一致（云端对纯文本没有增量，
+ * `get_parser` 直接落回本地），标出来是噪声；没跑过的文档字段还是默认值，不是事实。
+ *
+ * 刻意**不判断「是否降级」**——那要拿库设置去推，而库设置事后可改：
+ * 建库时选 local 传的文档，改成 baidu 后会被冤枉成「降级」。只显示存下来的事实，
+ * 该不该重跑由人对着库设置自己判断。
+ */
+function showsParseBackend(doc: Document): boolean {
+  return doc.file_type === 'pdf' && doc.status === 'completed'
 }
 
 export function DocumentList({ kbId, docs, onDeleted, onProcessed }: DocumentListProps) {
@@ -165,6 +179,7 @@ export function DocumentList({ kbId, docs, onDeleted, onProcessed }: DocumentLis
             key={d.id}
             kbId={kbId}
             doc={d}
+            showBackend={showsParseBackend(d)}
             selected={selected.has(d.id)}
             onToggle={() => toggleOne(d.id)}
             onDeleted={onDeleted}
@@ -216,6 +231,7 @@ export function DocumentList({ kbId, docs, onDeleted, onProcessed }: DocumentLis
 function DocumentRow({
   kbId,
   doc,
+  showBackend,
   selected,
   onToggle,
   onDeleted,
@@ -224,6 +240,7 @@ function DocumentRow({
 }: {
   kbId: string
   doc: Document
+  showBackend: boolean
   selected: boolean
   onToggle: () => void
   onDeleted?: () => void
@@ -294,11 +311,28 @@ function DocumentRow({
 
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium">{doc.name}</div>
-          <div className="text-muted-foreground mt-0.5 text-xs">
+          <div className="text-muted-foreground mt-0.5 truncate text-xs">
             {formatBytes(doc.size)}
             {doc.chunk_count > 0 && ` · ${doc.paragraph_count} 段 · ${doc.chunk_count} chunks`}
           </div>
         </div>
+
+        {/* 解析方式 Badge —— 配色比状态 Badge 淡一档：它是背景信息，不该跟状态抢注意力 */}
+        {showBackend && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge
+                variant="outline"
+                className="text-muted-foreground border-border/60 hidden shrink-0 font-normal sm:inline-flex"
+              >
+                {PARSE_BACKEND_LABELS[doc.parse_backend]}
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs">
+              这份文档实际用的解析方式。与库设置不一致时，重新处理即可按新设置再解析一次。
+            </TooltipContent>
+          </Tooltip>
+        )}
 
         {/* 状态 Badge —— processing/uploading 时附脉动 dot */}
         <Badge variant="outline" className={cn('shrink-0 gap-1.5', s.badgeClass)}>

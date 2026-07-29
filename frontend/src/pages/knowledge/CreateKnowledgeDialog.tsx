@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
-import { createKnowledgeBase } from '@/api/knowledge'
+import { createKnowledgeBase, getParseBackends } from '@/api/knowledge'
 import { listAllModels } from '@/api/model'
 import {
   Accordion,
@@ -29,7 +29,13 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import type { AIModel } from '@/types'
+import {
+  ALL_PARSE_BACKENDS,
+  PARSE_BACKEND_HINTS,
+  PARSE_BACKEND_LABELS,
+  type AIModel,
+  type ParseBackend,
+} from '@/types'
 
 /** 切块默认值（见 docs/design/knowledge-rag-v1.md §5；中文 RAG 甜区） */
 const DEFAULT_CHUNK_SIZE = '256'
@@ -55,6 +61,8 @@ export function CreateKnowledgeDialog({
   const [submitting, setSubmitting] = useState(false)
   const [models, setModels] = useState<AIModel[]>([])
   const [modelsLoading, setModelsLoading] = useState(false)
+  const [parseBackend, setParseBackend] = useState<ParseBackend>('local')
+  const [availableBackends, setAvailableBackends] = useState<ParseBackend[]>(['local'])
 
   // 打开时拉取可用的 embedding 模型（后端 list_own 天然只返回当前用户的模型）
   useEffect(() => {
@@ -68,6 +76,15 @@ export function CreateKnowledgeDialog({
       .finally(() => setModelsLoading(false))
   }, [open])
 
+  // 解析后端可选项取决于部署侧配没配 Key，前端看不见，只能问后端。
+  // 失败时退回只有 local —— 那条路零配置永远可用，不会把人挡在建库之外
+  useEffect(() => {
+    if (!open) return
+    getParseBackends()
+      .then(setAvailableBackends)
+      .catch(() => setAvailableBackends(['local']))
+  }, [open])
+
   const hasModels = models.length > 0
   const canSubmit = name.trim() && modelId && !submitting
 
@@ -77,6 +94,7 @@ export function CreateKnowledgeDialog({
     setModelId('')
     setChunkSize(DEFAULT_CHUNK_SIZE)
     setOverlap(DEFAULT_OVERLAP)
+    setParseBackend('local')
   }
 
   async function handleSubmit() {
@@ -92,6 +110,7 @@ export function CreateKnowledgeDialog({
           overlap: Number(overlap) || 50,
           strategy: 'recursive',
         },
+        parse_backend: parseBackend,
       })
       toast.success('知识库创建成功')
       resetForm()
@@ -194,6 +213,37 @@ export function CreateKnowledgeDialog({
                 建库后更换模型需重新向量化全部文档
               </p>
             )}
+          </div>
+
+          {/* 文档解析后端 —— 只对 PDF 有差别，md / txt 两条路结果一致 */}
+          <div className="grid gap-2">
+            <Label>PDF 解析方式</Label>
+            <Select
+              value={parseBackend}
+              onValueChange={(v) => setParseBackend(v as ParseBackend)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ALL_PARSE_BACKENDS.map((backend) => {
+                  const usable = availableBackends.includes(backend)
+                  return (
+                    <SelectItem key={backend} value={backend} disabled={!usable}>
+                      <span>{PARSE_BACKEND_LABELS[backend]}</span>
+                      {!usable && (
+                        <span className="text-muted-foreground ml-2 text-xs">
+                          未配置凭证
+                        </span>
+                      )}
+                    </SelectItem>
+                  )
+                })}
+              </SelectContent>
+            </Select>
+            <p className="text-muted-foreground text-xs">
+              {PARSE_BACKEND_HINTS[parseBackend]}
+            </p>
           </div>
 
           {/* 高级：切块配置 */}

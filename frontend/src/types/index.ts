@@ -27,9 +27,16 @@ export type {
   AvailableModel,
   AvailableModelGroup,
 } from './model'
+// 值导出（非 type-only）：解析后端的枚举全集与展示文案，组件直接用
+export {
+  ALL_PARSE_BACKENDS,
+  PARSE_BACKEND_HINTS,
+  PARSE_BACKEND_LABELS,
+} from './knowledge'
 export type {
   KnowledgeBaseStatus,
   RetrievalMode,
+  ParseBackend,
   ChunkConfig,
   KnowledgeBase,
   KnowledgeBaseCreatePayload,

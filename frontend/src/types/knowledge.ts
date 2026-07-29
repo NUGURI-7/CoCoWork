@@ -8,6 +8,29 @@ export type KnowledgeBaseStatus = 'ready' | 'reindexing'
 /** 检索模式（对齐 backend RetrievalMode StrEnum） */
 export type RetrievalMode = 'vector' | 'keyword' | 'hybrid'
 
+/**
+ * 文档解析后端（对齐 backend ParseBackend StrEnum）。
+ *
+ * 值是具体后端名而非 local / cloud —— 「云端」是哪家会变，名字不该撒谎。
+ * 哪些真能选取决于部署侧配没配 Key，见 `getParseBackends()`。
+ */
+export type ParseBackend = 'local' | 'baidu'
+
+/** 全集，用于渲染选项；不在 getParseBackends() 返回值里的置灰而非隐藏 —— 让人
+ *  知道有这个能力、只是没配，好过选项凭空消失。 */
+export const ALL_PARSE_BACKENDS: ParseBackend[] = ['local', 'baidu']
+
+/** 解析后端的展示文案。后端只下发可用值，标签属 UI 文案，放前端。 */
+export const PARSE_BACKEND_LABELS: Record<ParseBackend, string> = {
+  local: '本地解析',
+  baidu: '百度云端解析',
+}
+
+export const PARSE_BACKEND_HINTS: Record<ParseBackend, string> = {
+  local: '零配置可用。能认标题和表格框线，但抓不到三级以下小节，无框线表格识别不了',
+  baidu: '结构更准：多级标题、无框线表格都能还原，扫描件也能解析。需部署侧配置凭证',
+}
+
 /** 库级切块配置（一套，作用于库内所有文档） */
 export interface ChunkConfig {
   chunk_size: number
@@ -30,6 +53,7 @@ export interface KnowledgeBase {
   retrieval_mode: RetrievalMode
   rerank_model_id: string | null
   rerank_model_name: string | null
+  parse_backend: ParseBackend
   created_at: string
   updated_at: string
 }
@@ -40,6 +64,8 @@ export interface KnowledgeBaseCreatePayload {
   description?: string
   embedding_model_id: string
   chunk_config?: Partial<ChunkConfig>
+  /** 不传 = local。可选值取决于部署配置，见 getParseBackends() */
+  parse_backend?: ParseBackend
 }
 
 /** 更新知识库请求体（部分更新）。不可改 embedding 模型——后端 schema 已锁。 */
@@ -50,6 +76,8 @@ export interface KnowledgeBaseUpdatePayload {
   retrieval_mode?: RetrievalMode
   /** null = 关闭精排；不传 = 不变 */
   rerank_model_id?: string | null
+  /** 改了只影响此后新传的文档，存量文档需重跑才生效 */
+  parse_backend?: ParseBackend
 }
 
 // ============================================================================
@@ -87,6 +115,8 @@ export interface Document {
   status: DocumentStatus
   stage: DocumentStage
   error_message: string
+  /** 实际解析后端；与所在库的设置不一致 = 这份降级过，可重跑 */
+  parse_backend: ParseBackend
   created_at: string
   updated_at: string
 }

@@ -19,9 +19,9 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 
-/** v1 仅支持纯文本（见 docs/design/knowledge-rag-v1.md §1）+ 跟后端 ALLOWED_FILE_TYPES 对齐 */
-const ACCEPT = '.md,.txt'
-const ACCEPTED_EXTS = ['md', 'txt'] as const
+/** 跟后端 ALLOWED_FILE_TYPES 对齐（backend/app/schemas/knowledge/document_schema.py） */
+const ACCEPT = '.md,.txt,.pdf'
+const ACCEPTED_EXTS = ['md', 'txt', 'pdf'] as const
 type AllowedExt = (typeof ACCEPTED_EXTS)[number]
 /** 跟后端 STORAGE_MAX_UPLOAD_SIZE 对齐（50 MB） */
 const MAX_BYTES = 50 * 1024 * 1024
@@ -74,7 +74,7 @@ export function UploadDocumentSheet({
     for (const file of arr) {
       const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
       if (!ACCEPTED_EXTS.includes(ext as AllowedExt)) {
-        toast.error(`「${file.name}」不支持的类型，仅 MD / TXT`)
+        toast.error(`「${file.name}」不支持的类型，仅 MD / TXT / PDF`)
         continue
       }
       if (file.size > MAX_BYTES) {
@@ -165,7 +165,7 @@ export function UploadDocumentSheet({
         <SheetHeader>
           <SheetTitle>上传文档</SheetTitle>
           <SheetDescription>
-            支持 MD / TXT，单文件最大 50 MB。上传后将进入待向量化队列。
+            支持 MD / TXT / PDF，单文件最大 50 MB。上传后将进入待向量化队列。
           </SheetDescription>
         </SheetHeader>
 
@@ -195,7 +195,7 @@ export function UploadDocumentSheet({
             <p>
               <span className="text-foreground font-medium">点击选择</span> 或 拖拽文件到这里
             </p>
-            <p className="text-xs opacity-70">仅支持 MD / TXT</p>
+            <p className="text-xs opacity-70">仅支持 MD / TXT / PDF</p>
           </button>
           <input
             ref={inputRef}

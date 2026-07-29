@@ -12,6 +12,7 @@ import type {
   KnowledgeBaseCreatePayload,
   KnowledgeBaseUpdatePayload,
   PageData,
+  ParseBackend,
   RetrievalMode,
   RetrievalTestResult,
   UploadInitOut,
@@ -20,6 +21,16 @@ import type {
 /** 列出当前用户的知识库。 */
 export function listKnowledgeBases() {
   return get<KnowledgeBase[]>('/knowledge-bases')
+}
+
+/**
+ * 这台机器上可用的文档解析后端。
+ *
+ * Key 配在后端 .env 里，前端看不见，只能问。返回的是「配了凭证的」，
+ * 不代表上游此刻通不通——建库表单不该卡在别人家服务的响应时间上。
+ */
+export function getParseBackends() {
+  return get<ParseBackend[]>('/knowledge-bases/parse-backends')
 }
 
 /** 获取单个知识库详情。 */
