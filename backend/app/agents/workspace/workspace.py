@@ -30,7 +30,7 @@ from app.agents.runtime.runner import (
     PreparedStream,
     assemble_tools,
     build_chat_model,
-    to_lc_messages,
+    to_lc_messages, SandboxCloser,
 )
 from app.agents.workspace.view_context_assembler import (
     SPEAKER_SUPERVISOR,
@@ -46,6 +46,7 @@ from app.models import User, Workspace, WorkspaceMember
 from app.schemas.agent.chat_schema import ChatStreamRequest
 from app.schemas.agent.config_schema import AgentConfig
 from app.services.sandbox.artifact import collect_artifacts
+from app.services.skill.builtin import resolve_builtin_skills
 from app.services.skill.mount import SkillMount, build_skill_mount
 from app.tools import resolve_tools
 
@@ -176,15 +177,23 @@ async def _member_to_subagent(
 async def build_capability_profile(cfg: AgentConfig, user: User) -> str:
     """从 config 派生一行能力画像 —— 供 Supervisor 按能力路由。
 
-    只取 MCP/KB/内置工具的「名字标签」，不碰工具 schema：
-    路由层要的是「这成员挂了高德地图」，不是工具的参数细节。
+    只取 内置工具 / Skill / KB / MCP 的「名字标签」，不碰工具 schema：
+    路由层要的是「这成员挂了高德地图」「这成员会画图」，不是参数细节。
     画像长度随挂载项数增长，与单个 MCP 暴露多少工具无关。
+
+    **Skill 这一档必须在**：它决定成员有没有那 7 个文件工具（决策 19），
+    也就决定了它能不能跑脚本、产文件。漏掉这档，supervisor 会把画图这类活
+    派给一个手无寸铁的成员，而且从画像上看不出哪里不对。
     """
     tags: list[str] = []
 
     builtin = [t.name for t in resolve_tools(cfg.builtin_tools)]
     if builtin:
         tags.append(f"内置[{','.join(builtin)}]")
+
+    skills = resolve_builtin_skills(cfg.builtin_skills)
+    if skills:
+        tags.append(f"Skill[{','.join(s.name for s in skills)}]")
 
     if cfg.knowledge:
         kbs = await KnowledgeBase.filter(id__in=cfg.knowledge, created_by=user)
@@ -324,6 +333,7 @@ async def build_workspace_graph(
     # 收产物的回调：挂了 skill 才有交付区。产物绑 conversation —— workspace 那条路
     # 的消息入库，卡片将来靠这个字段按对话捞回来
     collect: ArtifactCollector | None = None
+    close: SandboxCloser | None = None
     if mount is not None:
         collect = partial(
             collect_artifacts,
@@ -333,5 +343,6 @@ async def build_workspace_graph(
             message_id=message_id,
             conversation_id=conversation_id,
         )
+        close = mount.close
 
-    return PreparedStream(graph=graph, messages=messages, collect=collect)
+    return PreparedStream(graph=graph, messages=messages, collect=collect, close=close)

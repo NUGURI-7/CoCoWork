@@ -58,6 +58,9 @@ SinkFn = Callable[[EventType, dict[str, Any]], None]
 # 收产物的回调：参数已在 prepare_stream 里绑好，调用方只管 await 一下
 ArtifactCollector = Callable[[], Awaitable[list[SandboxArtifact]]]
 
+# 一轮结束的收尾：docker driver 销毁容器，local driver 是空操作
+SandboxCloser = Callable[[], Awaitable[None]]
+
 # SSE message_start 的 role —— 流式产出的消息恒为 assistant（协议固定值）
 _SSE_ROLE_ASSISTANT = "assistant"
 
@@ -73,6 +76,7 @@ class PreparedStream:
     graph: CompiledStateGraph
     messages: list[BaseMessage]
     collect: ArtifactCollector | None  # 没挂 skill 就没有交付区，恒为 None
+    close: SandboxCloser | None  # 同上；docker driver 靠它销毁容器
 
 
 def _feed_sink(sink: SinkFn | None, event: EventType, payload: dict[str, Any]) -> None:
@@ -304,6 +308,7 @@ async def prepare_stream(
     middleware: list[AgentMiddleware] = []
 
     collect: ArtifactCollector | None = None
+    close: SandboxCloser | None = None
 
     if mount is not None:
         middleware.append(mount.middleware)
@@ -315,6 +320,7 @@ async def prepare_stream(
             scope_id=user.id,
             message_id=message_id,
         )
+        close = mount.close
 
         # skill 清单拼在实例人设之后：先是「你是谁」，再是「你有哪些工具书」
         skills_prompt = mount.prompt_for(cfg)
@@ -330,7 +336,7 @@ async def prepare_stream(
     )
 
     messages = to_lc_messages(request.history, request.content)
-    return PreparedStream(graph=graph, messages=messages, collect=collect)
+    return PreparedStream(graph=graph, messages=messages, collect=collect, close=close)
 
 
 async def run_chat_stream(
@@ -339,6 +345,7 @@ async def run_chat_stream(
         *,
         message_id: UUID,
         collect: ArtifactCollector | None = None,
+        close: SandboxCloser | None = None,
         sink: SinkFn | None = None,
         trace: TraceContext | None = None,
 ) -> AsyncIterator[str]:
@@ -406,6 +413,16 @@ async def run_chat_stream(
                 # CancelledError 继承 BaseException、不会被这里接住 —— 用户掐断时
                 # 产物就不收了（文件留在交付区），这是定好的行为，不是漏网。
                 logger.exception("产物回收失败，跳过产物帧 message_id=%s", message_id)
+
+        # 销毁容器**必须排在收产物之后**：产物就躺在容器里，先销毁就什么都没了。
+        # 它也不是唯一保障 —— 用户掐断时抛的是 CancelledError（继承 BaseException），
+        # 这里接不住、这段根本执行不到，那种情况由 sandboxd 的反收割兜底。
+        if close is not None:
+            try:
+                await close()
+            except Exception:
+                logger.exception("沙箱收尾失败 message_id=%s，等反收割兜底", message_id)
+
 
         # generator finally 兜底：自身 yield 也包 try，二次失败只 log 不再 raise
         try:

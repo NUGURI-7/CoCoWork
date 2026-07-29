@@ -12,15 +12,19 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+import asyncio
 from typing import Sequence
 from uuid import UUID
 
 from deepagents import FilesystemMiddleware
 from deepagents.backends import LocalShellBackend
+from deepagents.backends.protocol import BackendProtocol
 
+from app.core.config import settings
 from app.models import User
 from app.schemas.agent import AgentConfig
-from app.services.sandbox.layout import SandboxPaths, prepare_workspace_dir
+from app.services.sandbox.docker_sandbox import DockerSandbox
+from app.services.sandbox.layout import SandboxPaths, prepare_workspace_dir, container_paths, pack_skill_dirs
 from app.services.skill.builtin import resolve_builtin_skills, fetch_builtin_credentials, BuiltinSkill
 from app.services.skill.prompt import build_skills_prompt
 
@@ -33,15 +37,23 @@ _EXECUTE_TIMEOUT_CEILING = 600
 
 @dataclass(frozen=True, slots=True)
 class SkillMount:
-    """一次运行里 skill 侧的全部装配产物。
-
-    一次回复共用一个 mount（决策 12）：workspace 里 supervisor 与各成员拿到的
-    是同一个 middleware 实例 —— 同一个 backend、同一套文件系统，成员产出的
-    文件 supervisor 才看得见。
-    """
+    """（原 docstring 不动）"""
 
     middleware: FilesystemMiddleware
     paths: SandboxPaths  # 工作区路径，供日志与排查用
+    backend: BackendProtocol  # 收尾要用：docker driver 得把容器销毁掉
+
+    async def close(self) -> None:
+        """一轮回复的收尾。docker driver 销毁容器，local driver 无事可做。
+
+        **用 to_thread 而不是直接调**：销毁是一次同步 HTTP，直接调会把事件循环
+        卡住那零点几秒，而这时候 SSE 可能还在往前端吐东西。
+
+        故意用 isinstance 而不是 `hasattr(backend, "close")`：将来多一个 driver 时，
+        这里会明明白白地要求你想一想它该怎么收尾，而不是靠有没有同名方法蒙混过去。
+        """
+        if isinstance(self.backend, DockerSandbox):
+            await asyncio.to_thread(self.backend.close)
 
     def has_skills(self, cfg: AgentConfig) -> bool:
         """这个 agent 自己挂了 skill 吗 —— 决定给不给它那 7 个文件工具（决策 19）。
@@ -93,10 +105,55 @@ async def build_skill_mount(
         return None
 
     credentials = await fetch_builtin_credentials(user, [s.name for s in mounted])
-    paths = prepare_workspace_dir(
-        scope_id, [s.directory for s in mounted], message_id=message_id,
+    skill_dirs = [s.directory for s in mounted]
+
+    if settings.SANDBOX_DRIVER == "docker":
+        paths, backend = _docker_backend(skill_dirs, credentials, message_id)
+    elif settings.SANDBOX_DRIVER == "local":
+        paths, backend = _local_backend(skill_dirs, credentials, scope_id, message_id)
+    else:
+        # 配错了就当场炸，不要悄悄退回某一档 —— 「以为在跑容器、其实在宿主机上裸跑」
+        # 是这个模块最不能出的错
+        raise ValueError(f"SANDBOX_DRIVER 只能是 local 或 docker，当前是 {settings.SANDBOX_DRIVER!r}")
+
+    return SkillMount(
+        middleware=FilesystemMiddleware(
+            backend=backend,
+            max_execute_timeout=_EXECUTE_TIMEOUT_CEILING,
+        ),
+        paths=paths,
+        backend=backend,
     )
 
+
+def _docker_backend(
+        skill_dirs: list[Path], credentials: dict[str, str], message_id: UUID
+) -> tuple[SandboxPaths, DockerSandbox]:
+    """生产 driver：一次性容器，起容器的动作推迟到第一次真用到（决策 22a）。
+
+    这里没有 scope_id —— docker 那条路上「哪个 workspace」不由路径承载，
+    由对象存储的 key 承载（决策 14）。
+    """
+    paths = container_paths(message_id)
+    backend = DockerSandbox(
+        paths=paths,
+        skill_tar=pack_skill_dirs(skill_dirs),
+        env=credentials,  # 容器的 PATH / HOME 由镜像给，不需要 _sandbox_env 那套
+        timeout=_EXECUTE_TIMEOUT,
+        max_timeout=_EXECUTE_TIMEOUT_CEILING,
+    )
+    return paths, backend
+
+
+def _local_backend(
+        skill_dirs: list[Path], credentials: dict[str, str], scope_id: UUID, message_id: UUID
+) -> tuple[SandboxPaths, LocalShellBackend]:
+    """开发者 driver：不起容器，直接在宿主机目录上跑（决策 18）。
+
+    **它不冒充隔离**：跑的是 clone 项目那个人自己的东西，边界靠的是「你信任
+    自己挂的 skill」，不是任何技术手段。
+    """
+    paths = prepare_workspace_dir(scope_id, skill_dirs, message_id=message_id)
     backend = LocalShellBackend(
         root_dir=paths.root,
         # virtual_mode=False：文件工具与 execute 必须共用同一个路径空间。
@@ -109,14 +166,7 @@ async def build_skill_mount(
         env={**credentials, **_sandbox_env(paths)},
         inherit_env=False,  # 显式写出：宿主机环境（DB 密码 / R2 密钥）绝不外泄
     )
-
-    return SkillMount(
-        middleware=FilesystemMiddleware(
-            backend=backend,
-            max_execute_timeout=_EXECUTE_TIMEOUT_CEILING,
-        ),
-        paths=paths,
-    )
+    return paths, backend
 
 
 def _sandbox_env(paths: SandboxPaths) -> dict[str, str]:

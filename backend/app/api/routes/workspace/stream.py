@@ -144,6 +144,7 @@ async def conversation_stream(
                     prepared.messages,
                     message_id=message_id,
                     collect=prepared.collect,
+                    close=prepared.close,
                     sink=collector.feed,
                     trace=TraceContext(
                         user_id=str(current_user.id),

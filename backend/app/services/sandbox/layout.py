@@ -2,25 +2,56 @@
 
 容器里的形态（设计稿 C.1）：
     /skills                投进去的 skill，只读
-    /workspace             工作台：容器启动时铺入历史产物，跨对话可见
+    /workspace             工作台：铺入**本对话**的历史产物，跨对话的给模型工具按需取（决策 14a）
     /outputs/<message_id>  交付区：每轮新建的空目录，放进来的才是产物
     /tmp                   本轮草稿（execute 的工作目录），销毁即弃
 
-本模块是 **LocalShell driver** 的那一份实现：不起容器，在宿主机目录上镜像
-同一套布局（决策 18 —— LocalShell 面向 clone 项目的开发者，不装 docker 也能
-跑通整条 skill 链路；生产走 LocalDocker）。
+本模块管两个 driver 的路径：LocalShell 在宿主机目录上镜像同一套布局
+（prepare_workspace_dir，要真建目录），LocalDocker 直接给容器内的固定路径
+（container_paths，什么都不建）。
 
 布局两边保持一致，是为了 prompt 里的路径、SKILL.md 里写的相对路径一个字
 都不用改 —— 换 driver 换掉的只有 backend 实现。
 """
-
+import io
 import shutil
+import tarfile
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID
 
 from app.core.config import settings
+
+
+def _drop_pycache(info: tarfile.TarInfo) -> tarfile.TarInfo | None:
+    """打包时剔掉 __pycache__ / *.pyc（返回 None 即丢弃该条目）。
+
+    与本地那份的 ignore_patterns 同义：送进去的是源码，不是宿主机上跑出来的字节码
+    —— 架构不一定一样，带过去只会添乱。
+    """
+    if "__pycache__" in info.name or info.name.endswith(".pyc"):
+        return None
+    return info
+
+
+def pack_skill_dirs(skill_dirs: Sequence[Path]) -> bytes:
+    """把 skill 源目录打成一个 tar，供 docker driver 灌进容器的 /skills。
+
+    这是 prepare_workspace_dir 里那句 copytree 的对应物：同样是「把物料摆进去」，
+    只是本地摆的是宿主机目录，容器摆的是一包字节（决策 21a / C.3）。
+
+    成员名以 skill 目录名开头（`svg-chart/SKILL.md`），解在 /skills 上就落成
+    `/skills/svg-chart/SKILL.md` —— 与本地布局逐字一致，SKILL.md 里的相对路径
+    两边都不用改。
+    """
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tar:
+        for src in skill_dirs:
+            # 目标目录名 = 源目录名，与本地那份同一条规矩：源目录已是校验过的
+            # 规范形态，照搬即可，别拿 frontmatter 的 name 另起一个
+            tar.add(src, arcname=src.name, filter=_drop_pycache)
+    return buf.getvalue()
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,4 +124,25 @@ def prepare_workspace_dir(
         workspace=str(root / "workspace"),
         outputs=str(outputs),
         tmp=str(root / "tmp"),
+    )
+
+
+def container_paths(message_id: UUID) -> SandboxPaths:
+    """docker driver 的那一份路径 —— 容器内的固定位置。
+
+    与 prepare_workspace_dir 的**根本区别是它什么也不创建**：四个目录都是容器
+    启动时就挂好的 tmpfs，宿主机上一个字节都不落。所以这里没有 scope_id
+    ——「哪个 workspace」在 docker 那条路上不由路径承载，而是由对象存储的
+    key 承载（决策 14：持久化的是产物，容器与工作区随时可销毁）。
+
+    唯一需要现建的是交付区 /outputs/<message_id>，它由 DockerSandbox 在起完
+    容器后 mkdir。本地那份特意不加 exist_ok（撞 id 就当场炸），容器这边这层
+    保护是白送的：/outputs 每轮都是全新的空 tmpfs，不可能有上一轮的残留。
+    """
+    return SandboxPaths(
+        root="/",
+        skills="/skills",
+        workspace="/workspace",
+        outputs=f"/outputs/{message_id}",
+        tmp="/tmp",
     )

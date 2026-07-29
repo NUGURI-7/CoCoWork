@@ -58,6 +58,7 @@ async def playground_stream(
             prepared.messages,
             message_id=message_id,
             collect=prepared.collect,
+            close=prepared.close,
             trace=TraceContext(
                 user_id=str(current_user.id),
                 name="playground",
