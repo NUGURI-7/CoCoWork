@@ -134,7 +134,13 @@ async def conversation_stream(
                 error_message=collector.error_message,
             ),
         )
-        await conversation.save(update_fields=["updated_at"])
+        # usage 拿不到时（provider 不报）保留上一轮的值：清零会让判据永远不超线，
+        # 层 B 就再也不触发了 —— 过时的近似值也强过失效
+        update_fields = ["updated_at"]
+        if collector.context_tokens > 0:
+            conversation.context_tokens = collector.context_tokens
+            update_fields.append("context_tokens")
+        await conversation.save(update_fields=update_fields)
 
     async def stream():
         status = MessageStatus.STOPPED  # 悲观默认：没自然走完就是被掐

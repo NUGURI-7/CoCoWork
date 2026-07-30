@@ -26,6 +26,9 @@ class MessageCollector:
         self.message_id: str = ""
         self.saw_error: bool = False
         self.error_message: str = ""
+        # 本轮上下文规模（主道最后一次模型调用的 input_tokens）——落 Conversation
+        # 而非 Message，是层 B 下一轮判断该不该压缩的依据
+        self.context_tokens: int = 0
         # index → 块。delta / tool_result 事件都带 index 反查目标块，
         # dict 寻址 O(1)；出桶时按 index 升序还原成 list。
         self._blocks: dict[int, dict[str, Any]] = {}
@@ -55,13 +58,14 @@ class MessageCollector:
                 self._append_tool_json(payload)
             case EventType.TOOL_RESULT:
                 self._fill_tool_result(payload)
+            case EventType.MESSAGE_DELTA:
+                self._absorb_usage(payload)
             case EventType.ERROR:
                 self.saw_error = True
                 self.error_message = payload.get("message", "")
             case _:
-                # CONTENT_BLOCK_STOP / TOOL_USE_STOP / MESSAGE_DELTA /
-                # MESSAGE_STOP —— 桶无动作：块的"完整性"由内容本身体现，
-                # 不需要关块标记；usage 不落 Message 表，不攒。
+                # CONTENT_BLOCK_STOP / TOOL_USE_STOP / MESSAGE_STOP —— 桶无动作：
+                # 块的"完整性"由内容本身体现，不需要关块标记。
                 pass
 
     def _open_block(self, payload: dict[str, Any]) -> None:
@@ -133,3 +137,21 @@ class MessageCollector:
         block["status"] = payload.get("status")
         block["result_summary"] = payload.get("result_summary")
         block["result_data"] = payload.get("result_data")
+
+    def _absorb_usage(self, payload: dict[str, Any]) -> None:
+        """message_delta → 记下本轮上下文规模（后来者覆盖前者 = 取最后一次）。
+
+        一轮回复里主道会调好几次模型，每次各报一份 usage。取**最后一次**的
+        input_tokens：它含本轮全部工具往返，而工具结果是要全量进下一轮历史的
+        （见 docs/design/history-replay-v1.md），所以它就是下轮进场历史的量。
+
+        **这个选择绑死在回放协议上**：若哪天改回「工具结果不进历史、只留一行
+        痕迹」，最后一次会虚高十几倍，届时要改成只认第一次（加个「已有值就
+        return」即可）。
+
+        adapter 只在主道发 usage，子 agent 的不会到这儿（那是层 A 的地盘）。
+        """
+        usage = payload.get("usage") or {}
+        tokens = usage.get("input_tokens")
+        if isinstance(tokens, int) and tokens > 0:
+            self.context_tokens = tokens
