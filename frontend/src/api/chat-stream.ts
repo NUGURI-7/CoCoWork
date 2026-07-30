@@ -10,7 +10,8 @@
  *
  * 错误处理分层：
  * - 网络层（fetch 抛 / signal abort）  — let it throw，调用方 try/catch + 看 err.name
- * - HTTP 4xx/5xx                        — 解析 ResponseModel 抛 ChatStreamHttpError
+ * - 业务错误（后端 ResponseModel 壳）   — 解析后抛 ChatStreamHttpError。注意后端统一
+ *   用 HTTP 200 + body.code 表达业务错误，故判据是 Content-Type 而非 response.ok
  * - SSE 流中错误（event: error 帧）     — 不在此层处理，由 store switch 接住
  */
 
@@ -25,7 +26,7 @@ export interface SSEEvent {
 }
 
 /**
- * HTTP 层错误 —— prepare_stream raise(chat 模型未配 / 模板不在册等) 翻 400 JSON 时抛出。
+ * 业务层错误 —— prepare_stream raise(chat 模型未配 / 模板不在册等) 翻 ResponseModel 时抛出。
  *
  * 携带后端 ResponseModel 的 code + message，store 层可 instanceof 判定 / 取 code 分类处理。
  */
@@ -138,8 +139,15 @@ export async function* streamChat(
     signal: opts?.signal,
   })
 
-  if (!response.ok) {
-    // 后端 raise(ValidationException 等) → 400 JSON ResponseModel 壳
+  // 后端统一 HTTP 200 + body.code 表达业务错误（core/exceptions/handlers.py 四个
+  // handler 全是 HTTP_200_OK），所以 response.ok 对错误响应同样是 true。axios 那侧
+  // 靠拦截器读 body.code 兜住，SSE 走裸 fetch 没有这层 —— 只能靠 Content-Type 分辨：
+  // 正常流是 text/event-stream，出错是 application/json。漏掉这一判断的后果是
+  // 错误响应被当 SSE 解析、解出零个事件、调用方 for await 空转结束，界面毫无反应。
+  const isEventStream = (response.headers.get('content-type') ?? '')
+    .includes('text/event-stream')
+  if (!response.ok || !isEventStream) {
+    // 后端 raise(ValidationException 等) → ResponseModel 壳（HTTP 200 / 4xx 皆可能）
     // 尝试解 JSON 拿 code + message，非 JSON 响应(503 nginx html 等) fallback statusText
     let code: number | null = null
     let message = response.statusText

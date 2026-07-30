@@ -27,6 +27,7 @@
 
 import { createStore, type StoreApi } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
+import { toast } from 'sonner'
 import { v4 as uuidv4 } from 'uuid'
 
 import { ChatStreamHttpError, streamChat } from '@/api/chat-stream'
@@ -417,6 +418,14 @@ export function createChatStore({
         const msg = isHttp
           ? err.message || '请求失败'
           : (err as Error)?.message || '网络错误'
+
+        // 完整现场留 Console —— 「链路都在、界面却没反应」这类问题看 UI 看不出断点
+        console.error('[chat-store] stream failed:', err)
+
+        // HTTP 层错误（模型不存在 / 模板不在册等配置问题）额外弹 Toast：
+        // SSE 不走 axios，request/index.ts 拦截器那套 toast 兜不到它。且这轮
+        // 后端压根没落 assistant 消息，只挂消息级错误条的话刷新一次痕迹全无。
+        if (isHttp) toast.error(msg)
 
         set((s) => {
           const last = s.messages[s.messages.length - 1] as
