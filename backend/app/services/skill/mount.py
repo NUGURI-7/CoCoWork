@@ -19,6 +19,7 @@ from uuid import UUID
 from deepagents import FilesystemMiddleware
 from deepagents.backends import LocalShellBackend
 from deepagents.backends.protocol import SandboxBackendProtocol
+from langchain_core.tools import BaseTool
 
 from app.core.config import settings
 from app.models import User
@@ -27,6 +28,7 @@ from app.services.sandbox.docker_sandbox import DockerSandbox
 from app.services.sandbox.layout import SandboxPaths, prepare_workspace_dir, container_paths, pack_skill_dirs
 from app.services.skill.builtin import resolve_builtin_skills, fetch_builtin_credentials, BuiltinSkill
 from app.services.skill.prompt import build_skills_prompt
+from app.tools.artifact_fetch import ArtifactFetchTool
 
 # 单条命令的默认超时与硬上限（秒）。LLM 可为单条命令调高，但不得超过上限 ——
 # deepagents 的 max_execute_timeout 默认 3600，一个 skill 脚本跑一小时是失控
@@ -42,6 +44,7 @@ class SkillMount:
     middleware: FilesystemMiddleware
     paths: SandboxPaths  # 工作区路径，供日志与排查用
     backend: SandboxBackendProtocol  # 收尾要用：docker driver 得把容器销毁掉
+    artifact_tools: list[BaseTool]  # 取回历史产物（决策 24）；Playground 无对话实体，为空
 
     async def close(self) -> None:
         """一轮回复的收尾。docker driver 销毁容器，local driver 无事可做。
@@ -69,7 +72,13 @@ class SkillMount:
         物理上 /skills 底下躺着本轮所有参与者的 skill，但清单各给各的：
         没授予这个成员的技能不该出现在它眼前，否则配置形同虚设。
         """
-        return build_skills_prompt(resolve_builtin_skills(cfg.builtin_skills), self.paths)
+        return build_skills_prompt(
+            resolve_builtin_skills(cfg.builtin_skills),
+            self.paths,
+            # artifact_tools 空不空，正是「这条路上有没有取回工具」的唯一真值 ——
+            # 不另传标志位，免得两处判断跑偏
+            can_fetch=bool(self.artifact_tools),
+        )
 
 def _union_skills(cfgs: Sequence[AgentConfig]) -> list[BuiltinSkill]:
     """本轮所有参与者挂的 skill 并集，按首次出现排序。
@@ -83,7 +92,12 @@ def _union_skills(cfgs: Sequence[AgentConfig]) -> list[BuiltinSkill]:
     return list(merged.values())
 
 async def build_skill_mount(
-        cfgs: Sequence[AgentConfig], user: User, *, scope_id: UUID, message_id: UUID
+        cfgs: Sequence[AgentConfig],
+        user: User,
+        *,
+        scope_id: UUID,
+        message_id: UUID,
+        conversation_id: UUID | None,
 ) -> SkillMount | None:
     """据一组 agent config 装出共用的 skill 沙箱；没人挂 skill 返回 None。
 
@@ -99,6 +113,10 @@ async def build_skill_mount(
         scope_id: 工作区目录的归属键。workspace 对话传 workspace_id（跨对话保留，
             决策 14）；Playground 是试跑场、不属于任何 workspace，传 user_id。
         message_id: 本轮消息 ID，用作交付区目录名
+        conversation_id: 本对话 ID，决定 fetch 工具能取回哪些历史产物（决策 24）。
+            Playground 传 None —— 它的消息不入库、产物没有对话归属，「本对话」
+            在那边不存在，故不给这个工具（决策 26）。同样刻意不给默认值：
+            漏传的话签名对、不报错，只是取回能力静默消失。
     """
     mounted = _union_skills(cfgs)
     if not mounted:
@@ -116,6 +134,21 @@ async def build_skill_mount(
         # 是这个模块最不能出的错
         raise ValueError(f"SANDBOX_DRIVER 只能是 local 或 docker，当前是 {settings.SANDBOX_DRIVER!r}")
 
+    # 取回历史产物的工具：绑本轮的 backend（只有它够得着工作区）与本对话。
+    # Playground 没有对话实体，这里为空 —— 它拿到的仍是那 7 个文件工具，
+    # 只是跨轮取回这件事在那边不存在（决策 26）
+    artifact_tools: list[BaseTool] = (
+        [
+            ArtifactFetchTool(
+                backend=backend,
+                workspace_dir=paths.workspace,
+                conversation_id=conversation_id,
+            )
+        ]
+        if conversation_id is not None
+        else []
+    )
+
     return SkillMount(
         middleware=FilesystemMiddleware(
             backend=backend,
@@ -123,6 +156,7 @@ async def build_skill_mount(
         ),
         paths=paths,
         backend=backend,
+        artifact_tools=artifact_tools,
     )
 
 

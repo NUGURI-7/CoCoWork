@@ -36,10 +36,21 @@ _TEMPLATE = """## Skills
 
 - `{outputs}/` —— **这一轮交给用户的成果**。脚本的输出参数（`--out` 之类）直接指到这里。
   只有放进这个目录的文件，用户才看得到、才能下载 —— 放在别处等于白做。
-- `{workspace}/` —— 工作区。以前产出的东西在这儿，要接着用就从这读。
+{workspace_line}
 - `{tmp}/` —— 这一轮的草稿：中间数据、临时文件。用完即弃，别把成果放这儿。
 
 没有哪个 skill 对得上任务时，就正常干活，不要为了用而用。"""
+
+# 工作区那一行的两个版本 —— 差别只在提不提取回工具。
+# 自带行首的「- 」，因为它在模板里是整行替换的。
+_WORKSPACE_WITH_FETCH = """- `{workspace}/` —— 工作区，**每一轮开始时都是空的**。
+  以前产出的文件不在这儿 —— 历史消息里 `<artifacts>` 标注过的，
+  要接着用（在上次那张图上改、读上次导出的数据）就先 `fetch_artifact` 取回来。"""
+
+# Playground 那条路没有取回工具（决策 26），就别提它 ——
+# 说一个它调不到的工具名，只会换来一次失败的工具调用
+_WORKSPACE_PLAIN = """- `{workspace}/` —— 工作区，**每一轮开始时都是空的**，
+  这一轮要用的东西都得这一轮生成。"""
 
 
 class SkillListing(Protocol):
@@ -49,14 +60,23 @@ class SkillListing(Protocol):
     description: str
 
 
-def build_skills_prompt(skills: Sequence[SkillListing], paths: SandboxPaths) -> str:
-    """拼 skill 清单的 system prompt 片段。挂了 skill 才调，没挂返回空串。"""
+def build_skills_prompt(
+        skills: Sequence[SkillListing], paths: SandboxPaths, *, can_fetch: bool
+) -> str:
+    """拼 skill 清单的 system prompt 片段。挂了 skill 才调，没挂返回空串。
+
+    Args:
+        can_fetch: 这个参与者有没有 fetch_artifact 工具（决策 26：Playground 没有）。
+            prompt 里不提它调不到的工具。
+    """
     if not skills:
         return ""
     return _TEMPLATE.format(
         skills=_available_skills_block(skills, paths),
         outputs=paths.outputs,
-        workspace=paths.workspace,
+        workspace_line=(
+            _WORKSPACE_WITH_FETCH if can_fetch else _WORKSPACE_PLAIN
+        ).format(workspace=paths.workspace),
         tmp=paths.tmp,
     )
 

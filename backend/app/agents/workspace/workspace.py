@@ -45,7 +45,7 @@ from app.models import SenderKind
 from app.models import User, Workspace, WorkspaceMember
 from app.schemas.agent.chat_schema import ChatStreamRequest
 from app.schemas.agent.config_schema import AgentConfig
-from app.services.sandbox.artifact import collect_artifacts
+from app.services.sandbox.artifact import collect_artifacts, group_by_message
 from app.services.skill.builtin import resolve_builtin_skills
 from app.services.skill.mount import SkillMount, build_skill_mount
 from app.tools import resolve_tools
@@ -77,7 +77,18 @@ def _workspace_base_prompt(
         "〔…〕里的是系统按你**实际调用过的工具**渲染出来的行动痕迹，不是一种可以写的话术。"
         "要派活就真的调派活工具、要用工具就真的调用 —— 自己写一段"
         "「〔我 派活给 X：… → 完成〕X 返回：…」，活并没有派出去，那段结果是你编的。\n"
+        "<artifacts>…</artifacts> 是系统按**这一轮真正交付出去的文件**标注的，同样不是可以写的话术。"
+        "自己写一行 <artifacts>，文件并不存在，用户那边什么也不会出现。\n"
     )
+
+
+_DELEGATE_SKILL_NOTE = (
+    "派活给带 Skill 的成员时注意：**它们的成果是文件** —— 写进交付区后会自动交给用户，"
+    "你不需要它把内容贴回来。所以别在任务描述里写「返回纯代码」「直接输出内容」这类要求，"
+    "那会让成果落在对话正文里而不是文件里，用户那边反而什么都拿不到。"
+    "你要说清的是「要什么」（数据、图表类型、尺寸、样式），"
+    "至于成果怎么落地，让它按自己 Skill 的说明书来。"
+)
 
 
 class WorkspaceState(TypedDict):
@@ -158,6 +169,7 @@ async def _member_to_subagent(
     # 只要有任何一人挂了它就存在，所以不能拿它当判据。
     if mount is not None and mount.has_skills(member_cfg):
         middleware.append(mount.middleware)
+        tools = [*tools, *mount.artifact_tools]  # 同应答者那份，跟文件工具同进同出
         system_prompt = f"{system_prompt}\n\n{mount.prompt_for(member_cfg)}"
 
     profile = await build_capability_profile(member_cfg, user)
@@ -286,6 +298,7 @@ async def build_workspace_graph(
         user,
         scope_id=workspace.id,
         message_id=message_id,
+        conversation_id=conversation_id,
     )
 
     # base 框架(协议说明 + 名单 + 日期 + 应答者自我身份)+ 应答者自己的人设
@@ -302,6 +315,8 @@ async def build_workspace_graph(
     # 应答者自己挂了 skill 才给文件工具 —— 同 _member_to_subagent 的判据
     if mount is not None and mount.has_skills(cfg):
         middleware.append(mount.middleware)
+        # 取回历史产物的工具跟那 7 个同进同出：看得见 <artifacts> 却取不回来没有意义
+        tools = [*tools, *mount.artifact_tools]
         system_prompt = f"{system_prompt}\n\n{mount.prompt_for(cfg)}"
 
     if can_delegate:
@@ -313,6 +328,12 @@ async def build_workspace_graph(
             middleware.append(
                 SubAgentMiddleware(backend=StateBackend(), subagents=subagents)
             )
+        # supervisor 自己未必挂 skill，也就拿不到那段 skill prompt（决策 19），
+        # 于是它不知道「skill 的成果是写进交付区的文件」，派活时会凭常识要求
+        # 「把代码返回给我」—— 成员照做，成果就落进对话正文，产物表一行都没有。
+        # 只在场上真有人带 skill 时才补这段，否则是废话
+        if mount is not None and any(mount.has_skills(c) for _, c in member_cfgs):
+            system_prompt = f"{system_prompt}\n\n{_DELEGATE_SKILL_NOTE}"
 
     responder_agent = create_agent(
         model=chat_model,
@@ -330,7 +351,9 @@ async def build_workspace_graph(
     graph = builder.compile()
 
     # 视角化历史(viewer 跟着应答者走)+ 当前轮 user 输入
-    history = await ViewContextAssembler().build(past, viewer, member_names)
+    history = await ViewContextAssembler().build(
+        past, viewer, member_names, await group_by_message(conversation_id)
+    )
     messages = history + to_lc_messages([], request.content)
 
     # 收产物的回调：挂了 skill 才有交付区。产物绑 conversation —— workspace 那条路

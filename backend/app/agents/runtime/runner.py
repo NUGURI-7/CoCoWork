@@ -303,7 +303,11 @@ async def prepare_stream(
     chat_model = await build_chat_model(cfg.models.chat)
 
     # Playground 只有一个 agent 在场，包成单元素列表；workspace 那条路传一串
-    mount = await build_skill_mount([cfg], user, scope_id=user.id, message_id=message_id)
+    # conversation_id=None：Playground 的消息不入库、产物没有对话归属，
+    # 「本对话」在那边不存在，故不给取回工具（决策 26）
+    mount = await build_skill_mount(
+        [cfg], user, scope_id=user.id, message_id=message_id, conversation_id=None
+    )
     system_prompt = cfg.system_prompt
     middleware: list[AgentMiddleware] = []
 

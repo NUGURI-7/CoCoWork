@@ -8,6 +8,7 @@ LangChain messages。核心是「视角化」——同一段历史,从不同成�
 身份语义,所以独立成一层。进图前一次性构建(每轮对话重新拉历史拼),不是
 loop 内的 middleware。
 """
+from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -15,7 +16,8 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 from app.agents.runtime.blocks import ContentBlock, TextBlock, ToolUseBlock, parse_blocks
-from app.models import Message, SenderKind
+from app.models import Message, SandboxArtifact, SenderKind
+from app.services.sandbox.artifact import human_size
 
 # 非成员说话人的固定显示名(成员名字走 names map)
 _SPEAKER_USER = "User"
@@ -68,6 +70,7 @@ class ViewContextAssembler:
             messages: list[Message],
             viewer: Viewer,
             names: dict[UUID, str],
+            artifacts: dict[UUID, list[SandboxArtifact]],
     ) -> list[BaseMessage]:
         """DB 历史 + 视角 → 喂给应答者的 LLM messages(视角化 + 身份标签)。
 
@@ -76,6 +79,9 @@ class ViewContextAssembler:
             viewer:   当前应答者(supervisor / 某成员)。
             names:    member_id → 成员名字,身份标签用;装配时从 workspace
                       members 构造,assembler 不自己查库。
+            artifacts: message_id → 该消息产出的文件(决策 24)。同 names,
+                      由装配方查好传入。**刻意不给默认值** —— 给了的话哪天
+                      调用方漏传,签名对、类型对、不报错,只是产物清单静默消失。
         """
 
         out: list[BaseMessage] = []
@@ -91,12 +97,17 @@ class ViewContextAssembler:
 
         for m in messages:
             blocks = parse_blocks(m.content)
+            # 这条消息产出的文件。用 .get 不用 [] —— 传进来的是 defaultdict,
+            # 下标取值会顺手插一个空列表进去,平白改掉调用方的数据
+            produced = self._render_artifacts(artifacts.get(m.id, ()))
             if self._is_me(m, viewer):
                 text = self._render_blocks(blocks, "我", viewer_key, member_labels)
+                text = "\n".join(p for p in (text, produced) if p)
                 if text:
-                    out.append(AIMessage(text))  # 「我」说的 + 我干过的事
+                    out.append(AIMessage(text))  # 「我」说的 + 我干过的事 + 我产出的文件
                 continue
             if m.sender_kind == SenderKind.USER:
+                # 用户消息不会产出文件,这一支不并
                 text = self._text_of(blocks)
                 if text:
                     # 历史里 user 也具名 —— 身份靠读取不靠推断,不留「负空间」
@@ -106,10 +117,29 @@ class ViewContextAssembler:
                 continue
             speaker = self._speaker_name(m, names)
             text = self._render_blocks(blocks, speaker, viewer_key, member_labels)
+            text = "\n".join(p for p in (text, produced) if p)
             if text:
                 out.append(HumanMessage(f'<msg from="{speaker}">{text}</msg>'))
 
         return out
+
+    @staticmethod
+    def _render_artifacts(artifacts: Sequence[SandboxArtifact]) -> str:
+        """这条消息产出的文件 → 一行 <artifacts> 标注（决策 24）。
+
+        用 XML 而不是自然语言括号：它跟正文长得越不像,模型越分得清
+        「这是系统标的,不是我写的」。形状与 skill 清单的 <available_skills> 同源。
+
+        **文件名不转义**（决策 24 落地时定）：脚本要是起了个带 `</artifacts>`
+        的名字,确实能伪造出一段假标注 —— 但 skill 是用户自己挂的、跑的是它自己的
+        代码,与「/skills 不做只读」同一条理由（C.3 末尾）。等用户上传那一刀落地、
+        脚本真成了不可信输入时,改成在**收产物那层**拒掉特殊字符 ——
+        堵在入口比堵在渲染处干净,而且只堵一处。
+        """
+        if not artifacts:
+            return ""
+        items = "、".join(f"{a.filename} ({human_size(a.size)})" for a in artifacts)
+        return f"<artifacts>{items}</artifacts>"
 
     @staticmethod
     def _is_me(m: Message, viewer: Viewer) -> bool:

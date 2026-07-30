@@ -7,8 +7,8 @@
     /tmp                   本轮草稿（execute 的工作目录），销毁即弃
 
 本模块管两个 driver 的路径：LocalShell 在宿主机目录上镜像同一套布局
-（prepare_workspace_dir，要真建目录），LocalDocker 直接给容器内的固定路径
-（container_paths，什么都不建）。
+（prepare_workspace_dir，要真建目录，**三个目录每轮重铺**），LocalDocker
+直接给容器内的固定路径（container_paths，什么都不建）。
 
 布局两边保持一致，是为了 prompt 里的路径、SKILL.md 里写的相对路径一个字
 都不用改 —— 换 driver 换掉的只有 backend 实现。
@@ -82,9 +82,10 @@ def prepare_workspace_dir(
     """铺好一次运行所需的工作区目录，返回它的根。
 
     Args:
-        scope_id: 工作区 ID。目录绑 workspace 而非对话，故跨对话可见
-            （设计稿决策 14）。该值只能由服务端从 DB 取，绝不接受来自
-            LLM 或 skill 的输入 —— 它是这层唯一的安全边界。
+        scope_id: 工作区 ID，决定目录挂在哪一支下面。**它不再意味着「跨对话可见」**
+            —— 目录每轮重铺，跨对话的延续性只由对象存储承载（决策 14a 改判）。
+            该值只能由服务端从 DB 取，绝不接受来自 LLM 或 skill 的输入 ——
+            它是这层唯一的安全边界。
         skill_dirs: 要投进去的 skill 源目录，每个都是「一目录一 skill」的规范形态
         message_id: 本轮回复的消息 ID，用作交付区目录名。同样只能服务端生成 ——
             一旦可由外部指定，就成了「传谁的 id 读谁的产物」。
@@ -93,9 +94,14 @@ def prepare_workspace_dir(
     """
     root = settings.sandbox_local_path / str(scope_id)
 
-    # skills/ 与 tmp/ 每次整个重铺：前者是投递进去的物料，后者是本轮草稿。
-    # 两者的真相都不在这儿，删干净不丢东西。
-    for name in ("skills", "tmp"):
+    # 三个目录每次整个重铺，真相都不在这儿，删干净不丢东西。
+    # **workspace 也在内**（2026-07-29 决策 14a 改判）：它原本「只保证存在、绝不清空」，
+    # 于是宿主机上跨轮跨对话一直堆着 —— 而 docker driver 每轮都是全新空 tmpfs。
+    # 两个 driver 语义不同的代价不是「不一致」这么抽象：本地调试时文件永远「自己就在」，
+    # fetch 工具一次都不会被触发，等部署到 docker 才发现模型不会用它 ——
+    # **开发环境把 bug 藏起来了**。清空是安全的：产物早已被 collect_artifacts
+    # 收进对象存储，两个 driver 走的是同一条收集路径。
+    for name in ("skills", "workspace", "tmp"):
         target = root / name
         if target.exists():
             shutil.rmtree(target)
@@ -109,9 +115,6 @@ def prepare_workspace_dir(
             root / "skills" / src.name,
             ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
         )
-    # workspace/ 只保证存在，绝不清空 —— 装的是 agent 跨对话积累下来的东西
-    (root / "workspace").mkdir(parents=True, exist_ok=True)
-
     # 交付区 = 本轮专属的空目录。**刻意不加 exist_ok** —— message_id 每轮唯一，
     # 目录已存在只可能是同一个 id 被用了两次，那是 bug；宁可当场炸，也不能让
     # 上一轮的残留混进这一轮的产物清单（识别机制的全部前提就是「这个目录是空的」）。

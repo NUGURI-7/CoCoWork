@@ -14,6 +14,7 @@ import json
 import logging
 import mimetypes
 import shlex
+from collections import defaultdict
 from uuid import UUID
 
 from deepagents.backends.protocol import SandboxBackendProtocol
@@ -163,3 +164,38 @@ async def collect_artifacts(
         await backend.aexecute(f"rm -rf {shlex.quote(paths.outputs)}")
 
     return collected
+
+
+async def group_by_message(conversation_id: UUID) -> dict[UUID, list[SandboxArtifact]]:
+    """一个对话的全部产物，按产出它的那条消息归组。
+
+    两个调用方共用：消息列表接口（前端渲染产物卡片）与视角化历史装配
+    （拼给模型看的 `<artifacts>` 清单，决策 24）。两边取的字段不同，
+    但「查哪些行、按什么分堆」是同一件事，不该各写一遍。
+
+    `message_id` 刻意不是外键（Playground 的消息不入库，做成 FK 就插不进来），
+    ORM 因此反查不到，只能整段捞出来自己分堆。按文件名排序，与回收时那份顺序一致。
+
+    Returns:
+        message_id → 产物列表。是 defaultdict，取不存在的 key 得到空列表。
+    """
+    grouped: dict[UUID, list[SandboxArtifact]] = defaultdict(list)
+    for artifact in await SandboxArtifact.filter(
+            conversation_id=conversation_id
+    ).order_by("filename"):
+        grouped[artifact.message_id].append(artifact)
+    return grouped
+
+
+def human_size(size: int) -> str:
+    """字节数 → 人话。给模型看 `12KB` 比 `12288` 好使 —— 它判断「这文件大不大」
+    要靠这个数，而量纲得自己换算的话很容易判错。
+
+    产物的展示辅助，两个调用方共用：视角化历史里的 `<artifacts>` 标注、
+    `fetch_artifact` 工具的返回。
+    """
+    if size < 1024:
+        return f"{size}B"
+    if size < 1024 * 1024:
+        return f"{size / 1024:.0f}KB"
+    return f"{size / (1024 * 1024):.1f}MB"
