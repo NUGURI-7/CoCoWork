@@ -34,5 +34,10 @@ class Conversation(UUIDBaseModel, TimestampMixin):
         description="对话级临时覆盖（换模型 / 开 thinking / 临时挂 KB 等扩展口子）",
     )
 
+    context_tokens = fields.IntField(
+        db_default=0,
+        description="最近一轮上下文 token 数(API usage 上报,层 B 压缩触发判据)",
+    )
+
     class Meta:
         table = "conversations"

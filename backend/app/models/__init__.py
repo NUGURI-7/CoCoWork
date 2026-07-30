@@ -5,6 +5,7 @@ from app.models.sandbox import SandboxArtifact
 from app.models.user import User
 from app.models.workspace import (
     Conversation,
+    ConversationSummary,
     Message,
     MessageRole,
     MessageStatus,
@@ -28,6 +29,7 @@ __all__ = [
     "Workspace",
     "WorkspaceMember",
     "Conversation",
+    "ConversationSummary",
     "Message",
     "MessageRole",
     "MessageStatus",
