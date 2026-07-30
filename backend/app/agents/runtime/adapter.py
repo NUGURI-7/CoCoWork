@@ -106,6 +106,7 @@ class LaneState:
     （修掉工具入参串块、正文串段的 bug）。三个成员的类型全是原样复用。
     """
 
+    key: str  # 本道的泳道键（LANE_MAIN 或 "tools:<uuid>"）——handler 靠它认出自己是不是主道
     text: SingletonSlot = field(default_factory=SingletonSlot)
     thinking: SingletonSlot = field(default_factory=SingletonSlot)
     tools: ToolRegistry = field(default_factory=ToolRegistry)
@@ -135,7 +136,7 @@ class StreamState:
 
     def lane(self, key: str) -> "LaneState":
         """取（懒建）某条泳道的状态。"""
-        return self.lanes.setdefault(key, LaneState())
+        return self.lanes.setdefault(key, LaneState(key=key))
 
 LANE_MAIN = "main"
 
@@ -410,9 +411,28 @@ async def _on_chat_model_stream(
 async def _on_chat_model_end(
         state: StreamState, lane: LaneState, data: dict[str, Any],
 ) -> AsyncIterator[AdapterEvent]:
-    """模型一轮 chat 完事：关**本道**活块 + 发 message_delta(usage)。"""
+    """模型一轮 chat 完事：关**本道**活块 + 发 message_delta(usage)。
+
+    usage 只在主道发：子 agent 的上下文是本轮临时的（run 完即弃，归层 A 管），
+    它的 token 数跟对话历史规模无关，混进来只会污染层 B 的判据。将来要做
+    「每条消息的用量统计」时，这里放开成全道都发，由下游按道分别累加。
+    """
     async for ev in _close_lane(lane):
         yield ev
+
+    if lane.key != LANE_MAIN:
+        return
+    # usage_metadata 是 LangChain 的标准字段；provider 不回报时为 None
+    # （如未开 stream_usage 的 OpenAI 兼容端点）—— 拿不到就不发。
+    usage = getattr(data.get("output"), "usage_metadata", None)
+    if not usage:
+        return
+    yield EventType.MESSAGE_DELTA, {
+        "usage": {
+            "input_tokens": usage.get("input_tokens", 0),
+            "output_tokens": usage.get("output_tokens", 0),
+        },
+    }
 
 
 @_register("on_tool_end")

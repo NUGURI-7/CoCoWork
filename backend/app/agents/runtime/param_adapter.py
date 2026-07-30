@@ -33,6 +33,10 @@ class OpenAIParamAdapter(ProviderParamAdapter):
     langchain-openai 把顶层 max_tokens 改名成 max_completion_tokens，兼容端点多不认 →
     走 OpenAI SDK 公开的 extra_body 通道原样发 max_tokens，符合这些端点的 API 契约。
     setdefault 合并：不覆盖用户经 extra="allow" 自带的 extra_body。
+
+    另显式开 stream_usage：OpenAI 协议流式默认不回报 token 用量，要显式索要；
+    Anthropic 家族流式默认就带且不认这个参数，故只在本家族开 —— 这正是方言层
+    该管的事，不该回到 build_chat_model 里做 provider if。
     """
 
     def to_init_kwargs(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -40,6 +44,9 @@ class OpenAIParamAdapter(ProviderParamAdapter):
         max_tokens = kwargs.pop("max_tokens", None)
         if max_tokens is not None:
             kwargs.setdefault("extra_body", {})["max_tokens"] = max_tokens
+        # 流式 usage 是层 B 压缩触发判据的数据源；setdefault 让用户经
+        # extra="allow" 显式关掉时仍以用户为准。
+        kwargs.setdefault("stream_usage", True)
         return kwargs
 
 
