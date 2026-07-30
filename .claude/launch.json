@@ -14,6 +14,20 @@
       "runtimeExecutable": "uv",
       "runtimeArgs": ["run", "dev"],
       "port": 7999
+    },
+    {
+      "name": "sandboxd",
+      "cwd": "backend",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "sandboxd"],
+      "port": 8100,
+      "autoPort": false
+    },
+    {
+      "name": "worker",
+      "cwd": "backend",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "worker"]
     }
   ]
 }
