@@ -59,7 +59,7 @@ export default function Login() {
       <div className="space-y-8">
         {/* 标题 */}
         <div className="space-y-3 duration-700 animate-in slide-in-from-bottom-3">
-          <h1 className="font-serif text-5xl leading-[1.05] lg:text-6xl">
+          <h1 className="font-display text-5xl leading-[1.05] font-medium tracking-tight lg:text-6xl">
             Think fast,
             <br />
             build faster

@@ -20,7 +20,7 @@ export default function AuthShell({ children, navAction }: AuthShellProps) {
       <header className="flex h-16 items-center justify-between px-6 lg:px-10">
         <Link to="/" className="flex items-center gap-2">
           <img src="/mark-rotating.svg" className="size-7" alt="CoCoWork" />
-          <span className="font-serif text-xl tracking-tight">CoCoWork</span>
+          <span className="font-display text-xl font-semibold tracking-tight">CoCoWork</span>
         </Link>
         {navAction}
       </header>

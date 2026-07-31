@@ -43,7 +43,9 @@ export function AppSidebar() {
               onClick={() => handleNav('/')}
             >
               <Sparkles />
-              <span className="font-serif text-xl leading-none">CoCoWork</span>
+              <span className="font-display text-xl leading-none font-semibold tracking-tight">
+                CoCoWork
+              </span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

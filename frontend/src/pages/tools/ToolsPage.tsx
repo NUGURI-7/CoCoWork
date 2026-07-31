@@ -19,7 +19,7 @@ ring.register()
 function Stat({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="flex-1 px-5 py-3">
-      <div className="font-serif text-2xl leading-none">{value}</div>
+      <div className="font-mono text-2xl leading-none font-medium tabular-nums">{value}</div>
       <div className="text-muted-foreground mt-1 text-xs">{label}</div>
     </div>
   )

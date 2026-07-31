@@ -106,25 +106,27 @@ export function KnowledgeCard({ kb, onDeleted }: KnowledgeCardProps) {
 
           <Separator />
 
-          {/* 数据区：左 embedding badge | 右 数字 + 右下角三个点 */}
+          {/* 数据区：左 状态 / embedding badge 上下两行 | 右 数字
+           * badge 独占一行而非跟状态挤同一行 —— 模型名可以很长（BAAI/bge-large-zh-v1.5），
+           * 同行时会把右侧数字顶穿；truncate + max-w-full 再兜一层更长的名字。 */}
           <div className="flex items-start justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2.5">
+            <div className="flex min-w-0 flex-col items-start gap-2">
               <span className="text-muted-foreground flex shrink-0 items-center gap-1.5 text-xs">
                 <span className={cn('size-2 rounded-full', s.dot, s.pulse && 'animate-pulse')} />
                 {s.label}
               </span>
-              <Badge variant="secondary" className="gap-1">
+              <Badge variant="secondary" className="max-w-full gap-1">
                 <Layers />
-                {kb.embedding_model_name}
+                <span className="truncate">{kb.embedding_model_name}</span>
               </Badge>
             </div>
-            <div className="flex gap-5">
+            <div className="flex shrink-0 gap-5">
               <div className="text-right">
-                <div className="font-serif text-xl leading-none">{kb.doc_count}</div>
+                <div className="font-mono text-xl leading-none tabular-nums">{kb.doc_count}</div>
                 <div className="text-muted-foreground mt-0.5 text-xs">文档</div>
               </div>
               <div className="text-right">
-                <div className="font-serif text-xl leading-none">
+                <div className="font-mono text-xl leading-none tabular-nums">
                   {kb.chunk_count.toLocaleString()}
                 </div>
                 <div className="text-muted-foreground mt-0.5 text-xs">chunks</div>

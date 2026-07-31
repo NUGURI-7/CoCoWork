@@ -39,7 +39,9 @@ export function AdminSidebar() {
               onClick={() => handleNav('/admin')}
             >
               <ShieldCheck />
-              <span className="font-serif text-xl leading-none">管理后台</span>
+              <span className="font-display text-xl leading-none font-semibold tracking-tight">
+                管理后台
+              </span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

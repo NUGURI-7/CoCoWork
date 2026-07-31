@@ -119,7 +119,7 @@ export default function Home() {
       {/* 顶部问候 + 主操作 */}
       <header className="flex items-end justify-between gap-4">
         <div>
-          <h1 className="font-serif text-3xl">主页</h1>
+          <h1 className="font-display text-3xl font-semibold tracking-tight">主页</h1>
           <p className="text-muted-foreground mt-1 text-sm">
             {user?.nick_name
               ? `欢迎回来，${user.nick_name}`
@@ -147,7 +147,7 @@ export default function Home() {
                     <item.icon className="text-brand size-5" />
                   </div>
                   <div className="flex items-baseline gap-1.5">
-                    <span className="font-serif text-3xl leading-none">
+                    <span className="font-mono text-3xl leading-none font-medium tabular-nums">
                       {count ?? '—'}
                     </span>
                     <span className="text-muted-foreground text-xs">{item.unit}</span>

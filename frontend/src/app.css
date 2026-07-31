@@ -1,7 +1,7 @@
 /* =============================================
  * Tailwind v4 入口 + 动画扩展
  * ============================================= */
-/* Instrument Serif 字体改为 self-host，在 main.ts 里 import '@fontsource/instrument-serif' */
+/* 字体全部 self-host，在 main.tsx 里 import（Space Grotesk 标题 / Geist Mono 数字） */
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @plugin '@tailwindcss/typography';
@@ -69,13 +69,23 @@
   /* 圆角基线 */
   --radius: 0.625rem;
 
-  /* 字体栈 */
+  /* 字体栈 —— 三层各自独立，靠「字体不同」而非「字重不同」拉开层次：
+   * sans    = 正文 / UI，走系统栈（中文交给系统的苹方 / 微软雅黑，不 self-host）
+   * display = 标题 / logo，Space Grotesk（几何切角，与系统 SF Pro 一眼可辨）
+   * mono    = 统计数字，Geist Mono（配 tabular-nums 保证位数变化不跳动）
+   *
+   * 注意：display / mono 两个字体都只有拉丁字形，中文必然回落到 sans 栈里的系统中文字体。
+   * 所以中文标题拿不到字体层面的区分，只能靠 font-semibold + tracking-tight 补偿；
+   * 要真换中文标题字体得 self-host 中文字体（全字符集 5-10MB），本项目不做。 */
   --font-sans:
     ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
     'Helvetica Neue', sans-serif;
-  --font-serif: 'Instrument Serif', ui-serif, Georgia, Cambria, 'Times New Roman', serif;
+  --font-display:
+    'Space Grotesk Variable', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    'Segoe UI', sans-serif;
   --font-mono:
-    ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+    'Geist Mono Variable', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas,
+    'Liberation Mono', monospace;
 }
 
 /* =============================================
@@ -188,9 +198,9 @@
   --radius-lg: calc(var(--radius) + 4px);
   --radius-xl: calc(var(--radius) + 8px);
 
-  /* 字体（注册给 font-sans / font-serif / font-mono 工具类） */
+  /* 字体（注册给 font-sans / font-display / font-mono 工具类） */
   --font-sans: var(--font-sans);
-  --font-serif: var(--font-serif);
+  --font-display: var(--font-display);
   --font-mono: var(--font-mono);
 }
 

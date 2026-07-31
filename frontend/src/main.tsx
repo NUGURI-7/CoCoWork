@@ -6,7 +6,8 @@ import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 import 'dayjs/locale/zh-cn'
 import 'nprogress/nprogress.css'
-import '@fontsource/instrument-serif' // self-host Instrument Serif（400 normal）
+import '@fontsource-variable/space-grotesk' // 标题 / logo（font-display）
+import '@fontsource-variable/geist-mono' // 统计数字（font-mono）
 import './app.css'
 import { routeTree } from './routeTree.gen'
 
