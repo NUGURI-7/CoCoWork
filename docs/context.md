@@ -69,7 +69,10 @@
 - **MCP 工具接入全栈整片打通（端到端实测可用）**：用户配外部 MCP server → agent 挂载 → 运行时拉工具供 LLM 调用。后端：`mcp_servers` 表（迁移 0012）+ CRUD 5 端点 + 运行时连接（`langchain-mcp-adapters` 0.3.0 的 `MultiServerMCPClient`，`fetch_mcp_tools` 无状态按需连）+ **SSRF 防护**（连接前 `loop.getaddrinfo` 解析 → 精确网段黑名单拦内网/回环/链路本地元数据，**刻意不用 `is_private`**——它把 `198.18/15` benchmark 也算 private、误伤 Clash/Surge 的 fake-ip）+ 测试连接端点 `POST /mcp-servers/test`（返工具列表/错误）+ headers 整体 JSON Fernet 加密（同 Provider，URL 不加密）+ `assemble_tools` 接 mcp 来源（`asyncio.gather` 并发拉、单 server 失败容错跳过、`created_by`+`enabled` 过滤）+ `AgentConfig.mcp_servers: list[UUID]`。前端：`/tools` MCP tab 改造成 server 管理（卡片 favicon→首字母哈希彩块 + URL query 脱敏 + 启用开关乐观更新 + 创建/编辑弹窗 headers 动态行 + 测试连接按钮内联结果）+ ConfigPanel「MCP server」选择器（归内置工具旁）。**关键决策**：按 server 选非按工具选（业界标准 Dify/Cursor）；只做远端 HTTP（streamable_http/sse）不做本地 stdio（Web 后端 spawn 子进程是安全噩梦）；不存 tools 缓存（运行时实时 `tools/list`）；server_url 含 key 时明文存 DB（个人项目可接受、UI 脱敏即可，加密留作可选增强）。
 - **SAQ 异步任务队列基建就位（2026-07-22，业务未接）**：`app/tasks/`（`queue.py` 队列单例 `name="cocowork"`，web 入队 / worker 取任务共用同一信箱；`worker.py` worker 配置——`settings` dict 供 `Worker(**settings)`，startup/shutdown 自开关 Tortoise（worker 是独立进程、不经 lifespan），`functions=[]` 是**加任务的唯一扩展点**）+ `app/cli.py`（`dev()` / `worker()` 两入口）+ `[project.scripts]` 注册（`uv run dev` / `uv run worker`；为此项目改为可编辑安装：`[tool.uv] package=true` + hatchling + 只打包 `app`，并删掉越界的 `readme = "../README.md"`）。main.py 的 `__main__` 转调 `cli.dev()`（IDE 按钮与命令行同源）、lifespan `finally` 加 `queue.disconnect()`。**加一个任务 = 四步**：写 `async def x_task(ctx, *, 只传 JSON 装得下的参数)` → 在 `worker.py` 的 `functions` 登记 → 调用处 `await queue.enqueue("x_task", ...)`（超时/重试在此传，**必须显式给 timeout,SAQ 默认仅 10 秒**）→ **重启 worker**（函数清单是启动时读进内存的）。
 
+- **Skill 执行 + 沙箱（P5）整片可用**：agent 挂 skill → 一次回复借还一个一次性 docker 容器 → 脚本跑完把交付区文件收成产物（`sandbox_artifacts` 表 + 对象存储）→ 消息里出卡片、右栏产出物面板跨对话聚合。三进程形态（web / worker / **sandboxd** 独占 docker SDK）+ 两个 driver（docker 生产 / LocalShell 面向未装 docker 的 clone 者，**代码与功能都保留，但讨论一律按 docker 语境**）。工作区每轮全空，历史文件靠 `fetch_artifact` 按需取回；跨对话的产物可由用户从面板**拖进输入框**（决策 25，字节不经浏览器）。设计与决策见 `docs/design/skill-sandbox-v1.md`，本轮细节见最近迭代 2026-07-30。
+
 ## 下一步
+- **【当前主线】Compress 层 B：跨轮历史压缩 切片 3-5**（切片 1-2 已落：`ConversationSummary` 表 + 迁移 0015 + usage 记账链路）。剩：压缩 service（超线 → 生成中性摘要 → 写表）→ assembler 接线（读最新摘要 + 只视角化摘要之后的消息）→ 测量（token 曲线 / cache 命中率）。**开工前要先定压缩阈值**——注意空对话地板就有 5,534 token（系统提示 + 工具定义 + 花名册），不能按「历史多长」拍脑袋。判据取 `conversation.context_tokens`（主道最后一次模型调用的 `input_tokens`），**该判据成立的前提是跨轮回放协议已改完**（2026-07-31 已完成，见最近迭代）。
 - **知识库 / RAG 模块 v1 整片完工（片1-6 收官）+ 收尾增强**：数据层 + KB CRUD + 存储抽象 + 文档上传/下载 + 处理管线 + 检索/命中测试全栈打通；**增强**：文档批量向量化/删除（部分成功语义）、命中测试检索耗时展示、文档列表段数展示、触发同步置 processing 修「刷新后轮询丢失」。
   - **方案见** `docs/design/knowledge-rag-v1.md`（spec + §13 切片清单全部勾掉）+ `knowledge-rag-decisions.md`（决策/权衡）。六片：VectorField + pgvector + 4 表迁移 0005 + AIModel.meta 0006 + KB CRUD + 存储抽象 R2/Local + Document 上传 CRUD 下载 8 端点 + Splitter 抽象层 + `process_document()` + 触发端点 + enum 化迁移 0007/0008 + 检索 service + 命中测试端点。详见最近迭代。
   - **v2 方向**：~~FTS（keyword mode）~~ ✅（2026-07-18，sparse 基线 0.19 定档）→ ~~hybrid（RRF 融合）~~ ✅（2026-07-19 整片收官：加权 RRF w=0.9、recall@10 0.804 超纯向量 0.799，详见最近迭代）→ **当前主线 = rerank**（**前两题 ✅ 2026-07-20**：Model 接入 + 管线两级化，commit 34cb939，详见最近迭代；首发硅基流动 bge-reranker-v2-m3 免费——gte-rerank 已下线、「先阿里」改道；**第三题 ✅ 2026-07-20**：KB 库级检索设置 + 前端全栈，commits 215cb03 / e3134f7，详见最近迭代。**验收 ✅ 2026-07-20**：eval 入口上移调度层 + `--rerank-model`，双域四组 @3 跑完——医疗 **+2.5pt recall / +2.2pt MRR** ✅、电商 **−2.8pt / −2.4pt** ❌，**结论 = 二次打分的收益取决于域、不取决于模型：向量吃干净的域加什么都是噪音**（与 hybrid 双域结论合流，四域次一致）。原验收标准「hybrid+rerank 压过纯向量」开跑前已改——hybrid 被双域 @50 判出局，粗排定纯向量。**产品侧三题 + 验收全收官**）。~~hybrid 域依赖验证~~ ✅（2026-07-20 电商加餐收官：keyword 腿 ×2.7 确认域依赖，但 hybrid 增益反而消失、任何权重不敌纯向量——**互补性 > 腿强度**，详见最近迭代）。**RAG v2 至此收官**。
@@ -98,6 +101,50 @@
 - 如果某次改动不足以影响项目理解，就不要把噪音写进来。
 
 ## 最近迭代
+
+### 2026-07-31 — 跨轮回放协议改造：喂给模型的历史里放回「事实」
+
+**病根一句话**：`ViewContextAssembler` 每次回复前重拼历史时，把过去的工具调用**压平成一行自然语言痕迹**（`〔我 调用了工具 X → 完成〕`），`result_data` 一个字不回放。于是两个症状：① 答不出上一次回复里工具查到的内容；② supervisor **空手编造派活**（实测：用户发消息 10 秒后回复、`tool_use` 0 条、产物表无行，它声称的 message_id 库里根本不存在）。根因是**压平的那一刻，「真调用过」这个事实就从平台写的结构化字段掉进了模型自己能写的文本通道**——prompt 禁令拦不住（7-29 `a845206` 加过，照编）。
+
+**为什么只有我们有这个问题**：单 agent 产品历史是一条固定消息列表、存什么喂什么，没有「渲染」这一步；我们因为**视角化**（同一段历史管家看是「我派了活」、成员看是「Supervisor 派活给你」）必须每次重拼，重拼就丢结构。这是多 agent + 视角化自带的代价。
+
+**改法三档**（`docs/design/history-replay-v1.md` §5.1 三件套 + 正交的结构化决策）：
+
+| 这条历史消息 | 怎么渲染 |
+|---|---|
+| **viewer 自己发的** | 还原成原生 `AIMessage(tool_calls=…)` + 配对 `ToolMessage`（`_render_own`）。切分单位 = 一次模型交互：「文字→工具→文字」本就是多次交互攒的，遇工具后再见文字即开下一条 AIMessage |
+| **别人发的** | 仍走 `<msg from="X">` 文本痕迹，但**把结果带上**（原来直接丢）。结构化塞不进去——那语义是「你调用了它」，而它根本没调、甚至没挂那个工具 |
+| **带 subagent 戳的** | 照旧整体跳过（成员交付内容已在 task 块结果里） |
+
+**必须自己付的代价**：API 硬性要求每个 `tool_call` 配一条结果，而库里 **12% 的块没有结局**（用户中途点停止）——补一条 `ToolMessage(status="error", content="（调用被中断，没有结果）")`。这是压平方案当初白捡的便宜。单测里 `assert_paired` 就是这条不变式的哨兵。
+
+**大结果封顶（offload 三件套）**：超 `MAX_TOOL_OUTPUT_CHARS`(=4000，从 `CoCoTool` 提成模块常量、两处共用同一个数) 的结果只留**前 500 字 + `tool_use_id`**，配新工具 `read_tool_result`（`app/tools/tool_result_fetch.py`，per-run 绑 conversation，`content @> '[{"id":…}]'` 在 jsonb 里直接定位）。**只在历史里真有截断时才挂**——`build` 改返回 `AssembledContext(messages, truncated)`，标记与工具同源，避免「有标记没工具 = 指死路 / 有工具没标记 = 白占位子」。保留 500 而非留满上限：留满等于没封顶，这 500 字是**标识**不是更小的上限。
+
+**实测定的阈值**（脚本量了库里 358 个 tool 块）：282 个带 subagent 戳（跳过）；应答者自己的 76 个里 p50=161、p75≈1200、最大 4,750；单个对话累计最大 15,786 字符 ≈ 8K token。**没保护的是三条路**：MCP（单次见过 26,049）、deepagents 文件工具（14,143）、成员交付内容。阈值 4000 只截住 76 里的 3 个。
+
+**产物清单挪出模型自己的消息**（当天实测复现后追加的一改）：`<artifacts>chart.svg (3KB)</artifacts>` 原来拼在 supervisor 自己那条 `AIMessage` 正文末尾 → **模型照抄了**，自己写出一行（大小是猜的、错的），那串内部标记被前端当正文渲染给用户看了。改成**紧跟其后独立一条** `HumanMessage('<msg from="System"><artifacts>…</artifacts></msg>')`：模型的输出永远是 assistant 角色，变不成这条 user 角色的消息，样本从它眼前消失。base prompt 加第四条发言者约定。**否决的两个替代**：放 system prompt（每产出一个文件就整段 cache 失效）、改成 pull 让模型自己查（deepagents 同款，但它那是同一次 run 的活文件系统，我们的产物跨回复躺在对象存储里，每次要用都得先查一遍反而啰嗦）。
+
+**验证**：18 条单测（`tests/test_view_context.py`，配对不变式 / 视角分叉 / 截断 / 跳过规则）+ 拿真实对话跑 assembler dump 出消息列表逐条核对 + `read_tool_result` 在真库上闭环（截断标记里的 id → 取回 4,219 字符全文）+ 用户真机复刻 7-30 那次翻车场景，不再编造。
+
+**顺带**：assembler 里那批私有 `@staticmethod` 全改回实例方法——它们是纯函数不假，但类里写 `ViewContextAssembler._cap_result(...)` 读起来像在调另一个类，而「不需要实例就能调」这个好处一次都没用上。
+
+### 2026-07-30 — P5「Skill 执行 + 沙箱」整片收官（跨对话拖引用 + 61 条单测）
+
+**P5 全貌**（决策与依据全在 `docs/design/skill-sandbox-v1.md`，含四轮修订记录）：agent 挂 skill → 一次完整回复借还一个**一次性容器** → 脚本在容器里跑 → **交付区**（`/outputs/<message_id>`，每轮新建的空目录）里的文件收进对象存储成为产物。三个进程形态：web / worker / **sandboxd**（独占 docker SDK，web 进程永不碰）。内置 skill 不入表（本体在 `app/skills/builtin/`，表里只可能有「用户给它配的 key」那种行）。
+
+**本次两件**：① **跨对话拖引用（决策 25）** —— 用户把右栏产出物面板的卡片拖进输入框，后端据 id 查库 → 从对象存储取字节 → 灌进本轮 `/workspace`，**字节不经过浏览器**（引用的是已经在存储里的产物，不涉及 multipart，PDF/图片/xlsx 原样保真是白捡的）；② 沙箱纯逻辑单测 61 条。
+
+**「引用 vs 实体」是这一片的切分线**（决策 14a 整条改判的根）：`/workspace` 每轮全空、什么都不自动铺。清单（一行文本、几十 token）全给，实体（一次对象存储往返 + 几十 KB~MB）一个都不给 —— 模型看着历史里的 `<artifacts>`（agent 产出的）/ `<attachments>`（用户附上的）标注，要哪个就调 `fetch_artifact` 取哪个。每轮固定开销 = 一次 DB 查询，**与这个 workspace 攒了 3 个还是 300 个产物无关**。原方案按「本对话 / 跨对话」切，于是「铺几条」「什么算本对话」「同名铺哪个」全要现编答案且都站不住 —— 换线之后一起消失。
+
+**拖引用的两阶段**（新模块 `services/sandbox/attachment.py`）：`resolve_refs` 只查库、校归属、回填展示字段，跑在**落 user 消息之前**（引用无效 = 请求错误，与上方「@ 到无效成员 404 不落库」同一条规矩）；`inject_attachments` 读字节、灌工作区、拼 `<attachments>` 标注，跑在**沙箱装配之后**（工作区路径由 driver 决定，装配前不存在）。合成一趟就得把落库推到装配之后 —— 装配一报错，用户刚说的那句话就蒸发。
+
+**三个口径**：① 请求里**只有 `artifact_id` 作数**，`filename/size/content_type` 一律以库为准回填 —— 落库那份因此自解释，前端回放与下一轮历史都不必再查库；② `fetch_artifact` 取值范围扩成「本对话产出的 ∪ 本对话拖进来引用过的」（那些属于**别的**对话，不扩就是「看得见 `<attachments>` 却取不回来」）；③ Playground 不接这套（决策 26，`prepare_stream` 一句守卫）。**没人挂 skill 时拖了文件不报错**（用户拍板）：消息照发、标注如实说「本轮没有能打开文件的参与者」——「附件只能给沙箱用」是现状不是永久前提。
+
+**前端用原生 HTML5 拖放、不引 dnd 库**：一次性投递用不上 dnd-kit 的排序/动画/键盘可达性；代价是**触屏不工作**（桌面场景暂认）。**TipTap 的 drop 必须单独接** —— `prosemirror-view` 自己监听 drop（源码 `index.js:3803`），不在 `editorProps.handleDrop` 里 `return true`，拖来的东西会被它当文档内容插进去；它只 `preventDefault` 不 `stopPropagation`，所以外层容器的 `onDrop` 照样触发，两处都接 + 按 id 去重。桌面文件拖进来也要拦（不拦浏览器默认行为是**导航去打开那个文件**），目前只弹一句「暂不支持」。
+
+**单测 61 条**（`tests/test_sandbox_*.py`，零 docker / 零 DB / 零网络，1.4s）+ **变异检验**：把「每轮清空 workspace」故意改坏 → 3 条立刻红，证明不是绿得没意义。共用假件 `tests/sandbox_fakes.py` **只实现被测代码真正调到的方法** —— 假件越像真的，越容易在真接口变了之后还静静跑绿灯。
+
+**已知限制（记在设计稿 §5.5，别当 bug 查）**：同名文件的取回歧义（真解法是标注带短 id + 精确匹配，收尾期不做）、消息气泡里的产物卡片不可拖（产品判断：那儿不需要）、`resolve_refs` 的查库路径无单测（属集成层）。**P5 剩余**：用户上传 skill、本地文件拖入（用户明确后续要做，前端管道已铺好，缺上传那半段）。
 
 ### 2026-07-23 — 文档处理迁进 SAQ（P2 收官）+ `tasks/` 层定型
 

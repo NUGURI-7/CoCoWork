@@ -1,5 +1,6 @@
 from app.schemas.agent.agent_schema import AgentCreate, AgentOut, AgentUpdate
 from app.schemas.agent.chat_schema import (
+    ArtifactRefBlock,
     ChatStreamRequest,
     ContentBlock,
     HistoryMessage,

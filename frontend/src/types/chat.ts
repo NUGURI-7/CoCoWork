@@ -23,10 +23,25 @@ export interface ApiTextBlock {
 }
 
 /**
- * P0 union 只有 TextBlock；P1 加 ApiToolUseBlock / ApiImageBlock 时这里扩。
- * 加 union 成员不破坏上层（discriminator: type）。
+ * 用户拖进输入框的产物引用（后端决策 25）。
+ *
+ * **只有 artifact_id 是作数的**：filename / size / content_type 是展示字段，
+ * 发送时前端顺手带上（本地乐观回显要立刻画出卡片），但后端一律拿库里的覆盖 ——
+ * 所以刷新后拿回来的那份才是权威。取字节和归属校验永远只认 artifact_id。
  */
-export type ApiContentBlock = ApiTextBlock
+export interface ApiArtifactRefBlock {
+  type: 'artifact_ref'
+  artifact_id: string
+  filename: string
+  size: number
+  content_type: string
+}
+
+/**
+ * 加 union 成员不破坏上层（discriminator: type）。
+ * P1 加 ApiToolUseBlock / ApiImageBlock 时继续往这儿扩。
+ */
+export type ApiContentBlock = ApiTextBlock | ApiArtifactRefBlock
 
 export interface ApiHistoryMessage {
   role: 'user' | 'assistant'

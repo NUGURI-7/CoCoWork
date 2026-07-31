@@ -4,13 +4,17 @@ import { bouncy } from 'ldrs'
 
 bouncy.register()
 import type {
+  ApiArtifactRefBlock,
   ApiContentBlock,
+  ApiTextBlock,
+  Artifact,
   AssistantMessage as AssistantMessageType,
   UserMessage as UserMessageType,
 } from '@/types'
 import { cn } from '@/lib/utils'
 
 import { ArtifactCard } from './ArtifactCard'
+import { AttachmentChip } from './AttachmentChip'
 import { DelegateBlock } from './blocks/DelegateBlock'
 import { TextBlock } from './blocks/TextBlock'
 import { ThinkingBlock } from './blocks/ThinkingBlock'
@@ -35,9 +39,26 @@ const NEAR_BOTTOM_THRESHOLD = 20
 /** user 消息 content（ApiContentBlock[]）→ 拼成 string 给 MarkdownRender。 */
 function apiContentToText(content: ApiContentBlock[]): string {
   return content
-    .filter((b) => b.type === 'text')
+    .filter((b): b is ApiTextBlock => b.type === 'text')
     .map((b) => b.text)
     .join('')
+}
+
+/**
+ * user 消息里附上的产物（后端决策 25）→ 卡片要的形状。
+ *
+ * 实时回显与刷新回放走的是同一个函数：前者的块是发送时本地拼的，后者的块是
+ * 从 DB 读回来的（展示字段已被服务端以库为准回填）。形状一致，所以只有一条渲染路径。
+ */
+function attachmentsOf(content: ApiContentBlock[]): Artifact[] {
+  return content
+    .filter((b): b is ApiArtifactRefBlock => b.type === 'artifact_ref')
+    .map((b) => ({
+      id: b.artifact_id,
+      filename: b.filename,
+      size: b.size,
+      content_type: b.content_type,
+    }))
 }
 
 /**
@@ -157,12 +178,27 @@ const UserMessageRow = memo(function UserMessageRow({
   message: UserMessageType
 }) {
   const text = apiContentToText(message.content)
+  const attachments = attachmentsOf(message.content)
+
   return (
     <div className="group flex flex-col items-end gap-1">
-      <div className="bg-muted text-foreground max-w-[80%] rounded-2xl px-4 py-2.5">
-        <MarkdownRender content={text} isUser />
-      </div>
-      <MessageActions actions={[copyAction(() => text)]} align="right" />
+      {/* 附件排在气泡上方 —— 与输入框里待发时的位置一致，发送前后不跳 */}
+      {attachments.length > 0 && (
+        <div className="flex max-w-[80%] flex-wrap justify-end gap-1.5">
+          {attachments.map((a) => (
+            <AttachmentChip key={a.id} artifact={a} />
+          ))}
+        </div>
+      )}
+
+      {/* 只拖了文件、没打字时不画空气泡 */}
+      {text && (
+        <div className="bg-muted text-foreground max-w-[80%] rounded-2xl px-4 py-2.5">
+          <MarkdownRender content={text} isUser />
+        </div>
+      )}
+
+      {text && <MessageActions actions={[copyAction(() => text)]} align="right" />}
     </div>
   )
 })

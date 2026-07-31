@@ -37,7 +37,12 @@ from app.core.observability import TraceContext, get_langfuse_handler
 from app.models import KnowledgeBase, MCPServer, User
 from app.models.model import AIModel
 from app.schemas.agent.chat_schema import ChatStreamRequest
-from app.schemas.agent.chat_schema import ContentBlock, HistoryMessage
+from app.schemas.agent.chat_schema import (
+    ArtifactRefBlock,
+    ContentBlock,
+    HistoryMessage,
+    TextBlock,
+)
 from app.schemas.agent.config_schema import AgentConfig
 from app.schemas.agent.config_schema import ModelSlot
 from app.services.mcp.mcp_runtime import fetch_tools_for_server
@@ -173,14 +178,17 @@ async def build_chat_model(slot: ModelSlot) -> BaseChatModel:
     )
 
 
-def _content_to_text(blocks: list[ContentBlock]) -> str:
-    """ContentBlock 数组拼成 str。
+def content_to_text(blocks: list[ContentBlock]) -> str:
+    """ContentBlock 数组拼成 str —— **只取文本块**。
 
-    P0 union 只有 TextBlock，直接拼 `text` 字段。P1 加 ToolUseBlock /
-    ImageBlock 时这里扩 multi-modal 块（HumanMessage 支持 list-of-content
-    multi-modal 形态）。
+    非文本块（artifact_ref 等）一律跳过：它们是结构，不是话。该让模型知道的事
+    由各自的渲染层拼成标注另行追加（workspace 那行 <attachments> 就是），
+    不在这里含糊地替它拼一句人话 —— 拼了就会跟真正的渲染层说重。
+
+    去掉下划线转公开：workspace 那条路要自己拼当前轮消息，正文归这个函数、
+    附件标注归它接在后面。
     """
-    return "".join(b.text for b in blocks)
+    return "".join(b.text for b in blocks if isinstance(b, TextBlock))
 
 
 def to_lc_messages(
@@ -195,13 +203,13 @@ def to_lc_messages(
     msgs: list[BaseMessage] = []
 
     for h in history:
-        text = _content_to_text(h.content)
+        text = content_to_text(h.content)
         if h.role == "user":
             msgs.append(HumanMessage(text))
         else:  # assistant
             msgs.append(AIMessage(text))
 
-    msgs.append(HumanMessage(_content_to_text(current)))
+    msgs.append(HumanMessage(content_to_text(current)))
     return msgs
 
 
@@ -296,6 +304,11 @@ async def prepare_stream(
     Raises:
         ValidationException: 模板不在册 / chat 模型未配 / 槽位类型错
     """
+    # 决策 26：Playground 不接拖引用 —— 它的消息不入库、产物的 conversation_id 为
+    # NULL，「本对话」在那边根本不存在。与其编一个近似答案，不如当场说不支持
+    if any(isinstance(b, ArtifactRefBlock) for b in request.content):
+        raise ValidationException("Playground 不支持引用历史产物，请在工作空间里使用")
+
     cfg = spec.config
 
     if cfg.models.chat is None:
@@ -311,7 +324,9 @@ async def prepare_stream(
     # conversation_id=None：Playground 的消息不入库、产物没有对话归属，
     # 「本对话」在那边不存在，故不给取回工具（决策 26）
     mount = await build_skill_mount(
-        [cfg], user, scope_id=user.id, message_id=message_id, conversation_id=None
+        [cfg], user, scope_id=user.id, message_id=message_id,
+        conversation_id=None,
+        referenced_artifact_ids=frozenset(),  # 没有对话就没有历史，自然无从引用
     )
     system_prompt = cfg.system_prompt
     middleware: list[AgentMiddleware] = []

@@ -98,6 +98,7 @@ async def build_skill_mount(
         scope_id: UUID,
         message_id: UUID,
         conversation_id: UUID | None,
+        referenced_artifact_ids: frozenset[UUID],
 ) -> SkillMount | None:
     """据一组 agent config 装出共用的 skill 沙箱；没人挂 skill 返回 None。
 
@@ -117,6 +118,10 @@ async def build_skill_mount(
             Playground 传 None —— 它的消息不入库、产物没有对话归属，「本对话」
             在那边不存在，故不给这个工具（决策 26）。同样刻意不给默认值：
             漏传的话签名对、不报错，只是取回能力静默消失。
+        referenced_artifact_ids: 本对话历史里被用户拖进来引用过的产物 id（决策 25），
+            并进 fetch 工具的取值范围 —— 它们属于别的对话，光靠 conversation_id
+            那个条件够不着。**同样刻意不给默认值**，漏传只会让用户拖进来的文件
+            下一轮取不回来，而这事不报错。
     """
     mounted = _union_skills(cfgs)
     if not mounted:
@@ -143,6 +148,8 @@ async def build_skill_mount(
                 backend=backend,
                 workspace_dir=paths.workspace,
                 conversation_id=conversation_id,
+                user_id=user.id,
+                referenced_artifact_ids=referenced_artifact_ids,
             )
         ]
         if conversation_id is not None

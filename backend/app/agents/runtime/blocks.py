@@ -10,6 +10,7 @@ Parse, don't validate:脏数据(字段缺失 / partial_json 断半截 / 未知�
 import json
 import logging
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ValidationError
 
@@ -49,12 +50,50 @@ class ToolUseBlock(_BlockBase):
             return {}
         return args if isinstance(args, dict) else {}
 
-ContentBlock = TextBlock | ThinkingBlock | ToolUseBlock
+    @property
+    def result_text(self) -> str:
+        """工具结果的文本形态 —— 回放进历史时用。
+
+        result_data 的类型随工具而定:自家工具统一返 str,MCP 那条路来的
+        可能是 list / dict(LangChain ToolMessage.content 本就允许)。类型
+        判断收口在解析层,下游(回放渲染、将来的压缩)只吃字符串。
+
+        没结局的块(用户中途点了停止)result_data 是 None → 空串,由调用方
+        决定怎么表达「没有结果」。
+        """
+        data = self.result_data
+        if data is None:
+            return ""
+        if isinstance(data, str):
+            return data.strip()
+        return json.dumps(data, ensure_ascii=False)
+
+
+class ArtifactRefBlock(_BlockBase):
+    """用户拖进输入框的产物引用（决策 25）—— 落库那一份。
+
+    与 schemas/agent/chat_schema.py 里的同名类**是两层不同的东西**（同 TextBlock）：
+    那份是 HTTP 请求契约，收进来时只有 artifact_id 可信；这份是从 jsonb 读回来的
+    历史，filename / size 当时已由服务端回填好，直接可用。
+
+    **artifact_id 没有默认值**，与本模块「缺字段吃默认值」的通例相反：身份字段
+    没有合理的默认值可吃，缺了它这个块就什么都不是。让它整块被 parse_blocks
+    跳掉（并留一条 warning），好过留个空壳往下游漂。
+    """
+
+    type: Literal["artifact_ref"]
+    artifact_id: UUID
+    filename: str = ""
+    size: int = 0
+
+
+ContentBlock = TextBlock | ThinkingBlock | ToolUseBlock | ArtifactRefBlock
 
 _BLOCK_TYPES: dict[str, type[ContentBlock]] = {
     "text": TextBlock,
     "thinking": ThinkingBlock,
     "tool_use": ToolUseBlock,
+    "artifact_ref": ArtifactRefBlock,
 }
 
 

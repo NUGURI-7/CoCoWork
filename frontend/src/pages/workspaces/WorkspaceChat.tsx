@@ -160,6 +160,9 @@ function WorkspaceChatBody({
         disabled={!supervisorReady}
         disabledHint="先在右侧「空间配置」里给管家选一个对话模型"
         mentionItems={mentionItems}
+        // 产出物面板的卡片可以拖进来当附件（后端决策 25）。
+        // Playground 那条路不传 —— 它没有「本对话」，后端直接拒（决策 26）
+        attachable
       />
     </>
   )

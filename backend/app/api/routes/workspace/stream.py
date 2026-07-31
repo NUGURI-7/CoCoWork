@@ -27,6 +27,7 @@ from app.models import Conversation, Message, MessageStatus, SenderKind, Message
 from app.models.user import User
 from app.schemas.agent.chat_schema import ChatStreamRequest
 from app.schemas.workspace import ConversationStreamIn, MessageAppend
+from app.services.sandbox.attachment import resolve_refs
 from app.services.workspace import MessageService, get_message_service
 
 router = APIRouter(
@@ -80,13 +81,20 @@ async def conversation_stream(
         if responder is None:
             raise NotFound404("被 @ 的成员不存在或已移出空间")
 
+    # 拖进来的产物引用（决策 25）：这里只查库、只校归属，字节等沙箱装好再搬。
+    # 与上面「@ 到无效成员」同一条规矩 —— 引用无效是请求错误，放在落库之前判，
+    # 不把一条指向不存在文件的消息写进历史。返回的 content 已回填文件名与大小
+    content, attachments = await resolve_refs(body.content, current_user)
+
     # ③ 先落 user —— 说出去的话即事实；prepare 失败(400)也不该让输入蒸发
     await svc.append(
         conversation_id,
         MessageAppend(
             role=MessageRole.USER,
             sender_kind=SenderKind.USER,
-            content=[b.model_dump() for b in body.content],
+            # mode="json"：ref 块里的 artifact_id 是 UUID，PG 的 jsonb 不认它
+            # （同 mentioned_member_ids 那句 str() 转换，一个道理）
+            content=[b.model_dump(mode="json") for b in content],
             mentioned_member_ids=body.mentioned_member_ids
         ),
     )
@@ -99,12 +107,13 @@ async def conversation_stream(
     # ④ 应答者装配（可 raise → 400 JSON，SSE 还没起）
     prepared = await build_workspace_graph(
         conversation.workspace,
-        ChatStreamRequest(content=body.content, history=[]),
+        ChatStreamRequest(content=content, history=[]),
         current_user,
         past,
         responder,
         message_id=message_id,
         conversation_id=conversation_id,
+        attachments=attachments,
     )
 
     collector = MessageCollector()

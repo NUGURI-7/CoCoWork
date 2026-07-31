@@ -9,6 +9,7 @@ runtime.run_chat_stream 跑。与 Playground 的三点差异：
 - 返回形态与 prepare_stream 一致（PreparedStream：graph + messages + collect），
   run_chat_stream 直接消费。
 """
+from collections.abc import Sequence
 from datetime import date
 from functools import partial
 from typing import Annotated, TypedDict
@@ -22,6 +23,7 @@ from deepagents.middleware.summarization import SummarizationMiddleware
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import HumanMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 
@@ -30,8 +32,9 @@ from app.agents.runtime.runner import (
     PreparedStream,
     assemble_tools,
     build_chat_model,
-    to_lc_messages, SandboxCloser,
+    content_to_text, SandboxCloser,
 )
+from app.agents.runtime.blocks import ArtifactRefBlock, parse_blocks
 from app.agents.workspace.view_context_assembler import (
     SPEAKER_SUPERVISOR,
     ViewContextAssembler,
@@ -40,15 +43,17 @@ from app.agents.workspace.view_context_assembler import (
     member_label,
 )
 from app.core.exceptions import ValidationException
-from app.models import Message, KnowledgeBase, MCPServer
+from app.models import Message, KnowledgeBase, MCPServer, SandboxArtifact
 from app.models import SenderKind
 from app.models import User, Workspace, WorkspaceMember
 from app.schemas.agent.chat_schema import ChatStreamRequest
 from app.schemas.agent.config_schema import AgentConfig
 from app.services.sandbox.artifact import collect_artifacts, group_by_message
+from app.services.sandbox.attachment import describe_unavailable, inject_attachments
 from app.services.skill.builtin import resolve_builtin_skills
 from app.services.skill.mount import SkillMount, build_skill_mount
 from app.tools import resolve_tools
+from app.tools.tool_result_fetch import ToolResultFetchTool
 
 
 def _workspace_base_prompt(
@@ -72,13 +77,14 @@ def _workspace_base_prompt(
         '- <msg from="User">…</msg> 是人类用户的发言；无标签的最新消息也是他此刻对你说的。'
         "User 是人，不是任何成员。\n"
         '- <msg from="名字#id">…</msg> 是其他 agent 的发言；〔…派活给 X…〕行动痕迹里的 X 也是 agent。\n'
+        '- <msg from="System">…</msg> 是系统标注，不是任何人的发言，也不能派活给它；'
+        "里面 <artifacts> 列的是这个对话**真正交付出去**的文件。\n"
         f"- 你是「{self_name}」{alias_note}。\n"
         "回复时直接正常说话，不要自己带 <msg> 标签。\n"
         "〔…〕里的是系统按你**实际调用过的工具**渲染出来的行动痕迹，不是一种可以写的话术。"
         "要派活就真的调派活工具、要用工具就真的调用 —— 自己写一段"
         "「〔我 派活给 X：… → 完成〕X 返回：…」，活并没有派出去，那段结果是你编的。\n"
-        "<artifacts>…</artifacts> 是系统按**这一轮真正交付出去的文件**标注的，同样不是可以写的话术。"
-        "自己写一行 <artifacts>，文件并不存在，用户那边什么也不会出现。\n"
+        "文件清单只由系统标注，你自己不要写 <artifacts> 行 —— 你写的那行不会让任何文件出现。\n"
     )
 
 
@@ -89,6 +95,24 @@ _DELEGATE_SKILL_NOTE = (
     "你要说清的是「要什么」（数据、图表类型、尺寸、样式），"
     "至于成果怎么落地，让它按自己 Skill 的说明书来。"
 )
+
+
+def _referenced_artifact_ids(past: Sequence[Message]) -> frozenset[UUID]:
+    """历史里被用户拖进来过的产物 id —— fetch 工具的取值范围要算上它们（决策 25）。
+
+    这些文件属于**别的**对话（跨对话拖引用正是这个功能的意义），光靠
+    conversation_id 那个条件够不着。少了这一格，第二轮「把上次那个 csv 换成
+    折线图」会卡在「本对话没有这个文件」上，而它明明白白列在模型眼前的
+    <attachments> 标注里 —— 决策 24 特意点名不要这种「看得见、取不回」。
+
+    `past` 本来就在手上（视角化历史要用），这里不多查一次库。
+    """
+    return frozenset(
+        b.artifact_id
+        for m in past
+        for b in parse_blocks(m.content)
+        if isinstance(b, ArtifactRefBlock)
+    )
 
 
 class WorkspaceState(TypedDict):
@@ -234,6 +258,7 @@ async def build_workspace_graph(
         *,
         message_id: UUID,
         conversation_id: UUID,
+        attachments: Sequence[SandboxArtifact],
 ) -> PreparedStream:
     """装配 workspace 对话图 —— 内置 supervisor 套外层 StateGraph。
 
@@ -249,6 +274,9 @@ async def build_workspace_graph(
             responder: None = supervisor;否则 = 被 @ 的成员
             message_id: 本轮 assistant 消息 ID —— 交付区目录名与产物归组键
             conversation_id: 产物落库时挂在哪个对话下
+            attachments: 用户拖进输入框的历史产物（决策 25），已由 stream 端点
+                查库校过归属。**刻意不给默认值** —— 同 conversation_id，漏传的话
+                签名对、类型对、不报错，只是用户附的文件静默消失
 
         Raises:
             ValidationException: supervisor 未配 chat 模型 / 槽位类型错 / 模型不存在
@@ -284,6 +312,17 @@ async def build_workspace_graph(
     chat_model = await build_chat_model(cfg.models.chat)
     tools = await assemble_tools(cfg, user)
 
+    # 视角化历史（viewer 跟着应答者走）。**刻意提到装配前面拼**：它会告诉我们
+    # 历史里有没有工具结果被截断，而那决定了要不要给应答者配取回工具
+    context = await ViewContextAssembler().build(
+        past, viewer, member_names, await group_by_message(conversation_id)
+    )
+    if context.truncated:
+        # 只在真有截断标记时才挂：挂了没标记 = 白占工具位、还可能诱导瞎调；
+        # 有标记没挂 = 给模型指了条死路。两者同源才不会跑偏。
+        # 派活成员不需要它 —— 它们只收到一段任务描述，根本看不见历史
+        tools = [*tools, ToolResultFetchTool(conversation_id=conversation_id)]
+
     # 派活成员的 config 先 parse 出来：既要参与 skill 并集，又要传给 _member_to_subagent，
     # 免得同一份 jsonb 解两遍。@直连时不派活，场上只有应答者自己。
     member_cfgs: list[tuple[WorkspaceMember, AgentConfig]] = (
@@ -299,7 +338,19 @@ async def build_workspace_graph(
         scope_id=workspace.id,
         message_id=message_id,
         conversation_id=conversation_id,
+        referenced_artifact_ids=_referenced_artifact_ids(past),
     )
+
+    # 用户拖进来的附件（决策 25）：有沙箱就把字节灌进工作区，没有就如实说明。
+    # **没沙箱不报错** —— 「附件只能给沙箱用」是这一刀的现状、不是永久前提，
+    # 以后 PDF / 图片进模型视野那一刀落地时，同一个块自然多一条去处
+    attachments_note = ""
+    if attachments:
+        attachments_note = (
+            await inject_attachments(mount.backend, mount.paths, attachments)
+            if mount is not None
+            else describe_unavailable(attachments)
+        )
 
     # base 框架(协议说明 + 名单 + 日期 + 应答者自我身份)+ 应答者自己的人设
     base = _workspace_base_prompt(workspace.name, member_roster, self_name, self_alias)
@@ -350,11 +401,13 @@ async def build_workspace_graph(
     builder.add_edge("supervisor", END)
     graph = builder.compile()
 
-    # 视角化历史(viewer 跟着应答者走)+ 当前轮 user 输入
-    history = await ViewContextAssembler().build(
-        past, viewer, member_names, await group_by_message(conversation_id)
+    # 这次回复的 user 输入 = 正文 + 附件标注。不走 to_lc_messages 是因为那是通用摊平
+    # （history + current 一起翻），这里只要当前一句、还得在尾巴上接一行标注
+    current = "\n".join(
+        part for part in (content_to_text(request.content), attachments_note) if part
     )
-    messages = history + to_lc_messages([], request.content)
+    # 视角化历史（上面已拼好）+ 当前这句
+    messages = [*context.messages, HumanMessage(current)]
 
     # 收产物的回调：挂了 skill 才有交付区。产物绑 conversation —— workspace 那条路
     # 的消息入库，卡片将来靠这个字段按对话捞回来

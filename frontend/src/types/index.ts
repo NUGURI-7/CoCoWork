@@ -72,6 +72,7 @@ export type { MCPTransport, MCPServer } from './mcp'
 export type {
   // 协议层
   ApiTextBlock,
+  ApiArtifactRefBlock,
   ApiContentBlock,
   ApiHistoryMessage,
   ChatStreamRequest,

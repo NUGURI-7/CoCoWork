@@ -9,6 +9,7 @@ import {
   iconFor,
   useArtifactActions,
 } from '@/components/chat/artifact-actions'
+import { setArtifactDragData } from '@/components/chat/artifact-drag'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { WorkspaceArtifact } from '@/types'
@@ -47,7 +48,13 @@ function groupByConversation(items: WorkspaceArtifact[]) {
   return groups
 }
 
-/** 面板里的一张卡片。舒展而非紧凑：产物是「成果」，值得占地方。 */
+/**
+ * 面板里的一张卡片。舒展而非紧凑：产物是「成果」，值得占地方。
+ *
+ * **可拖进输入框**（后端决策 25）—— 跨对话也成立，这正是这个功能的意义：
+ * 面板本来就把整个工作空间的产出摊在这儿，拖哪条都行。拖走后卡片仍在
+ * （effectAllowed=copy，传的是引用不是搬运）。
+ */
 function ArtifactRow({ artifact }: { artifact: WorkspaceArtifact }) {
   const { busy, open, download } = useArtifactActions(artifact.id)
   const Icon = iconFor(artifact.content_type)
@@ -56,11 +63,13 @@ function ArtifactRow({ artifact }: { artifact: WorkspaceArtifact }) {
     <div
       role="button"
       tabIndex={0}
+      draggable
+      onDragStart={(e) => setArtifactDragData(e, artifact)}
       onClick={open}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') open()
       }}
-      title={`${artifact.filename} —— 点击在新标签页打开`}
+      title={`${artifact.filename} —— 点击打开，或拖进输入框交给 agent`}
       className={cn(
         'group/row border-border bg-background flex items-center gap-3 rounded-lg border',
         'hover:border-foreground/20 hover:bg-muted/40 cursor-pointer px-3 py-2.5 transition-colors',

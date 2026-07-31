@@ -24,6 +24,11 @@ from langchain_core.tools import BaseTool
 
 logger = logging.getLogger(__name__)
 
+# 单次工具输出能进上下文的字符上限（L1 上下文防爆）。
+# **跨轮回放沿用同一个数** —— 见 view_context_assembler._cap_result：
+# 一次执行能进多少，历史里就是多少，不另立一套标准。
+MAX_TOOL_OUTPUT_CHARS = 4000
+
 
 class CoCoTool(BaseTool):
     """项目所有工具的统一基类。子类只实现 `_execute`，横切逻辑由本类兜底。"""
@@ -34,7 +39,7 @@ class CoCoTool(BaseTool):
     dangerous: bool = False  # 有副作用（删文件 / 发请求 / 花钱）的工具标 True，未来接人工确认
 
     # ---- 横切行为参数 ----
-    max_output_chars: int = 4000  # 输出上限，超长截断（L1 上下文防爆）；返回极短的工具可调小
+    max_output_chars: int = MAX_TOOL_OUTPUT_CHARS  # 超长截断；返回极短的工具可调小
     timeout_seconds: float = 30.0  # 单次执行超时
 
     @abstractmethod
