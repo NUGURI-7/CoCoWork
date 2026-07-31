@@ -61,6 +61,11 @@ ArtifactCollector = Callable[[], Awaitable[list[SandboxArtifact]]]
 # 一轮结束的收尾：docker driver 销毁容器，local driver 是空操作
 SandboxCloser = Callable[[], Awaitable[None]]
 
+# 本轮 token 用量汇总：终止帧捎一份给前端，与落库的三个字段同源同形。
+# 传的是「取数的动作」而非数本身 —— 调用 run_chat_stream 那一刻桶还是空的，
+# 得等流跑完 runner 自己去兑现。
+UsageSummarizer = Callable[[], dict[str, Any]]
+
 # SSE message_start 的 role —— 流式产出的消息恒为 assistant（协议固定值）
 _SSE_ROLE_ASSISTANT = "assistant"
 
@@ -351,6 +356,7 @@ async def run_chat_stream(
         message_id: UUID,
         collect: ArtifactCollector | None = None,
         close: SandboxCloser | None = None,
+        usage: UsageSummarizer | None = None,
         sink: SinkFn | None = None,
         trace: TraceContext | None = None,
 ) -> AsyncIterator[str]:
@@ -431,7 +437,13 @@ async def run_chat_stream(
 
         # generator finally 兜底：自身 yield 也包 try，二次失败只 log 不再 raise
         try:
-            stop_payload = {"id": str(message_id)}
+            stop_payload: dict[str, Any] = {"id": str(message_id)}
+            if usage is not None:
+                try:
+                    stop_payload |= usage()
+                except Exception:
+                    # 汇总失败不连累收尾：前端少个数字，活气泡照常关
+                    logger.exception("token 用量汇总失败，message_stop 照发 id=%s", message_id)
             _feed_sink(sink, EventType.MESSAGE_STOP, stop_payload)
             yield sse_event(EventType.MESSAGE_STOP, stop_payload)
 

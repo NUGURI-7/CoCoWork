@@ -132,6 +132,9 @@ async def conversation_stream(
                 content=collector.blocks,
                 status=final,
                 error_message=collector.error_message,
+                prompt_tokens=collector.prompt_tokens,
+                completion_tokens=collector.completion_tokens,
+                token_usage=collector.usage_rows,
             ),
         )
         # usage 拿不到时（provider 不报）保留上一轮的值：清零会让判据永远不超线，
@@ -152,6 +155,7 @@ async def conversation_stream(
                     collect=prepared.collect,
                     close=prepared.close,
                     sink=collector.feed,
+                    usage=lambda: collector.usage_summary,
                     trace=TraceContext(
                         user_id=str(current_user.id),
                         session_id=str(conversation_id),

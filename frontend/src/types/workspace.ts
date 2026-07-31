@@ -6,7 +6,7 @@
  * d-2 招募 / 成员接真时随 mock 一起退役。
  */
 
-import type { Artifact } from './chat'
+import type { Artifact, TokenUsageRow } from './chat'
 
 // ============ Workspace ============
 
@@ -96,6 +96,12 @@ export interface WorkspaceMessage {
   error_message: string
   /** 这条消息产出的沙箱产物。流式那份走 SSE artifacts 帧，这里是刷新后回放用的 */
   artifacts: Artifact[]
+  /** 本轮输入 token 合计（含子 agent）。流式那份走 message_stop 帧 */
+  prompt_tokens: number
+  /** 本轮输出 token 合计（含子 agent） */
+  completion_tokens: number
+  /** 消耗明细：一行一个计费单元；delegate_id 为 null 的那行是 supervisor */
+  token_usage: TokenUsageRow[]
   created_at: string
   updated_at: string
 }

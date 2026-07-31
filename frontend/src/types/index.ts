@@ -79,6 +79,8 @@ export type {
   MessageStartPayload,
   MessageStopPayload,
   Usage,
+  TokenUsage,
+  TokenUsageRow,
   MessageDeltaPayload,
   ContentBlockStartPayload,
   ContentBlockDeltaPayload,

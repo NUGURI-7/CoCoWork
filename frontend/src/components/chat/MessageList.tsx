@@ -19,6 +19,7 @@ import { useChat } from './ChatProvider'
 import { useSubagentInfo } from './SubagentDirectory'
 import { MarkdownRender } from './MarkdownRender'
 import { MessageActions, copyAction } from './MessageActions'
+import { TokenUsageBadge } from './TokenUsageBadge'
 
 /** assistant 消息 → 只取可见正文（text blocks）拼成纯文本，供复制。 */
 function assistantBlocksToText(blocks: AssistantMessageType['blocks']): string {
@@ -227,6 +228,11 @@ const AssistantMessageRow = memo(function AssistantMessageRow({
     <MessageActions
       actions={[copyAction(() => assistantBlocksToText(message.blocks))]}
       align="left"
+      extra={
+        message.tokenUsage && (
+          <TokenUsageBadge usage={message.tokenUsage} blocks={message.blocks} />
+        )
+      }
     />
   )
 

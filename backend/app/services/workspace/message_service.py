@@ -71,6 +71,9 @@ class MessageService:
             mentioned_member_ids=[str(uid) for uid in data.mentioned_member_ids],
             status=data.status,
             error_message=data.error_message,
+            prompt_tokens=data.prompt_tokens,
+            completion_tokens=data.completion_tokens,
+            token_usage=data.token_usage,
         )
 
         return MessageOut.model_validate(message)

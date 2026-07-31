@@ -413,15 +413,14 @@ async def _on_chat_model_end(
 ) -> AsyncIterator[AdapterEvent]:
     """模型一轮 chat 完事：关**本道**活块 + 发 message_delta(usage)。
 
-    usage 只在主道发：子 agent 的上下文是本轮临时的（run 完即弃，归层 A 管），
-    它的 token 数跟对话历史规模无关，混进来只会污染层 B 的判据。将来要做
-    「每条消息的用量统计」时，这里放开成全道都发，由下游按道分别累加。
+    主道 / 子道都发 —— 成员的调用同样烧 token，本轮总消耗要算上它们。
+    下游分主 / 子不靠新字段：本模块主循环会给子道事件盖 delegate_id 戳，
+    主道事件没有这个字段，**有没有它就是判据**。层 B 的上下文判据只认没戳的
+    那些（collector 里分流），与总消耗统计互不干扰。
     """
     async for ev in _close_lane(lane):
         yield ev
 
-    if lane.key != LANE_MAIN:
-        return
     # usage_metadata 是 LangChain 的标准字段；provider 不回报时为 None
     # （如未开 stream_usage 的 OpenAI 兼容端点）—— 拿不到就不发。
     usage = getattr(data.get("output"), "usage_metadata", None)

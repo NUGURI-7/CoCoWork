@@ -43,6 +43,7 @@ import type {
   DelegateBlock,
   ErrorPayload,
   MessageDeltaPayload,
+  MessageStopPayload,
   MessageStartPayload,
   RenderBlock,
   TextBlock,
@@ -174,6 +175,7 @@ export function createChatStore({
                 status: 'streaming',
                 blocks: [],
                 usage: null,
+                tokenUsage: null,
                 stopReason: null,
                 errorMessage: null,
                 senderMemberId: pendingSenderMemberId,
@@ -344,8 +346,10 @@ export function createChatStore({
           }
           case 'message_delta': {
             const p = payload as MessageDeltaPayload
-            // 子 agent 自己一轮结束的 usage —— 不更新主消息
-            if (p.subagent) return
+            // 子 agent 自己一轮结束的 usage —— 不更新主消息。
+            // 判据用 delegate_id 而非 subagent：前者是 adapter 按泳道盖的戳（后端
+            // 分账用的也是它），后者靠模型元数据推，不如前者硬。
+            if (p.delegate_id) return
             set((s) => {
               const m = s.messages[s.messages.length - 1]
               if (m?.role !== 'assistant') return
@@ -367,9 +371,19 @@ export function createChatStore({
             return
           }
           case 'message_stop': {
+            const p = payload as MessageStopPayload
             set((s) => {
               const m = s.messages[s.messages.length - 1]
               if (m?.role !== 'assistant') return
+              // 本轮消耗汇总：后端算好一次性捎在终止帧里（前端不自己累加，
+              // 免得跟落库那份算出两个数）。汇总失败时整组字段缺席 → 留 null。
+              if (p.prompt_tokens !== undefined) {
+                m.tokenUsage = {
+                  prompt_tokens: p.prompt_tokens,
+                  completion_tokens: p.completion_tokens ?? 0,
+                  token_usage: p.token_usage ?? [],
+                }
+              }
               // 兜底：把所有还 active 的 text / thinking block 收尾（含派活块内部），
               // 防止后端漏发 content_block_stop 导致光标一直闪
               const sweep = (blocks: RenderBlock[]) => {
@@ -442,6 +456,7 @@ export function createChatStore({
               status: 'error',
               blocks: [],
               usage: null,
+              tokenUsage: null,
               stopReason: null,
               errorMessage: msg,
             })

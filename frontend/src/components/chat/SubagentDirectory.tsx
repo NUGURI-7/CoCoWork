@@ -32,3 +32,8 @@ export function SubagentDirectoryProvider({
 export function useSubagentInfo(subagentName: string): SubagentInfo | undefined {
   return useContext(SubagentDirectoryContext)[subagentName]
 }
+
+/** 整本名册 —— 一次要查多个时用（如逐行标注派活消耗，hook 不能进循环）。 */
+export function useSubagentDirectory(): Record<string, SubagentInfo> {
+  return useContext(SubagentDirectoryContext)
+}

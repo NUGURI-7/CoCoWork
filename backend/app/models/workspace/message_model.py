@@ -89,5 +89,24 @@ class Message(UUIDBaseModel, TimestampMixin):
         max_length=500, default="", description="错误友好文案(给用户看,技术细节走 log)",
     )
 
+    # ==== 本轮 token 消耗 ====
+    # 口径是「累加」不是「去重」:模型无状态,同一段历史每轮都得重发,它就是真被读了
+    # 那么多遍。因此这两个数不等于「上下文有多长」——后者是 Conversation.context_tokens。
+    # 两个整数列是 token_usage 的汇总,刻意冗余:整数列给 SQL 聚合(某工作区某月烧了多少),
+    # JSONB 给界面展开明细。
+    # 存量表加非空列必须用 db_default(数据库侧填),用 default 只在 Python 侧生效,
+    # 迁移会 NotNullViolation。
+    prompt_tokens = fields.IntField(
+        db_default=0, description="本轮全部模型调用的输入合计(含子 agent)",
+    )
+    completion_tokens = fields.IntField(
+        db_default=0, description="本轮全部模型调用的输出合计(含子 agent)",
+    )
+    token_usage = fields.JSONField(
+        db_default=[],
+        description="消耗明细:一行一个计费单元(supervisor 或一次派活),"
+                    "形如 [{delegate_id, prompt_tokens, completion_tokens}]",
+    )
+
     class Meta:
         table = "messages"

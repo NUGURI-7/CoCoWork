@@ -1,4 +1,4 @@
-import { useCallback, useState, type ComponentType } from 'react'
+import { useCallback, useState, type ComponentType, type ReactNode } from 'react'
 import { Check, Copy } from 'lucide-react'
 
 import { copyText } from '@/lib/clipboard'
@@ -58,12 +58,15 @@ export function MessageActions({
   actions,
   align = 'left',
   className,
+  extra,
 }: {
   actions: MessageAction[]
   align?: 'left' | 'right'
   className?: string
+  /** 非按钮的附挂内容（如本轮 token 消耗），跟在按钮后面同排显示 */
+  extra?: ReactNode
 }) {
-  if (actions.length === 0) return null
+  if (actions.length === 0 && !extra) return null
 
   return (
     <div
@@ -76,6 +79,7 @@ export function MessageActions({
       {actions.map((action) => (
         <ActionButton key={action.key} action={action} />
       ))}
+      {extra}
     </div>
   )
 }

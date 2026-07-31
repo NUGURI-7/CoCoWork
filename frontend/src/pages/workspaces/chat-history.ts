@@ -176,6 +176,13 @@ export function workspaceMessagesToChatMessages(
       status: m.status === 'error' ? 'error' : 'completed',
       blocks: toRenderBlocks(m.content),
       usage: null,
+      // 本轮消耗：流式那份由 message_stop 帧写进同名字段，这里是刷新后从 DB 还原的
+      // 同一份数字（后端 usage_summary 一处产出，SSE 与落库同源）
+      tokenUsage: {
+        prompt_tokens: m.prompt_tokens,
+        completion_tokens: m.completion_tokens,
+        token_usage: m.token_usage,
+      },
       stopReason: null,
       errorMessage:
         m.status === 'error' ? m.error_message || '生成失败' : null,

@@ -64,7 +64,32 @@ export interface MessageStartPayload {
   role: 'assistant'
 }
 
-export interface MessageStopPayload {
+/**
+ * 一个计费单元的消耗。
+ *
+ * 分行的单位是「一次派活」而非「一个成员」—— delegate_id 由后端每次 task 派发
+ * 独立生成，同名成员被并发派两次就是两行（合并了就看不出哪次贵）。
+ * delegate_id 为 null 的那行是 supervisor，它没有这种天然分界，多次调用合并成一行。
+ */
+export interface TokenUsageRow {
+  delegate_id: string | null
+  prompt_tokens: number
+  completion_tokens: number
+}
+
+/**
+ * 本轮 token 消耗汇总 —— 三个字段与后端 messages 表的三列同形。
+ *
+ * 口径是「累加」：模型无状态，同一段历史每轮都要重发，它就是真被读了那么多遍。
+ * 因此这个数**不等于**「上下文有多长」。
+ */
+export interface TokenUsage {
+  prompt_tokens: number
+  completion_tokens: number
+  token_usage: TokenUsageRow[]
+}
+
+export interface MessageStopPayload extends Partial<TokenUsage> {
   id: string
 }
 
@@ -239,6 +264,11 @@ export interface AssistantMessage {
   blocks: RenderBlock[]
   /** message_delta 给的 token 计数；usage 内部保留 snake_case（透传） */
   usage: Usage | null
+  /**
+   * 本轮 token 消耗（含子 agent）。实时来自 message_stop 帧，刷新后从 DB 还原 ——
+   * 两个来源是后端同一份数字，不会漂。后端汇总失败 / 老消息没这数据时为 null。
+   */
+  tokenUsage: TokenUsage | null
   /** message_delta 给的 stop_reason */
   stopReason: string | null
   /** error 事件给的 message（已脱敏） */

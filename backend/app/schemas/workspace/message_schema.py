@@ -33,6 +33,13 @@ class MessageOut(BaseModel):
     mentioned_member_ids: list[UUID]
     status: MessageStatus
     error_message: str
+    prompt_tokens: int
+    completion_tokens: int
+    token_usage: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="本轮消耗明细:一行一个计费单元(supervisor 或一次派活);"
+                    "delegate_id 为 null 的那行是 supervisor",
+    )
     created_at: datetime
     updated_at: datetime
     artifacts: list[ArtifactOut] = Field(
@@ -76,3 +83,7 @@ class MessageAppend(BaseModel):
     mentioned_member_ids: list[UUID] = []
     status: MessageStatus = MessageStatus.DONE
     error_message: str = ""
+    # 本轮 token 消耗:user 消息不涉及模型调用,留默认值即可
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    token_usage: list[dict[str, Any]] = []
