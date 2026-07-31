@@ -31,8 +31,11 @@ TORTOISE_CONFIG = {
             "migrations": "migrations",
         },
     },
-    "use_tz": False,
-    "timezone": "Asia/Shanghai",
+    # aware UTC 收口。use_tz=False 时 auto_now 取的是「进程当时的墙上时钟」——
+    # 换个 TZ 起服务写进去的就是错的时刻；且序列化出去不带时区标记，
+    # 浏览器 new Date() 按本地时间解析，相对时间全乱。
+    "use_tz": True,
+    "timezone": "UTC",
 }
 
 
