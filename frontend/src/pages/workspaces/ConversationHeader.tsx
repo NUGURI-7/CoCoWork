@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 
 import { useStreamStatusStore } from '@/stores/stream-status'
+import { useConversationTitle } from '@/stores/workspace-session'
 import type { Conversation } from '@/types'
 import { StatusDot } from './ConversationList'
 
@@ -33,11 +34,12 @@ export function ConversationHeader({
   trailing,
 }: ConversationHeaderProps) {
   const statuses = useStreamStatusStore((s) => s.statuses)
+  const titleOf = useConversationTitle()
   const sorted = [...conversations].sort(
     (a, b) => +new Date(b.updated_at) - +new Date(a.updated_at),
   )
   const current = sorted.find((c) => c.id === currentId) ?? sorted[0]
-  const title = current ? current.title || '新对话' : '无对话'
+  const title = current ? titleOf(current) : '无对话'
   const status = current ? statuses[current.id] ?? 'idle' : 'idle'
 
   if (immersive) {

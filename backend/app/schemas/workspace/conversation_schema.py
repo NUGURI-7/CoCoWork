@@ -30,6 +30,31 @@ class ConversationUpdate(BaseModel):
     config: dict[str, Any] | None = None
 
 
+class ConversationTitleIn(BaseModel):
+    """自动起名请求体。
+
+    content = 用户那句话的纯文本(前端把 blocks 摊平后送上来)。
+
+    为什么由前端送、后端不自己查库取首条消息:前端在「发送消息的同时」
+    并发调本端点,那一刻 stream 端点还没把这条消息落库,查了也是空。
+    """
+
+    content: str = Field(
+        ..., min_length=1, max_length=8000, description="起名依据(用户消息纯文本)",
+    )
+
+
+class ConversationTitleOut(BaseModel):
+    """自动起名响应体。
+
+    只返 title,不返整条 ConversationOut —— 本请求与 stream 请求并发,
+    返回这一刻 updated_at / context_tokens 可能已被那边改过,
+    返整条会诱使前端拿旧快照整条覆盖。
+    """
+
+    title: str
+
+
 class ConversationOut(BaseModel):
     """conversation 对外输出。"""
 

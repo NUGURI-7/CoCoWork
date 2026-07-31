@@ -15,6 +15,7 @@ import {
   useStreamStatusStore,
   type ConversationStatus,
 } from '@/stores/stream-status'
+import { useConversationTitle } from '@/stores/workspace-session'
 import type { Conversation } from '@/types'
 
 /** 对话状态点：running 墨绿脉冲 / error 红；idle 不画（保持清爽）。 */
@@ -60,6 +61,7 @@ export function ConversationList({
   onRequestDelete,
 }: ConversationListProps) {
   const statuses = useStreamStatusStore((s) => s.statuses)
+  const titleOf = useConversationTitle()
   // 按更新时间倒序
   const sorted = [...conversations].sort(
     (a, b) => +new Date(b.updated_at) - +new Date(a.updated_at),
@@ -97,8 +99,8 @@ export function ConversationList({
                     isActive && 'text-brand font-medium',
                   )}
                 >
-                  {/* 空串 = 标题待生成（首轮对话后系统补） */}
-                  {c.title || '新对话'}
+                  {/* 真标题 → 起名中的占位 → 新对话，三级回落 */}
+                  {titleOf(c)}
                 </div>
                 <div className="text-muted-foreground text-[11px]">
                   {timeAgo(c.updated_at)}
@@ -141,13 +143,14 @@ export function DeleteConversationDialog({
   onOpenChange,
   onConfirm,
 }: DeleteConversationDialogProps) {
+  const titleOf = useConversationTitle()
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>删除这条对话？</AlertDialogTitle>
           <AlertDialogDescription>
-            「{conversation?.title || '新对话'}
+            「{conversation ? titleOf(conversation) : '新对话'}
             」及其全部消息将被永久删除，无法恢复。
           </AlertDialogDescription>
         </AlertDialogHeader>

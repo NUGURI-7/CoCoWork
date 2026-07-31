@@ -65,6 +65,16 @@ export interface ConversationUpdatePayload {
   config?: Record<string, unknown>
 }
 
+/**
+ * 对齐后端 ConversationTitleOut —— 只有标题，不是整条 Conversation。
+ *
+ * 后端刻意返窄：起名请求与对话流请求并发，返回这一刻 updated_at 等字段
+ * 很可能已被流那边改过，返整条会诱使前端拿旧快照整条覆盖。
+ */
+export interface ConversationTitle {
+  title: string
+}
+
 // ============ Message ============
 
 /** 协议层角色（对齐后端 MessageRole） */

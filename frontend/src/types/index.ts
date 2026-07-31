@@ -56,6 +56,7 @@ export type {
   WorkspaceUpdatePayload,
   Conversation,
   ConversationCreatePayload,
+  ConversationTitle,
   ConversationUpdatePayload,
   MessageRole,
   SenderKind,

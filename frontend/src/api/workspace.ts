@@ -11,6 +11,7 @@ import { del, get, post, put } from '@/request'
 import type {
   Conversation,
   ConversationCreatePayload,
+  ConversationTitle,
   ConversationUpdatePayload,
   MemberRecruitPayload,
   Workspace,
@@ -80,6 +81,27 @@ export function updateConversation(
   return put<Conversation>(
     `/workspaces/${workspaceId}/conversations/${conversationId}`,
     payload,
+    { silent: true },
+  )
+}
+
+/**
+ * 让后端给这条对话自动起名。
+ *
+ * 与对话流**并发**发出（点发送的同一刻），不等流跑完 —— 起名只需要用户这句话，
+ * 跟回复没有先后关系。后端只在 title 仍为空时才真调模型，已有名字原样返回。
+ *
+ * content 由前端摊平送上来：这一刻 stream 端点还没把这条消息落库，后端自己查不到。
+ * silent —— 起名失败不该弹 toast 打扰用户，调用方静默吞掉、下次进对话再试。
+ */
+export function generateConversationTitle(
+  workspaceId: string,
+  conversationId: string,
+  content: string,
+) {
+  return post<ConversationTitle>(
+    `/workspaces/${workspaceId}/conversations/${conversationId}/generate-title`,
+    { content },
     { silent: true },
   )
 }

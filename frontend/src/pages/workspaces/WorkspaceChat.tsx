@@ -16,8 +16,26 @@ import type { MentionItem } from '@/components/chat/MentionList'
 import { MessageInput } from '@/components/chat/MessageInput'
 import { MessageList } from '@/components/chat/MessageList'
 import { getOrCreateChatStore } from '@/stores/chat-registry'
-import { createChatStore } from '@/stores/chat-store'
+import { createChatStore, type ChatState } from '@/stores/chat-store'
+import { useWorkspaceSession } from '@/stores/workspace-session'
+import type { ApiTextBlock } from '@/types'
 import { workspaceMessagesToChatMessages } from './chat-history'
+
+/**
+ * 第一条 user 消息的纯文本 —— 自动起名的依据。没有则 null（这条对话还没说过话）。
+ *
+ * 只取 text 块：artifact_ref 那种引用块对「这段对话在聊什么」没有信息量。
+ */
+function selectFirstUserText(s: ChatState): string | null {
+  const first = s.messages.find((m) => m.role === 'user')
+  if (!first) return null
+  const text = first.content
+    .filter((b): b is ApiTextBlock => b.type === 'text')
+    .map((b) => b.text)
+    .join('\n')
+    .trim()
+  return text || null
+}
 
 ring.register()
 
@@ -59,6 +77,17 @@ export function WorkspaceChat({
     [conversationId, endpoint],
   )
   const [historyLoading, setHistoryLoading] = useState(true)
+
+  // 自动起名：桶里一出现第一条 user 消息就触发，**与对话流并发**，不等流跑完。
+  // 两个时机天然被同一个 effect 覆盖 ——
+  //   ① 刚点发送（消息进桶）→ 一两秒后侧栏名字就换掉
+  //   ② 进对话 hydrate 完历史 → 上次没起成的在这儿补上（lazy 兜底白捡）
+  // 去重、占位、「已有名字就别动」全在 ensureConversationTitle 里判，这里只管报信号。
+  const firstUserText = useStore(store, selectFirstUserText)
+  const ensureTitle = useWorkspaceSession((s) => s.ensureConversationTitle)
+  useEffect(() => {
+    if (firstUserText) ensureTitle(workspaceId, conversationId, firstUserText)
+  }, [firstUserText, ensureTitle, workspaceId, conversationId])
 
   // 产物信号：桶里每收一帧 artifacts 计数 +1，转手通知上游（产出物面板）重拉。
   // 初值 0 不触发；hydrate 回放历史不动这个计数，所以进对话不会白刷一次。
