@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
+import dayjs from 'dayjs'
 import { Crown, MoreHorizontal, Trash2 } from 'lucide-react'
 
 import {
@@ -27,16 +28,6 @@ import type { Workspace } from '@/types'
 interface WorkspaceCardProps {
   workspace: Workspace
   onDelete?: (id: string) => void
-}
-
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime()
-  const minutes = Math.floor(diff / 60000)
-  if (minutes < 60) return `${Math.max(minutes, 1)} 分钟前`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours} 小时前`
-  const days = Math.floor(hours / 24)
-  return `${days} 天前`
 }
 
 /** 管家头像（d-1 后端只有 supervisor；d-2 member 接真后恢复成员头像堆叠 + N 计数） */
@@ -121,7 +112,7 @@ export function WorkspaceCard({ workspace, onDelete }: WorkspaceCardProps) {
           <div className="flex items-center justify-between gap-3">
             <SupervisorBadge />
             <span className="text-muted-foreground shrink-0 text-xs">
-              {timeAgo(workspace.updated_at)}
+              {dayjs(workspace.updated_at).fromNow()}
             </span>
           </div>
         </CardContent>

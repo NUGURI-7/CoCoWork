@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import type { LinkProps } from '@tanstack/react-router'
+import dayjs from 'dayjs'
 import { ring } from 'ldrs'
 import {
   ArrowRight,
@@ -56,15 +57,6 @@ const quickActions: QuickAction[] = [
 ]
 
 /** 相对时间：分钟 / 小时 / 天前 */
-function timeAgo(s: string): string {
-  const diff = Date.now() - new Date(s).getTime()
-  const m = Math.floor(diff / 60000)
-  if (m < 60) return `${Math.max(m, 1)} 分钟前`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `${h} 小时前`
-  return `${Math.floor(h / 24)} 天前`
-}
-
 type Counts = Record<StatKey, number | null>
 
 const INITIAL_COUNTS: Counts = {
@@ -237,7 +229,7 @@ function RecentWorkspaces({ recent }: { recent: Workspace[] | null }) {
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-medium">{w.name}</div>
             <div className="text-muted-foreground text-[11px]">
-              {timeAgo(w.updated_at)}
+              {dayjs(w.updated_at).fromNow()}
             </div>
           </div>
           <ArrowRight className="text-muted-foreground size-4 shrink-0 opacity-0 transition group-hover:opacity-100" />

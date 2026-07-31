@@ -1,3 +1,4 @@
+import dayjs from 'dayjs'
 import { Check, Trash2 } from 'lucide-react'
 
 import {
@@ -29,15 +30,6 @@ export function StatusDot({ status }: { status: ConversationStatus }) {
       )}
     />
   )
-}
-
-function timeAgo(s: string): string {
-  const diff = Date.now() - new Date(s).getTime()
-  const m = Math.floor(diff / 60000)
-  if (m < 60) return `${Math.max(m, 1)} 分钟前`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `${h} 小时前`
-  return `${Math.floor(h / 24)} 天前`
 }
 
 interface ConversationListProps {
@@ -103,7 +95,7 @@ export function ConversationList({
                   {titleOf(c)}
                 </div>
                 <div className="text-muted-foreground text-[11px]">
-                  {timeAgo(c.updated_at)}
+                  {dayjs(c.updated_at).fromNow()}
                 </div>
               </div>
               <StatusDot status={statuses[c.id] ?? 'idle'} />

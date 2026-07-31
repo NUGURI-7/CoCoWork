@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
+import dayjs from 'dayjs'
 import { Bot, BookOpen, Copy, MoreHorizontal, Trash2, Wrench } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -42,16 +43,6 @@ interface AgentCardProps {
 }
 
 /** 相对时间（简易版） */
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime()
-  const minutes = Math.floor(diff / 60000)
-  if (minutes < 60) return `${Math.max(minutes, 1)} 分钟前`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours} 小时前`
-  const days = Math.floor(hours / 24)
-  return `${days} 天前`
-}
-
 export function AgentCard({ agent, modelNameMap, onDeleted }: AgentCardProps) {
   const navigate = useNavigate()
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -175,7 +166,7 @@ export function AgentCard({ agent, modelNameMap, onDeleted }: AgentCardProps) {
               </span>
             </div>
             <span className="text-muted-foreground shrink-0 text-xs">
-              {timeAgo(agent.updated_at)}
+              {dayjs(agent.updated_at).fromNow()}
             </span>
           </div>
         </CardContent>
