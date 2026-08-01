@@ -181,7 +181,9 @@ class Embedding(UUIDBaseModel):
 
     - 始终挂 `paragraph`：命中后据此返回整段（父子块）。
     - `source_type`：content（v1 唯一）/ question / title。
-    - `text`：被 embed 的源文本（content 行 = 子块原文）。
+    - `text`：子块原文。**不等于送去 embed 的文本**——后者可能前置了段的
+      标题链（见 `ChunkConfig.prepend_title`）。此列只存原文，用途是命中后
+      展示「命中的是哪一小段」，以及日后拿它逐字定位回段落原文。
     - `embedding`：pgvector 向量，列不锁维度（兼容多库不同维度）。
     - 不可变派生数据（重嵌入 = 删了重建），故只有 `created_at`、无 `updated_at`。
     """

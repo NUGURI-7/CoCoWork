@@ -63,12 +63,23 @@ class KnowledgeRetrievalTool(CoCoTool):
 def _format_hits(hits: list[RetrievalHit]) -> str:
     """命中段拼成 markdown，给 LLM 看。
 
-    格式：`## [N] doc_name（相关度 0.xx）` + 段全文，段间用 `---` 分隔。
+    格式：`## [N] 出处 · 相关度 0.xx` + 段全文，段间用 `---` 分隔。
     只返父级段全文，不返 chunk_text / paragraph_id（噪音）。
+
+    **出处含标题链与页码**：段的 `content` 里只有它直接的那级标题，看不到
+    祖先——「不超过 30 天」脱离「第三章 > 报销流程」就是个孤儿句子。
+    `title` / `page` 本就在 RetrievalHit 里（检索层一直在填、命中测试界面
+    一直在显示），此前只是没拼进给模型的那份文本。
     """
-    blocks = [
-        f"## [{i}] {h.doc_name}(相关度 {h.score:.2f})\n\n{h.content}"
-        for i, h in enumerate(hits, 1)
-    ]
+    blocks = []
+    for i, h in enumerate(hits, 1):
+        # 无标题区域（纯 txt / md 前言）title 为空串；page 仅 PDF 有
+        parts = [h.doc_name]
+        if h.title:
+            parts.append(h.title)
+        if h.page is not None:
+            parts.append(f"第 {h.page} 页")
+        parts.append(f"相关度 {h.score:.2f}")
+        blocks.append(f"## [{i}] {' · '.join(parts)}\n\n{h.content}")
     return "\n\n---\n\n".join(blocks)
 

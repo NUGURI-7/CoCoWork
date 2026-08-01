@@ -12,6 +12,10 @@ class ChunkConfig(BaseModel):
     chunk_size: int = Field(default=512, ge=128, le=2048, description="子块大小（约 token 数）")
     overlap: int = Field(default=50, ge=0, le=512, description="相邻子块重叠")
     strategy: Literal["recursive"] = Field(default="recursive", description="切块策略")
+    prepend_title: bool = Field(
+        default=True,
+        description="算向量前是否给子块前置段的标题链；只影响送去 embedding 的文本，不影响落库的子块原文",
+    )
 
 
 class KnowledgeBaseCreate(BaseModel):

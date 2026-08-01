@@ -13,6 +13,7 @@
 """
 
 import logging
+from typing import NamedTuple
 from uuid import UUID
 
 from app.core.storage import storage
@@ -32,6 +33,20 @@ logger = logging.getLogger(__name__)
 # 与 Paragraph.title 的 max_length 对齐。实测本项目标题链最长 129 字、远不到上限，
 # 但 PDF 那条路的层级深度未知——落库前截一刀，免得一条超长链让整份文档处理失败。
 _TITLE_MAX = 256
+
+
+class _ChunkItem(NamedTuple):
+    """一个待 embed 的子块。
+
+    `text` 与 `embed_text` **刻意分开**：前者落库（`Embedding.text` = 子块
+    原文，命中后展示「命中了哪一小段」用），后者送去算向量（可能前置了段的
+    标题链）。两者不相等是有意为之，不是 bug。
+    """
+
+    paragraph_id: UUID
+    position: int
+    text: str
+    embed_text: str
 
 
 async def _parse_with_fallback(
@@ -122,33 +137,44 @@ async def process_document(doc_id: UUID) -> None:
     kb =  doc.knowledge_base
     chunk_cfg = ChunkConfig(**kb.chunk_config)
 
-    # 汇总所有段的子块 [(paragraph_id, position, text), ...]
-    chunk_items: list[tuple] = []
+    # 汇总所有段的子块
+    chunk_items: list[_ChunkItem] = []
     for paragraph in paragraphs:
-        sub_chunks = splitter.split(paragraph.content,chunk_cfg)
+        # 标题链前置：段的 content 只带**直接那级**标题，切成子块后连这个都
+        # 可能没有——「不超过 30 天」脱离「第三章 > 报销流程」检索时就比不中。
+        # 形态同 LlamaIndex 的 MetadataMode.EMBED / Anthropic Contextual Retrieval。
+        # 段内所有子块共用同一前缀，故在内层循环外算一次。
+        prefix = (
+            f"{paragraph.title}\n\n"
+            if chunk_cfg.prepend_title and paragraph.title
+            else ""
+        )
+        sub_chunks = splitter.split(paragraph.content, chunk_cfg)
         for idx, chunk_text in enumerate(sub_chunks):
-            chunk_items.append((paragraph.id, idx, chunk_text))
+            chunk_items.append(
+                _ChunkItem(paragraph.id, idx, chunk_text, prefix + chunk_text)
+            )
 
     # 分批调 embedding（避免单次 batch 撞 API 上限）
     BATCH = 32
     for start in range(0,len(chunk_items), BATCH):
         batch = chunk_items[start: start + BATCH]
-        texts = [item[2] for item in batch]
 
+        # 送去算向量的是 embed_text（含标题链），落库的是 text（子块原文）
         vectors = await ModelClient.create_embedding(
-            kb.embedding_model, texts,
+            kb.embedding_model, [c.embed_text for c in batch],
         )
         embeddings = [
                 Embedding(
                     knowledge_base_id = kb.id,
                     document_id=doc.id,
-                    paragraph_id=pid,
+                    paragraph_id=c.paragraph_id,
                     source_type=SourceType.CONTENT,
-                    text=text,
-                    position=pos,
+                    text=c.text,
+                    position=c.position,
                     embedding=vector
                 )
-            for (pid, pos, text),vector in zip(batch, vectors)
+            for c, vector in zip(batch, vectors)
         ]
         await Embedding.bulk_create(embeddings)
 
