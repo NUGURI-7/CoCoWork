@@ -35,6 +35,7 @@ import type {
   ApiContentBlock,
   ApiHistoryMessage,
   ArtifactsPayload,
+  CompactStopPayload,
   AssistantMessage,
   ChatMessage,
   ContentBlockDeltaPayload,
@@ -129,6 +130,24 @@ export interface ChatState {
    * 于是面板的数据来源始终只有接口一处，不存在两份状态要对齐。
    */
   artifactsRevision: number
+
+  /**
+   * 正在压缩历史 —— compact_start 到 compact_stop 之间为 true。
+   *
+   * 这两帧在 message_start **之前**到（后端压缩发生在装配之前），所以此刻还没有
+   * assistant 气泡，提示只能挂在列表底部。用户在这几秒里是干等的，必须给反馈。
+   */
+  isCompacting: boolean
+  /**
+   * 该在哪些消息**之前**画「已整理此前的对话记录」分隔线。
+   *
+   * 存的是压缩发生那一刻最后一条消息的 id（= 本轮刚发出的那条 user 消息），
+   * 分隔线画在它上方，读作「以上内容已归档」。用数组而不是单值：一次会话里
+   * 可能压多次，每次留一道。
+   *
+   * **刻意只活在内存里**：刷新后消失（产品决策，别的项目也不留痕）。
+   */
+  compactedBeforeIds: string[]
 
   send: (content: ApiContentBlock[], mentionedMemberIds?: string[]) => Promise<void>
   stop: () => void
@@ -358,6 +377,25 @@ export function createChatStore({
             })
             return
           }
+          case 'compact_start': {
+            // 历史超线，后端停下来先把旧的压成摘要。这一帧之后要等几秒才有正文
+            set((s) => {
+              s.isCompacting = true
+            })
+            return
+          }
+          case 'compact_stop': {
+            const p = payload as CompactStopPayload
+            set((s) => {
+              s.isCompacting = false
+              // ok=false 是「摘要没生成出来、这轮降级用全量历史」——不是错误，
+              // 这一轮照常出结果，所以不弹错也不画线：确实什么都没归档
+              if (!p.ok) return
+              const last = s.messages[s.messages.length - 1]
+              if (last) s.compactedBeforeIds.push(last.id)
+            })
+            return
+          }
           case 'artifacts': {
             const p = payload as ArtifactsPayload
             // 后端保证这一帧在 message_stop 之前到，所以挂得上当前这条消息
@@ -468,6 +506,8 @@ export function createChatStore({
         messages: [],
         isLoading: false,
         artifactsRevision: 0,
+        isCompacting: false,
+        compactedBeforeIds: [],
 
         async send(content, mentionedMemberIds) {
           // 防重入 —— 上一轮还在跑时不允许新发送
@@ -528,6 +568,8 @@ export function createChatStore({
           set((s) => {
             s.messages = []
             s.isLoading = false
+            s.isCompacting = false
+            s.compactedBeforeIds = []
           })
         },
 

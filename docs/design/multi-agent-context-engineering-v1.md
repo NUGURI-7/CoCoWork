@@ -13,11 +13,11 @@
 | 块 | 状态 | 现状 |
 |---|---|---|
 | **Isolate 隔离** | ✅ 已做 | `ViewContextAssembler` 视角化 + `SubAgentMiddleware` 子 agent 隔离 |
-| **Compress 压缩** | ❌ | 每轮把 DB 全量历史视角化后喂入，不压缩 |
-| **Select 选择** | ❌ | @直连成员也看全量视角化历史，不按相关性筛 |
-| **Write 共享记忆** | ❌ | 成员产出只在消息流，无空间级白板 → **成员互相失忆** |
+| **Compress 压缩** | ✅ 2026-08-01 | 两层都完工：一次回复内挂框架的 `SummarizationMiddleware`；跨回复自己写（`history_budget.py` + `compaction_service.py`），实测 `10,542 → 5,022` |
+| **Select 选择** | ❌ 2026-07-31 否决 | 与 Compress 的前提冲突：按 query 挑 → 前缀每轮都变 → prompt cache 全丢，等于把压缩省下的吐回去 |
+| **Write 共享记忆** | ✅ 2026-07-31 划掉 | 原始诉求被沙箱产物系统覆盖：`sandbox_artifacts` 表 + `fetch_artifact` 按需取回 + 跨对话面板，形态是文件不是内存 |
 
-**本期顺序**：先 **Compress**（最易出成果）→ **Write** → **Select**。
+**本期结果（2026-08-01）**：只做了 **Compress**，另外两块在做的过程中各自消解掉了 —— Write 的诉求被沙箱产物系统覆盖、Select 与 Compress 护 prompt cache 的前提直接冲突。**四件套至此收口。**
 
 ---
 
@@ -63,9 +63,9 @@
 **关键接缝**：workspace 跨轮历史在 **DB 全量重放、没挂 checkpointer**（`ViewContextAssembler` 每轮拉 `past` 全量 build）。所以 Compress 在本项目是两层，别以为挂个 middleware 就完事：
 
 - **层 A（单 run 内）**：挂 `SummarizationMiddleware` 到 supervisor + 各成员的 `create_agent` → 压**一次 run 内**派活 / 工具调用堆积的上下文。**deepagents 白送**。
-- **层 B（跨轮历史）**：在 `ViewContextAssembler` 层自己做——摘要旧轮存 DB + 留近 N 轮（roadmap 说的"长对话历史压缩"主体）。**deepagents 帮不上**。
+- **层 B（跨轮历史）**：在 `ViewContextAssembler` 层自己做——摘要旧轮存 DB + 留近 N 轮（roadmap 说的"长对话历史压缩"主体）。**deepagents 帮不上**。**✅ 2026-08-01 完工**，阈值 / 摘要形态 / 失败三层 / 实测数字见 `docs/context.md` 最近迭代。
 
-> 方案细节（触发阈值、摘要存哪张表、怎么跟视角化协议 `<msg from>` 配合、跟 prompt cache 的关系）= 下一步出 spec，归用户写、过审后落盘。
+> 方案细节（触发阈值、摘要存哪张表、怎么跟视角化协议 `<msg from>` 配合、跟 prompt cache 的关系）**已在 2026-08-01 那一轮逐条讨论并落地**，结论记在 `docs/context.md` 最近迭代，不在本文重复。
 
 ---
 
@@ -78,4 +78,4 @@
 
 ## 6. 下一步
 
-出 **Compress 方案**（层 A + 层 B）→ 审 → 写。
+**本文已完结。** 四件套收口于 2026-08-01（Compress 两层完工、Select 否决、Write 划掉、Isolate 早已完成）。后续如果重新捡起 Select / Write，要先推翻上表里记的那两条否决理由。

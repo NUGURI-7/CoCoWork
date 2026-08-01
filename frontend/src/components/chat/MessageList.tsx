@@ -1,5 +1,5 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowDown, User } from 'lucide-react'
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Archive, ArrowDown, User } from 'lucide-react'
 import { bouncy } from 'ldrs'
 
 bouncy.register()
@@ -31,6 +31,28 @@ function assistantBlocksToText(blocks: AssistantMessageType['blocks']): string {
     .filter((b) => b.type === 'text')
     .map((b) => ('content' in b ? b.content : ''))
     .join('')
+}
+
+/**
+ * 「已整理此前的对话记录」分隔线。
+ *
+ * 画在被归档那段历史的**下方边界**上，读作「以上内容已被压成摘要」。
+ * 用户往上翻会发现模型对更早的内容记得模糊，这条线告诉他分界在哪 ——
+ * ChatGPT / Claude 的 compact 也是这个形态。
+ *
+ * 只在本次会话可见，刷新后消失（产品决策：别的项目刷新后也不留）。
+ */
+function CompactDivider() {
+  return (
+    <div className="my-2 flex items-center gap-3 px-1" role="separator">
+      <span className="bg-border h-px flex-1" />
+      <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
+        <Archive size={12} />
+        已整理此前的对话记录
+      </span>
+      <span className="bg-border h-px flex-1" />
+    </div>
+  )
 }
 
 /** 触底容差 —— 离底部多少 px 内算"在底"。 */
@@ -75,6 +97,10 @@ function attachmentsOf(content: ApiContentBlock[]): Artifact[] {
  */
 export function MessageList({ topFade = false }: { topFade?: boolean }) {
   const messages = useChat((s) => s.messages)
+  const isCompacting = useChat((s) => s.isCompacting)
+  const compactedBeforeIds = useChat((s) => s.compactedBeforeIds)
+  // 数组转 Set：渲染里每条消息都要查一次，别在 map 里做 O(n) includes
+  const compactedBefore = useMemo(() => new Set(compactedBeforeIds), [compactedBeforeIds])
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
@@ -145,12 +171,25 @@ export function MessageList({ topFade = false }: { topFade?: boolean }) {
       onScroll={handleScroll}
     >
       <div ref={innerRef} className="mx-auto max-w-3xl space-y-6 px-4 pb-36">
-        {messages.map((msg) =>
-          msg.role === 'user' ? (
-            <UserMessageRow key={msg.id} message={msg} />
-          ) : (
-            <AssistantMessageRow key={msg.id} message={msg} />
-          ),
+        {messages.map((msg) => (
+          <Fragment key={msg.id}>
+            {compactedBefore.has(msg.id) && <CompactDivider />}
+            {msg.role === 'user' ? (
+              <UserMessageRow message={msg} />
+            ) : (
+              <AssistantMessageRow message={msg} />
+            )}
+          </Fragment>
+        ))}
+
+        {/* 压缩中 —— 这几秒还没有 assistant 气泡（compact 两帧在 message_start
+            之前到），提示只能挂在列表底部。不说「正在思考」是因为它此刻确实
+            没在想问题，在归档旧记录，说清楚用户才知道等的是什么 */}
+        {isCompacting && (
+          <div className="text-muted-foreground flex items-center gap-2 px-1 py-2 text-sm">
+            <l-bouncy size="20" speed="1.2" color="#2f6b53" />
+            正在整理对话记录…
+          </div>
         )}
       </div>
 

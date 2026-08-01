@@ -10,7 +10,11 @@
 - covers_until_message = 封存游标:摘要覆盖到这条消息(含)为止,之后的
   消息拼上下文时照原样走视角化;消息无单删入口,FK CASCADE 安全
 - source_tokens / summary_tokens / trigger = 记账列(Letta compaction_stats
-  同款):压缩前上下文规模 / 摘要本身规模 / 触发原因
+  同款):触发时的上下文水位 / 摘要本身规模 / 触发原因。
+  **source_tokens 不是「被封存那段有多长」** —— 它是整个上下文,里面装着系统提示 +
+  工具定义 + 花名册这类每轮都在、压缩一个字也动不到的固定开销(实测空对话地板就
+  五千多)。拿它除 summary_tokens 算出来的「压缩比」是虚高的。压缩效果看逐轮
+  token 曲线(messages 表的 prompt_tokens),这一列的用处是「压缩发生在多高的水位上」
 - 链式吸收:二次封存的原料 = 上一行摘要 + 新被封消息,产出新行
 - conversation 删则连带删(CASCADE)
 """
@@ -32,7 +36,10 @@ class ConversationSummary(UUIDBaseModel, TimestampMixin):
     )
     summary_text = fields.TextField(description="中性摘要正文(成品,直接拼进上下文)")
 
-    source_tokens = fields.IntField(default=0, description="压缩前上下文规模(API usage 上报)")
+    source_tokens = fields.IntField(
+        default=0,
+        description="触发时的上下文水位(含固定开销,不是被封存那段的大小)",
+    )
     summary_tokens = fields.IntField(default=0, description="摘要正文的 token 数")
     trigger = fields.CharField(
         max_length=32, default="threshold",

@@ -20,7 +20,11 @@ from uuid import UUID, uuid4
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from app.agents.workspace.view_context_assembler import ViewContextAssembler, Viewer
+from app.agents.workspace.view_context_assembler import (
+    ViewContextAssembler,
+    Viewer,
+    split_at_cursor,
+)
 from app.models import Message, MessageRole, SandboxArtifact, SenderKind
 from app.tools.base import MAX_TOOL_OUTPUT_CHARS
 
@@ -58,8 +62,10 @@ def tool(name: str, *, cid: str = "c1", args: str = "{}", result=None, status="s
     }
 
 
-async def assemble(past: list[Message], viewer: Viewer, artifacts=None):
-    return await ViewContextAssembler().build(past, viewer, NAMES, artifacts or {})
+async def assemble(past: list[Message], viewer: Viewer, artifacts=None, summary=None):
+    return await ViewContextAssembler().build(
+        past, viewer, NAMES, artifacts or {}, summary,
+    )
 
 
 async def build(past: list[Message], viewer: Viewer, artifacts=None):
@@ -295,3 +301,40 @@ async def test_artifacts_of_others_also_go_to_a_system_message():
 
     assert out[0].content == '<msg from="小A#019f0d9b">画好了</msg>'
     assert out[1].content == '<msg from="System"><artifacts>chart.svg (2KB)</artifacts></msg>'
+
+
+# ---------------------------------------------------------------- 封存游标
+
+def test_游标为空时全部未覆盖():
+    past = [msg([{"type": "text", "text": "x"}]) for _ in range(5)]
+    covered, uncovered = split_at_cursor(past, None)
+
+    assert covered == []
+    assert uncovered == past
+
+
+def test_游标把历史切成两半():
+    """覆盖到第 2 条为止 → 前三条已封存，第 3 条往后还要原样回放。"""
+    past = [msg([{"type": "text", "text": "x"}]) for _ in range(5)]
+    covered, uncovered = split_at_cursor(past, past[2].id)
+
+    assert covered == past[:3]     # 游标那条自己也算已覆盖
+    assert uncovered == past[3:]
+    assert not set(id(m) for m in covered) & set(id(m) for m in uncovered)
+
+
+def test_覆盖到最后一条时没有可回放的():
+    past = [msg([{"type": "text", "text": "x"}]) for _ in range(5)]
+    covered, uncovered = split_at_cursor(past, past[-1].id)
+
+    assert covered == past
+    assert uncovered == []
+
+
+def test_游标找不到时按未覆盖处理():
+    """重放一遍全量是浪费，漏掉一整段是永久失忆 —— 两害相权取轻。"""
+    past = [msg([{"type": "text", "text": "x"}]) for _ in range(5)]
+    covered, uncovered = split_at_cursor(past, uuid4())
+
+    assert covered == []
+    assert uncovered == past

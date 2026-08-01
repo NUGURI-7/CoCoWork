@@ -8,6 +8,7 @@ LangChain messages。核心是「视角化」——同一段历史,从不同成�
 身份语义,所以独立成一层。进图前一次性构建(每轮对话重新拉历史拼),不是
 loop 内的 middleware。
 """
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import UUID
@@ -22,9 +23,11 @@ from app.agents.runtime.blocks import (
     ToolUseBlock,
     parse_blocks,
 )
-from app.models import Message, SandboxArtifact, SenderKind
+from app.models import ConversationSummary, Message, SandboxArtifact, SenderKind
 from app.services.sandbox.artifact import human_size
 from app.tools.base import MAX_TOOL_OUTPUT_CHARS
+
+logger = logging.getLogger(__name__)
 
 # 非成员说话人的固定显示名(成员名字走 names map)
 _SPEAKER_USER = "User"
@@ -42,7 +45,7 @@ _RESULT_ERROR = "（工具执行出错）"
 _RESULT_EMPTY = "（工具没有返回内容）"
 
 # 超限结果保留的开头长度 —— 够模型认出「这是什么东西」，不够就让它自己取全文
-_REPLAY_PREVIEW_CHARS = 500
+REPLAY_PREVIEW_CHARS = 500
 
 
 def member_key(member_id: UUID) -> str:
@@ -53,6 +56,32 @@ def member_key(member_id: UUID) -> str:
 def member_label(member_id: UUID, name: str) -> str:
     """成员的唯一显示标签(<msg from> / 花名册 / 行动痕迹共用) —— 名字#id8。"""
     return f"{name}#{member_id.hex[:8]}"
+
+
+def split_at_cursor(
+        messages: Sequence[Message],
+        cursor_id: UUID | None,
+) -> tuple[list[Message], list[Message]]:
+    """按封存游标把历史切成两半:(已被摘要覆盖的, 还没被覆盖的)。
+
+    两个调用方共用 —— 压缩时只关心后一半(这次该压哪些),拼上下文时两半都要
+    (前一半的产物要并进摘要那条清单,后一半照旧视角化)。
+
+    **按 id 定位而不是比时间戳**:同一毫秒落库的两条消息谁先谁后说不准,
+    而这里错一条就是一条消息被压两遍或者漏掉。covers_until_message 存的
+    本来就是一个确定的锚点。
+
+    游标为 None(还没压过)或在历史里找不到 → 全算「没被覆盖」。找不到理论上
+    不该发生(消息没有单删入口,conversation 删了 CASCADE 会带走摘要);真碰上,
+    重放一遍全量只是浪费,而漏掉一整段历史是永久失忆,两害相权。
+    """
+    if cursor_id is None:
+        return [], list(messages)
+    for i, m in enumerate(messages):
+        if m.id == cursor_id:
+            return list(messages[:i + 1]), list(messages[i + 1:])
+    logger.warning("摘要游标在历史里找不到,按未覆盖处理 cursor=%s", cursor_id)
+    return [], list(messages)
 
 
 @dataclass(frozen=True)
@@ -73,11 +102,19 @@ class Viewer:
     """谁在应答 —— 决定 build 时哪些消息算「我」。
 
     sender_kind: supervisor / member(user 不会是应答者)。
+                 **None = 中性视角**:谁都不是,所有人一律第三人称具名 ——
+                 压缩取原料时用,摘要是一份全员共用的文本,不能有「我」。
     member_id:   sender_kind == member 时为该成员 id,否则 None。
     """
 
-    sender_kind: SenderKind
+    sender_kind: SenderKind | None
     member_id: UUID | None = None
+
+
+# 中性视角的那一个 —— 给它个名字,免得调用方各自写 Viewer(sender_kind=None)
+# 还得自己想明白为什么这么写。_is_me 不必为它加分支:m.sender_kind != None
+# 恒为真,每条消息都自然走第三人称那条路径
+NEUTRAL_VIEW = Viewer(sender_kind=None)
 
 
 class ViewContextAssembler:
@@ -101,6 +138,7 @@ class ViewContextAssembler:
             viewer: Viewer,
             names: dict[UUID, str],
             artifacts: dict[UUID, list[SandboxArtifact]],
+            summary: ConversationSummary | None,
     ) -> AssembledContext:
         """DB 历史 + 视角 → 喂给应答者的 LLM messages(视角化 + 身份标签)。
 
@@ -112,10 +150,36 @@ class ViewContextAssembler:
             artifacts: message_id → 该消息产出的文件(决策 24)。同 names,
                       由装配方查好传入。**刻意不给默认值** —— 给了的话哪天
                       调用方漏传,签名对、类型对、不报错,只是产物清单静默消失。
+            summary: 这个对话最新的一条封存摘要(还没压过则 None)。它覆盖到的那段
+                      历史不再回放,由摘要正文顶替。**同 artifacts 刻意不给默认值**
+                      —— 漏传的话压缩会静默失效:每轮照样烧一次摘要,然后照样喂全量历史。
         """
 
         out: list[BaseMessage] = []
         truncated = False
+
+        # 已封存的那段历史 → 摘要正文 + 一条合并的产物清单,顶替掉原文。
+        # 这之后 messages 只剩「还要原样回放」的那些 —— 特意就地重新赋值而不另起
+        # 名字:下面整个循环、truncated 判定、产物挂载全都只该看这批
+        if summary is not None:
+            archived, messages = split_at_cursor(
+                messages, summary.covers_until_message_id
+            )
+            out.append(HumanMessage(
+                f'<msg from="{_SPEAKER_SYSTEM}">'
+                f'<history_summary>\n{summary.summary_text}\n</history_summary>'
+                f'</msg>'
+            ))
+            # 被顶替掉那批消息名下的产物,合并成一条清单跟在摘要后面。
+            # **不合并的话它们跟着原文一起消失** —— 模型再也看不见早期产出的文件,
+            # 用户说「把刚才那个图改成折线」时它既不知道有这个文件、也无从 fetch。
+            # 摘要里只说「做了张柱状图」(语义),文件名和大小由这条清单给(事实),
+            # 分工同决策 24:会猜的归模型,不能猜的归平台
+            merged = self._render_artifacts(
+                [a for m in archived for a in artifacts.get(m.id, ())]
+            )
+            if merged:
+                out.append(HumanMessage(f'<msg from="{_SPEAKER_SYSTEM}">{merged}</msg>'))
 
         # task 派活块入参里的 subagent_type（member_xxxx）→ 显示标签（名字#id8）
         member_labels = {
@@ -320,7 +384,7 @@ class ViewContextAssembler:
         if len(result) <= MAX_TOOL_OUTPUT_CHARS:
             return result
         head = (
-            f"{result[:_REPLAY_PREVIEW_CHARS]}\n\n"
+            f"{result[:REPLAY_PREVIEW_CHARS]}\n\n"
             f"[结果过长已截断，完整 {len(result)} 字符"
         )
         if not tool_use_id:

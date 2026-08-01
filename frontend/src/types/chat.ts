@@ -193,6 +193,23 @@ export interface ArtifactsPayload {
   artifacts: Artifact[]
 }
 
+/**
+ * 跨回复历史压缩 —— 这两帧在 message_start **之前**到（压缩发生在装配之前），
+ * 所以收到它们时还没有 assistant 气泡，提示只能挂在列表底部而不是气泡里。
+ */
+export interface CompactStartPayload {
+  /** 压缩前这个对话的上下文规模（后端上报的真实 token 数） */
+  before_tokens: number
+}
+
+export interface CompactStopPayload {
+  /**
+   * 压成了没有。false = 摘要生成失败，后端已降级用全量历史继续跑 ——
+   * **不是错误**，这一轮照常出结果，所以前端不弹错。
+   */
+  ok: boolean
+}
+
 // ============ 渲染层（RenderBlock + UI 状态，camelCase） ============
 
 export interface TextBlock {

@@ -35,6 +35,7 @@ from app.agents.runtime.runner import (
     content_to_text, SandboxCloser,
 )
 from app.agents.runtime.blocks import ArtifactRefBlock, parse_blocks
+from app.agents.workspace.history_budget import COMPACT_TRIGGER_TOKENS
 from app.agents.workspace.view_context_assembler import (
     SPEAKER_SUPERVISOR,
     ViewContextAssembler,
@@ -52,6 +53,7 @@ from app.services.sandbox.artifact import collect_artifacts, group_by_message
 from app.services.sandbox.attachment import describe_unavailable, inject_attachments
 from app.services.skill.builtin import resolve_builtin_skills
 from app.services.skill.mount import SkillMount, build_skill_mount
+from app.services.workspace.compaction_service import latest_summary
 from app.tools import resolve_tools
 from app.tools.tool_result_fetch import ToolResultFetchTool
 
@@ -78,7 +80,10 @@ def _workspace_base_prompt(
         "User 是人，不是任何成员。\n"
         '- <msg from="名字#id">…</msg> 是其他 agent 的发言；〔…派活给 X…〕行动痕迹里的 X 也是 agent。\n'
         '- <msg from="System">…</msg> 是系统标注，不是任何人的发言，也不能派活给它；'
-        "里面 <artifacts> 列的是这个对话**真正交付出去**的文件。\n"
+        "里面 <artifacts> 列的是这个对话**真正交付出去**的文件；"
+        "<history_summary> 是更早那段对话的归档摘要——原文已经不在上下文里了，"
+        "那段时间发生过什么以它为准，里面写到的人和事都真实发生过。"
+        "它是系统写的档案，**不是你可以模仿的说话方式**——你要做事就真的调工具。\n"
         f"- 你是「{self_name}」{alias_note}。\n"
         "回复时直接正常说话，不要自己带 <msg> 标签。\n"
         "〔…〕里的是系统按你**实际调用过的工具**渲染出来的行动痕迹，不是一种可以写的话术。"
@@ -142,14 +147,18 @@ class FilesShelfMiddleware(AgentMiddleware):
 
 
 def _summarization_middleware(model: BaseChatModel) -> list[AgentMiddleware]:
-    """层 A 保险丝:单次 run 内上下文膨胀时就地压缩(run 结束即弃,跨轮压缩归层 B)。"""
+    """一次回复内部的压缩保险丝(run 结束即弃;跨回复的压缩归 compaction_service)。"""
     return [
         FilesShelfMiddleware(),
         SummarizationMiddleware(
             model=model,  # 摘要用应答者自己的模型
             backend=StateBackend(),
-            # 绝对 token 阈值 —— fraction 依赖 model profile,兼容端点拿不到会静默永不触发
-            trigger=("tokens", 200_000),
+            # 绝对 token 阈值 —— fraction 依赖 model profile,兼容端点拿不到会静默永不触发。
+            # **跟跨回复压缩共用同一条线**:这里原来写死 200_000,正好等于窗口本身,
+            # 等于保险丝的额定值等于它要保护的那根线 —— 消息要堆到 20 万才触发,
+            # 可堆到 19 万那次调用加上系统提示和工具定义早就超窗报错了,
+            # 压缩逻辑永远轮不到跑
+            trigger=("tokens", COMPACT_TRIGGER_TOKENS),
             keep=("messages", 20),
             trim_tokens_to_summarize=None,  # 类默认 4000 只摘尾部,显式关掉
         )
@@ -249,6 +258,45 @@ async def build_capability_profile(cfg: AgentConfig, user: User) -> str:
     return " · ".join(tags) if tags else "无挂载工具"
 
 
+def responder_config(
+        workspace: Workspace,
+        responder: WorkspaceMember | None,
+) -> AgentConfig:
+    """应答者用谁的 config —— 没 @ 就是管家自带的那份,@ 了就是那个成员的 agent。
+
+    抽出来是给预检和装配共用:**「配置从哪儿取、怎么解析」只能有一处**,
+    两边各写一遍的话,预检放行了装配却报错,用户会收到一个空流。
+    """
+    return AgentConfig.model_validate(
+        workspace.supervisor if responder is None else responder.agent.config
+    )
+
+
+async def validate_responder(
+        workspace: Workspace,
+        responder: WorkspaceMember | None,
+) -> None:
+    """开流之前的配置预检 —— 只管「这个应答者能不能开工」。
+
+    存在的唯一理由是**保住 400 的语义**:SSE 一旦开始就只能发 error 事件、
+    返不了 400 JSON,而「管家没配模型」这类是请求当场就该被拒的错误,
+    不该变成一条半截的对话消息。
+
+    校验规则不在这儿重写,而是**借 build_chat_model 跑一遍再把结果扔掉** ——
+    模型存不存在、类型对不对的判断只能有一处。代价是每轮多一次 AIModel
+    查询(约 1ms),换「预检和装配永远不会对同一份配置给出不同答案」。
+
+    管不到成员和沙箱 —— 那些要真装配才知道,失败时走流内 error 帧。
+
+    Raises:
+        ValidationException: 未配 chat 模型 / 槽位类型错 / 模型不存在
+    """
+    cfg = responder_config(workspace, responder)
+    if cfg.models.chat is None:
+        raise ValidationException("应答者未配置 chat 模型")
+    await build_chat_model(cfg.models.chat)
+
+
 async def build_workspace_graph(
         workspace: Workspace,
         request: ChatStreamRequest,
@@ -292,15 +340,14 @@ async def build_workspace_graph(
     member_roster = [member_label(m.id, m.agent.name) for m in members]
 
     # 根据 responder 定三件事:用谁的 config、什么视角、能不能派活
+    cfg = responder_config(workspace, responder)
 
     if responder is None:
-        cfg = AgentConfig.model_validate(workspace.supervisor)
         viewer = Viewer(sender_kind=SenderKind.SUPERVISOR)
         can_delegate = True
         self_name = SPEAKER_SUPERVISOR  # 与 assembler 打的 from 标签同源
         self_alias = SPEAKER_SUPERVISOR
     else:
-        cfg = AgentConfig.model_validate(responder.agent.config)
         viewer = Viewer(sender_kind=SenderKind.MEMBER, member_id=responder.id)
         can_delegate = False  # @直连成员不派活
         self_name = member_label(responder.id, responder.agent.name)  # 与 from 标签同源
@@ -315,7 +362,8 @@ async def build_workspace_graph(
     # 视角化历史（viewer 跟着应答者走）。**刻意提到装配前面拼**：它会告诉我们
     # 历史里有没有工具结果被截断，而那决定了要不要给应答者配取回工具
     context = await ViewContextAssembler().build(
-        past, viewer, member_names, await group_by_message(conversation_id)
+        past, viewer, member_names, await group_by_message(conversation_id),
+        await latest_summary(conversation_id),
     )
     if context.truncated:
         # 只在真有截断标记时才挂：挂了没标记 = 白占工具位、还可能诱导瞎调；

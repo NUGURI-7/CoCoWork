@@ -36,6 +36,10 @@ class EventType(StrEnum):
     # P5 — 沙箱产物（一轮结束时交付区里收到的文件清单）
     ARTIFACTS = "artifacts"
 
+    # 跨回复历史压缩 —— 用户在这两帧之间干等几秒，前端靠它显示「正在整理对话记录」
+    COMPACT_START = "compact_start"
+    COMPACT_STOP = "compact_stop"
+
 
 def sse_event(event: EventType | str, data: dict[str, Any]) -> str:
     """把事件类型 + 字典 payload 序列化成 SSE 帧（`event: ...\\ndata: ...\\n\\n`）。

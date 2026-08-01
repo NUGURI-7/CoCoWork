@@ -8,6 +8,7 @@ POST /workspaces/{wid}/conversations/{cid}/stream  →  text/event-stream
 - 应答者经 build_workspace_graph 装配：没 @ → supervisor（workspace.supervisor jsonb、不在 agents 表）；@ 了 → 被 @ 的成员
 """
 import asyncio
+import logging
 from typing import Annotated
 from uuid import UUID
 
@@ -19,16 +20,27 @@ from app.agents.runtime import (
     MessageCollector,
     run_chat_stream,
 )
-from app.agents.workspace.workspace import build_workspace_graph
+from app.agents.runtime.adapter import ERROR_CODE_INTERNAL, ERROR_MESSAGE_GENERIC
+from app.agents.runtime.events import EventType, sse_event
+from app.agents.workspace.history_budget import should_compact
+from app.agents.workspace.workspace import build_workspace_graph, validate_responder
 from app.core.depends import get_current_user
 from app.core.exceptions import NotFound404
+from app.core.exceptions.types import AppApiException
 from app.core.observability import TraceContext
 from app.models import Conversation, Message, MessageStatus, SenderKind, MessageRole, WorkspaceMember
 from app.models.user import User
 from app.schemas.agent.chat_schema import ChatStreamRequest
 from app.schemas.workspace import ConversationStreamIn, MessageAppend
 from app.services.sandbox.attachment import resolve_refs
-from app.services.workspace import MessageService, get_message_service
+from app.services.workspace import (
+    CompactionService,
+    MessageService,
+    get_compaction_service,
+    get_message_service,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/conversations/{conversation_id}",
@@ -37,6 +49,7 @@ router = APIRouter(
 
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
 MessageServiceDep = Annotated[MessageService, Depends(get_message_service)]
+CompactionServiceDep = Annotated[CompactionService, Depends(get_compaction_service)]
 
 SSE_MEDIA_TYPE = "text/event-stream"
 
@@ -48,6 +61,7 @@ async def conversation_stream(
         body: ConversationStreamIn,
         current_user: CurrentUserDep,
         svc: MessageServiceDep,
+        compaction: CompactionServiceDep,
 ) -> StreamingResponse:
     # ① 归属校验 + 取数：JOIN 一次过；prefetch workspace 拿 supervisor jsonb
     conversation = (
@@ -104,17 +118,9 @@ async def conversation_stream(
     # 用 compat 版：它返回标准库 uuid.UUID，Tortoise 的 UUIDField 直接吃。
     message_id = uuid_compat.uuid7()
 
-    # ④ 应答者装配（可 raise → 400 JSON，SSE 还没起）
-    prepared = await build_workspace_graph(
-        conversation.workspace,
-        ChatStreamRequest(content=content, history=[]),
-        current_user,
-        past,
-        responder,
-        message_id=message_id,
-        conversation_id=conversation_id,
-        attachments=attachments,
-    )
+    # ④ 开流前的配置预检（可 raise → 400 JSON，SSE 还没起）。
+    #    真正的装配挪进流里了 —— 它得等压缩写完摘要才能拼历史
+    await validate_responder(conversation.workspace, responder)
 
     collector = MessageCollector()
 
@@ -157,6 +163,47 @@ async def conversation_stream(
     async def stream():
         status = MessageStatus.STOPPED  # 悲观默认：没自然走完就是被掐
         try:
+            # ⑤ 超线就先压一次历史。用户在这儿干等几秒，两帧之间前端显示进度。
+            #    压缩失败只是 ok=false，不中断这一轮 —— 降级用全量历史照常跑
+            if should_compact(conversation.context_tokens):
+                yield sse_event(
+                    EventType.COMPACT_START,
+                    {"before_tokens": conversation.context_tokens},
+                )
+                summary = await compaction.compact(conversation, past)
+                yield sse_event(EventType.COMPACT_STOP, {"ok": summary is not None})
+
+            # ⑥ 装配（原来在流外，一行没改，只是搬进来 —— 它要读上面刚写的摘要）
+            try:
+                prepared = await build_workspace_graph(
+                    conversation.workspace,
+                    ChatStreamRequest(content=content, history=[]),
+                    current_user,
+                    past,
+                    responder,
+                    message_id=message_id,
+                    conversation_id=conversation_id,
+                    attachments=attachments,
+                )
+            except Exception as e:
+                # 装配失败已经不能返 400 了（SSE 开着），只能发错误帧。
+                # **必须先发 message_start** —— 前端的 error 分支要求最后一条是
+                # assistant 消息，没有气泡它会静默丢掉这一帧（chat-store.ts 的
+                # `if (m?.role !== 'assistant') return`），那就又变成「界面毫无反应」，
+                # 正是 4035ed6 修过的那个病。
+                # 业务异常带原文（「成员 X 没配模型」是说给用户听的），
+                # 其余走通用文案防细节外泄（栈 / 路径 / SQL）
+                logger.exception("workspace 装配失败 conversation_id=%s", conversation_id)
+                yield sse_event(EventType.MESSAGE_START, {"id": str(message_id)})
+                yield sse_event(EventType.ERROR, {
+                    "code": ERROR_CODE_INTERNAL,
+                    "message": (
+                        e.message if isinstance(e, AppApiException) else ERROR_MESSAGE_GENERIC
+                    ),
+                })
+                status = MessageStatus.ERROR
+                return
+
             async for sse in run_chat_stream(
                     prepared.graph,
                     prepared.messages,

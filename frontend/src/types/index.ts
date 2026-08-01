@@ -93,6 +93,8 @@ export type {
   ToolResultPayload,
   ErrorPayload,
   Artifact,
+  CompactStartPayload,
+  CompactStopPayload,
   ArtifactsPayload,
   // 渲染层
   TextBlock,

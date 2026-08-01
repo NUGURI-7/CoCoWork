@@ -14,8 +14,14 @@ from app.services.workspace.member_service import (
     MemberService,
     get_member_service,
 )
+from app.services.workspace.compaction_service import (
+    CompactionService,
+    get_compaction_service,
+)
 
 __all__ = [
+    "CompactionService",
+    "get_compaction_service",
     "ConversationService",
     "MessageService",
     "WorkspaceService",
