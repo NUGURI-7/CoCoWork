@@ -53,6 +53,8 @@ function translateOne(
             : 'calling',
       id: typeof b.id === 'string' ? b.id : '',
       name: typeof b.name === 'string' ? b.name : '',
+      // 老消息没这个字段（本功能之前落的库），渲染会自己回落到 name
+      displayName: typeof b.display_name === 'string' ? b.display_name : undefined,
       // DB 落库的 input_preview 是空串，用流式同款解析从参数 JSON 补
       inputPreview: previewFromPartialJson(partialJson) ?? '',
       partialInputJson: partialJson,

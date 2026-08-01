@@ -138,7 +138,7 @@ export function ToolUseBlock({ block }: ToolUseBlockProps) {
         </span>
 
         <span className="shrink-0 font-medium">
-          {TOOL_LABELS[block.name] ?? block.name}
+          {block.displayName ?? TOOL_LABELS[block.name] ?? block.name}
         </span>
 
         {summary && (

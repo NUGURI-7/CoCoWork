@@ -126,6 +126,9 @@ class StreamState:
     # 第 2 步：把子 agent 的块归到正确的派活卡片
     task_call_by_pos: dict[int, str] = field(default_factory=dict)  # supervisor 第几个 task 调用 → call_id
     lane_to_delegate: dict[str, str] = field(default_factory=dict)  # 泳道键 → 它归属的 task call_id
+    # 工具 name → 中文展示名（装配期算好、开流时传进来）。查不到的工具不盖这个
+    # 字段，前端回落显示原始 name
+    display_names: dict[str, str] = field(default_factory=dict)
 
 
     def allocate(self) -> int:
@@ -333,12 +336,17 @@ async def _emit_tool_call_chunk(
         # 第 2 步：记下 supervisor 第几个 task 调用 → call_id（回头按"第几个"查回它）
         if tc_name == "task":
             state.task_call_by_pos[chunk_index] = tc_id
-        yield EventType.TOOL_USE_START, {
+        payload: dict[str, Any] = {
             "index": block_idx,
             "id": tc_id,
             "name": tc_name,
             "input_preview": TOOL_INPUT_PREVIEW_DEFAULT,
         }
+        # 查不到就不加这个 key（而非塞 None）—— 与 subagent / delegate_id 同一写法，
+        # 落库时 jsonb 里也不会多出一堆 null
+        if display_name := state.display_names.get(tc_name):
+            payload["display_name"] = display_name
+        yield EventType.TOOL_USE_START, payload
 
     # args 流式 delta（partial JSON 串增量；前端自己累积解析）
     if tc_args:
@@ -473,16 +481,19 @@ async def _on_tool_end(
 
 async def adapt_chat_stream(
         events: AsyncIterator[dict[str, Any]],
+        display_names: dict[str, str] | None = None,
 ) -> AsyncIterator[AdapterEvent]:
     """LangChain astream_events(v2) → 我们的结构化事件流。
 
         Args:
             events: `graph.astream_events(input, version="v2")` 的产物
+            display_names: 工具 name → 中文展示名，装配期算好；缺省则所有
+                工具都不带展示名，前端回落显示原始 name（= 本参数加进来之前的行为）
         Yields:
             (EventType, payload) 元组 —— SSE 序列化 / sink 分发由 runner 统一做
     """
 
-    state = StreamState()
+    state = StreamState(display_names=display_names or {})
 
     try:
         async for ev in events:

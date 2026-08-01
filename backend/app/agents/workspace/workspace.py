@@ -32,6 +32,7 @@ from app.agents.runtime.runner import (
     PreparedStream,
     assemble_tools,
     build_chat_model,
+    build_display_names,
     content_to_text, SandboxCloser,
 )
 from app.agents.runtime.blocks import ArtifactRefBlock, parse_blocks
@@ -171,8 +172,12 @@ async def _member_to_subagent(
         user: User,
         fallback_model: BaseChatModel,
         mount: SkillMount | None,
-) -> CompiledSubAgent:
+) -> tuple[CompiledSubAgent, dict[str, str]]:
     """把一个招募成员装配成 supervisor 可派活的子 agent。
+
+    返回二元组的第二项 = 这个成员自己那批工具的中文展示名。成员调工具时，
+    那些 tool 块带 subagent 戳嵌在前端 DelegateBlock 里渲染，同样是给人看的，
+    所以要跟应答者自己的那份并进同一张表。
 
     成员没配 chat 模型时继承 supervisor 的模型（fallback_model）——
     模型只决定「用哪个 LLM」，成员的身份（prompt / tools / 知识库）仍是它自己的；
@@ -215,11 +220,12 @@ async def _member_to_subagent(
     )
 
     desc = f"{agent.name}：{agent.description}" if agent.description else agent.name
-    return {
+    subagent: CompiledSubAgent = {
         "name": member_key(member.id),
         "description": f"{desc}\n能力 · {profile}",
         "runnable": runnable,
     }
+    return subagent, build_display_names(tools)
 
 
 async def build_capability_profile(cfg: AgentConfig, user: User) -> str:
@@ -418,11 +424,18 @@ async def build_workspace_graph(
         tools = [*tools, *mount.artifact_tools]
         system_prompt = f"{system_prompt}\n\n{mount.prompt_for(cfg)}"
 
+    # 工具展示名：应答者自己的先收着（此时 tools 已追加完取回工具 / 文件工具、
+    # 彻底定型），派活成员的在下面并进来
+    display_names = build_display_names(tools)
+
     if can_delegate:
-        subagents = [
+        built = [
             await _member_to_subagent(member, member_cfg, user, chat_model, mount)
             for member, member_cfg in member_cfgs
         ]
+        subagents = [subagent for subagent, _ in built]
+        for _, member_display_names in built:
+            display_names.update(member_display_names)
         if subagents:
             middleware.append(
                 SubAgentMiddleware(backend=StateBackend(), subagents=subagents)
@@ -473,4 +486,7 @@ async def build_workspace_graph(
         )
         close = mount.close
 
-    return PreparedStream(graph=graph, messages=messages, collect=collect, close=close)
+    return PreparedStream(
+        graph=graph, messages=messages, collect=collect, close=close,
+        display_names=display_names,
+    )

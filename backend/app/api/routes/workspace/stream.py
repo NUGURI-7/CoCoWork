@@ -210,6 +210,7 @@ async def conversation_stream(
                     message_id=message_id,
                     collect=prepared.collect,
                     close=prepared.close,
+                    display_names=prepared.display_names,
                     sink=collector.feed,
                     usage=lambda: collector.usage_summary,
                     trace=TraceContext(

@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator, Callable
 from typing import Any
 from uuid import UUID
 from collections.abc import Awaitable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import partial
 
 from langchain.chat_models import init_chat_model
@@ -87,6 +87,9 @@ class PreparedStream:
     messages: list[BaseMessage]
     collect: ArtifactCollector | None  # 没挂 skill 就没有交付区，恒为 None
     close: SandboxCloser | None  # 同上；docker driver 靠它销毁容器
+    # 工具 name → 中文展示名。纯展示用，LLM 侧一点不参与（它认的仍是 name）。
+    # 给默认值是为了不破坏任何构造点：将来第三条路忘了传，退化成现状而非报错
+    display_names: dict[str, str] = field(default_factory=dict)
 
 
 def _feed_sink(sink: SinkFn | None, event: EventType, payload: dict[str, Any]) -> None:
@@ -276,6 +279,23 @@ async def assemble_tools(cfg: AgentConfig, user: User) -> list[BaseTool]:
     return tools
 
 
+def build_display_names(tools: list[BaseTool]) -> dict[str, str]:
+    """工具 name → 中文展示名，供 adapter 盖进 tool_use 事件给前端显示。
+
+    只有 CoCoTool 定义了 display_name；MCP 拉回来的是原生 LangChain 工具，
+    getattr 取不到就不进表 —— 前端那边自然回落显示原始 name。
+
+    与 assemble_tools 分开而不是让它返二元组：调用方有三处（playground /
+    workspace 应答者 / workspace 成员），后两处都要在 tools 追加过
+    ToolResultFetchTool、artifact_tools 之后才算，时机与装配点对不齐。
+    """
+    return {
+        tool.name: display_name
+        for tool in tools
+        if (display_name := getattr(tool, "display_name", None))
+    }
+
+
 def _build_kb_tool_description(kb: KnowledgeBase) -> str:
     """KB tool description —— LLM 选库就靠它。
 
@@ -353,15 +373,21 @@ async def prepare_stream(
             f"{system_prompt}\n\n{skills_prompt}" if system_prompt else skills_prompt
         )
 
+    # 提成变量而非内联进 build()：下面算展示名要用同一份
+    tools = await assemble_tools(cfg, user)
+
     graph = template.build(
         chat_model=chat_model,
         system_prompt=system_prompt,
-        tools=await assemble_tools(cfg, user),
+        tools=tools,
         middleware=middleware,
     )
 
     messages = to_lc_messages(request.history, request.content)
-    return PreparedStream(graph=graph, messages=messages, collect=collect, close=close)
+    return PreparedStream(
+        graph=graph, messages=messages, collect=collect, close=close,
+        display_names=build_display_names(tools),
+    )
 
 
 async def run_chat_stream(
@@ -374,6 +400,7 @@ async def run_chat_stream(
         usage: UsageSummarizer | None = None,
         sink: SinkFn | None = None,
         trace: TraceContext | None = None,
+        display_names: dict[str, str] | None = None,
 ) -> AsyncIterator[str]:
     """SSE 流主编排 —— 包 message_start / 驱动 adapter / 兜底 message_stop。
 
@@ -410,7 +437,7 @@ async def run_chat_stream(
             config=config or None,
         )
 
-        async for event, payload in adapt_chat_stream(events):
+        async for event, payload in adapt_chat_stream(events, display_names):
             _feed_sink(sink, event, payload)
             yield sse_event(event, payload)
 

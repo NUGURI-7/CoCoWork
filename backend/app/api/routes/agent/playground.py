@@ -59,6 +59,7 @@ async def playground_stream(
             message_id=message_id,
             collect=prepared.collect,
             close=prepared.close,
+            display_names=prepared.display_names,
             trace=TraceContext(
                 user_id=str(current_user.id),
                 name="playground",

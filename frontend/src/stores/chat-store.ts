@@ -291,6 +291,7 @@ export function createChatStore({
                 status: 'building',
                 id: p.id,
                 name: p.name,
+                displayName: p.display_name,
                 inputPreview: p.input_preview,
                 partialInputJson: '',
                 resultSummary: null,

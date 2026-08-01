@@ -142,6 +142,8 @@ export interface ToolUseStartPayload extends SubagentScoped {
   id: string
   name: string
   input_preview: string
+  /** 中文展示名（后端装配期算好）。只有 CoCoTool 有，MCP 等原生工具不带此字段 */
+  display_name?: string
 }
 
 export interface ToolUseDeltaPayload extends SubagentScoped {
@@ -240,6 +242,8 @@ export interface ToolUseBlock {
   status: 'building' | 'calling' | 'success' | 'error'
   id: string
   name: string
+  /** 中文展示名；缺省时渲染回落到 TOOL_LABELS[name] ?? name */
+  displayName?: string
   inputPreview: string
   partialInputJson: string
   resultSummary: string | null

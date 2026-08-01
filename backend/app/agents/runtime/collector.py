@@ -166,6 +166,11 @@ class MessageCollector:
         delegate_id = payload.get("delegate_id")
         if delegate_id:
             block["delegate_id"] = delegate_id
+        # 展示名存快照：以后改了 KB 名，历史消息仍显示当时那个（同 Slack 频道名的做法）。
+        # 必须落库——前端刷新后是从 DB 读 blocks 回放的、不走装配链路
+        display_name = payload.get("display_name")
+        if display_name:
+            block["display_name"] = display_name
         self._blocks[index] = block
 
     def _append_tool_json(self, payload: dict[str, Any]) -> None:
