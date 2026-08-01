@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -53,7 +53,10 @@ class KnowledgeBaseOut(BaseModel):
     embedding_model_id: UUID
     embedding_model_name: str
     embedding_dim: int
-    chunk_config: dict[str, Any]
+    # 用 ChunkConfig 而非裸 dict：出参过一遍 Pydantic，jsonb 里缺的键（存量库
+    # 建库时还没有的新配置项）自动补默认值。否则前端拿到 undefined，会把
+    # 「后端默认开着」显示成「未开启」——显示与实际行为相反
+    chunk_config: ChunkConfig
     status: str
     doc_count: int = 0
     chunk_count: int = 0
