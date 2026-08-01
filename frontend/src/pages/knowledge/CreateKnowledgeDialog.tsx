@@ -28,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import {
   ALL_PARSE_BACKENDS,
@@ -40,6 +41,8 @@ import {
 /** 切块默认值（见 docs/design/knowledge-rag-v1.md §5；中文 RAG 甜区） */
 const DEFAULT_CHUNK_SIZE = '256'
 const DEFAULT_OVERLAP = '50'
+/** 与后端 ChunkConfig.prepend_title 的默认值保持一致 */
+const DEFAULT_PREPEND_TITLE = true
 
 interface CreateKnowledgeDialogProps {
   open: boolean
@@ -58,6 +61,7 @@ export function CreateKnowledgeDialog({
   const [modelId, setModelId] = useState('')
   const [chunkSize, setChunkSize] = useState(DEFAULT_CHUNK_SIZE)
   const [overlap, setOverlap] = useState(DEFAULT_OVERLAP)
+  const [prependTitle, setPrependTitle] = useState(DEFAULT_PREPEND_TITLE)
   const [submitting, setSubmitting] = useState(false)
   const [models, setModels] = useState<AIModel[]>([])
   const [modelsLoading, setModelsLoading] = useState(false)
@@ -94,6 +98,7 @@ export function CreateKnowledgeDialog({
     setModelId('')
     setChunkSize(DEFAULT_CHUNK_SIZE)
     setOverlap(DEFAULT_OVERLAP)
+    setPrependTitle(DEFAULT_PREPEND_TITLE)
     setParseBackend('local')
   }
 
@@ -109,6 +114,7 @@ export function CreateKnowledgeDialog({
           chunk_size: Number(chunkSize) || 256,
           overlap: Number(overlap) || 50,
           strategy: 'recursive',
+          prepend_title: prependTitle,
         },
         parse_backend: parseBackend,
       })
@@ -281,6 +287,23 @@ export function CreateKnowledgeDialog({
                     value={overlap}
                     onChange={(e) => setOverlap(e.target.value)}
                     className="h-8 text-sm"
+                  />
+                </div>
+                <div className="col-span-2 flex items-start justify-between gap-4 rounded-md border p-3">
+                  <div className="grid gap-1">
+                    <Label htmlFor="kb-prepend-title" className="text-xs">
+                      标题链前置
+                    </Label>
+                    <p className="text-muted-foreground text-xs">
+                      向量化前给每个子块补上「第三章 &gt; 3.2 报销流程」这样的所属层级，
+                      避免「不超过 30 天」这类脱离上下文就检索不到的片段。
+                      标题本身没什么信息量的文档（全是「第一节」「第二节」）建议关掉。
+                    </p>
+                  </div>
+                  <Switch
+                    id="kb-prepend-title"
+                    checked={prependTitle}
+                    onCheckedChange={setPrependTitle}
                   />
                 </div>
                 <p className="text-muted-foreground col-span-2 text-xs">

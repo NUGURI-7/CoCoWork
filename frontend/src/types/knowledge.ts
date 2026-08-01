@@ -36,6 +36,11 @@ export interface ChunkConfig {
   chunk_size: number
   overlap: number
   strategy: 'recursive'
+  /**
+   * 算向量前是否给子块前置段的标题链。
+   * 只影响送去 embedding 的文本，不影响落库的子块原文；改了要重新处理文档才生效。
+   */
+  prepend_title: boolean
 }
 
 /** KnowledgeBase 实例（GET 返回） */

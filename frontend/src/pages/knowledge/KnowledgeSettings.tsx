@@ -326,7 +326,13 @@ export function KnowledgeSettings({ kb, onUpdated }: KnowledgeSettingsProps) {
           <ReadonlyField label="Chunk Size" value={`${kb.chunk_config.chunk_size} token`} />
           <ReadonlyField label="Overlap" value={`${kb.chunk_config.overlap} token`} />
         </div>
-        <ReadonlyField label="切分策略" value="递归切分" />
+        <div className="grid grid-cols-2 gap-4">
+          <ReadonlyField label="切分策略" value="递归切分" />
+          <ReadonlyField
+            label="标题链前置"
+            value={kb.chunk_config.prepend_title ? '已开启' : '未开启'}
+          />
+        </div>
       </Section>
 
       {/* 分区5 · 危险操作 */}
