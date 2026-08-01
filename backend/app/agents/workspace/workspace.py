@@ -9,6 +9,7 @@ runtime.run_chat_stream 跑。与 Playground 的三点差异：
 - 返回形态与 prepare_stream 一致（PreparedStream：graph + messages + collect），
   run_chat_stream 直接消费。
 """
+import logging
 from collections.abc import Sequence
 from datetime import date
 from functools import partial
@@ -23,7 +24,9 @@ from deepagents.middleware.summarization import SummarizationMiddleware
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.runnables import Runnable, RunnableLambda
+from langgraph.errors import GraphRecursionError
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 
@@ -57,6 +60,50 @@ from app.services.skill.mount import SkillMount, build_skill_mount
 from app.services.workspace.compaction_service import latest_summary
 from app.tools import resolve_tools
 from app.tools.tool_result_fetch import ToolResultFetchTool
+
+logger = logging.getLogger(__name__)
+
+# `with_fallbacks(exception_key=...)` 把异常对象塞进输入 dict 的这个键，
+# 兜底函数据此分辨失败原因。带下划线前缀是为了不跟真实的 state 字段撞名。
+_FALLBACK_EXC = "__subagent_exc__"
+
+
+def _with_failure_fallback(runnable: Runnable, label: str) -> Runnable:
+    """给子 agent 兜底：它炸了不要连累整轮对话。
+
+    deepagents 的 task 工具里 `await subagent.ainvoke(...)` 是**裸调**（见
+    `middleware/subagents.py`），子 agent 抛什么都直接冒到 supervisor 那张图上
+    —— 一个成员挂掉整轮跟着挂，而且 supervisor 连「有人没干成」都不知道，
+    没法改派、没法自己上、也没法如实告诉用户。**严重的不是「炸」，是明明有救
+    却全盘皆输**（对照：supervisor 自己的模型没配好那种，装配阶段就报错、
+    本来也救不了，那时候报错才是对的）。
+
+    兜的方式不是吞掉，是**翻译成一条正常消息**：deepagents 拿子 agent 结果时
+    会从后往前找最后一条非空 AIMessage、把文本包成 ToolMessage 交给 supervisor
+    （`_return_command_with_state_update`）。所以只要返回
+    `{"messages": [AIMessage(...)]}`，那句话就会以「task 工具的返回值」的身份
+    原样落到 supervisor 眼前，deepagents 一行都不用改。
+
+    形态与 deepagents 自己一致 —— 它在 `subagent_type` 不存在时也是 return 一句
+    话给 LLM 而不是 raise；LangGraph 官方的说法是「可恢复的错误喂回给模型让它
+    自己绕开」。
+
+    **用户中断不会被兜住**：`exceptions_to_handle` 默认只收 `Exception`，而
+    `CancelledError` 继承 `BaseException` —— 掐断时子 agent 正常取消，不会被
+    歪曲成「执行出错了」。
+    """
+
+    async def _explain(state: dict) -> dict:
+        exc = state.get(_FALLBACK_EXC)
+        if isinstance(exc, GraphRecursionError):
+            note = f"{label}没能在限定步数内完成这项任务，没有产出。可以把任务拆小一点再派一次。"
+        else:
+            note = f"{label}执行时出错了，没有产出。可以换个成员做，或者把这部分如实告诉用户。"
+        # 完整异常只进日志 —— 栈 / 路径 / SQL 不喂给模型（同 adapter 的口径）
+        logger.error("子 agent 执行失败 member=%s", label, exc_info=exc)
+        return {"messages": [AIMessage(content=note)]}
+
+    return runnable.with_fallbacks([RunnableLambda(_explain)], exception_key=_FALLBACK_EXC)
 
 
 def _workspace_base_prompt(
@@ -223,7 +270,9 @@ async def _member_to_subagent(
     subagent: CompiledSubAgent = {
         "name": member_key(member.id),
         "description": f"{desc}\n能力 · {profile}",
-        "runnable": runnable,
+        # 只给成员兜底，不给 supervisor —— supervisor 挂了该让用户看见（走 adapter
+        # 那条路），而成员挂了 supervisor 得有机会补救
+        "runnable": _with_failure_fallback(runnable, agent.name),
     }
     return subagent, build_display_names(tools)
 
