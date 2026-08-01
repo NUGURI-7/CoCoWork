@@ -31,6 +31,7 @@ from app.agents.runtime.adapter import adapt_chat_stream
 from app.agents.runtime.events import EventType, sse_event
 from app.agents.runtime.param_adapter import get_param_adapter
 from app.agents.runtime.spec import AgentSpec
+from app.agents.runtime.tool_guard import ToolGuardMiddleware
 from app.agents.templates import get_template
 from app.core.exceptions import ValidationException
 from app.core.observability import TraceContext, get_langfuse_handler
@@ -361,7 +362,9 @@ async def prepare_stream(
         referenced_artifact_ids=frozenset(),  # 没有对话就没有历史，自然无从引用
     )
     system_prompt = cfg.system_prompt
-    middleware: list[AgentMiddleware] = []
+    # 护栏排第一位 —— 框架规则 first defined = outermost，它得在最外层才罩得住
+    # 里面所有的工具调用（workspace 那条路由 _base_middleware 挂同一个）
+    middleware: list[AgentMiddleware] = [ToolGuardMiddleware()]
 
     collect: ArtifactCollector | None = None
     close: SandboxCloser | None = None

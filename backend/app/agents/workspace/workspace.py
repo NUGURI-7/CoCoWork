@@ -39,6 +39,7 @@ from app.agents.runtime.runner import (
     content_to_text, SandboxCloser,
 )
 from app.agents.runtime.blocks import ArtifactRefBlock, parse_blocks
+from app.agents.runtime.tool_guard import ToolGuardMiddleware
 from app.agents.workspace.history_budget import COMPACT_TRIGGER_TOKENS
 from app.agents.workspace.view_context_assembler import (
     SPEAKER_SUPERVISOR,
@@ -194,9 +195,17 @@ class FilesShelfMiddleware(AgentMiddleware):
     state_schema = FilesystemState
 
 
-def _summarization_middleware(model: BaseChatModel) -> list[AgentMiddleware]:
-    """一次回复内部的压缩保险丝(run 结束即弃;跨回复的压缩归 compaction_service)。"""
+def _base_middleware(model: BaseChatModel) -> list[AgentMiddleware]:
+    """supervisor 与成员共用的中间件底座。
+
+    含两样：工具护栏（超时 / 截断 / 异常兜底，见 tool_guard）+ 一次回复内部的
+    压缩保险丝（run 结束即弃；跨回复的压缩归 compaction_service）。
+
+    **护栏排第一位**：框架规则 first defined = outermost，它得在最外层才罩得住
+    里面所有的工具调用。
+    """
     return [
+        ToolGuardMiddleware(),
         FilesShelfMiddleware(),
         SummarizationMiddleware(
             model=model,  # 摘要用应答者自己的模型
@@ -248,7 +257,7 @@ async def _member_to_subagent(
         if base_prompt else DEFAULT_SUBAGENT_PROMPT
     )
 
-    middleware: list[AgentMiddleware] = _summarization_middleware(model)
+    middleware: list[AgentMiddleware] = _base_middleware(model)
 
     # 这个成员自己挂了 skill 才给它文件工具（决策 19）。mount 是全场共用的一个，
     # 只要有任何一人挂了它就存在，所以不能拿它当判据。
@@ -463,7 +472,7 @@ async def build_workspace_graph(
     # 派活 middleware 只有 supervisor 挂
     middleware: list[AgentMiddleware] = [
         WorkspaceContextMiddleware(),
-        *_summarization_middleware(chat_model),
+        *_base_middleware(chat_model),
     ]
 
     # 应答者自己挂了 skill 才给文件工具 —— 同 _member_to_subagent 的判据
