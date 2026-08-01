@@ -1,0 +1,156 @@
+# CoCoWork 路线 —— 当前唯一真源
+
+> **生成于 2026-08-01。** 本文取代 `docs/roadmap.md`（阶段序列 P1–P7，07-24 停更）与
+> `docs/roadmap/v2.md`（版本路线，07-31 清点），那两份已在顶部标注冻结、内容原样保留。
+> `v1.md`（V1 封板存档）与 `v3.md`（V3 愿景）未被取代，继续有效。
+>
+> **三个来源合并而成**：v2.md 的 07-31 全表清点 + roadmap.md 的 P1–P7 执行序列 + **08-01 逐条代码核对**。
+> 凡带文件锚点的状态，都是这次真去代码里看过的，不是照抄记账。
+
+---
+
+## 0. 现在的位置
+
+V1 已封板（2026-06-20）。V2 的 P0 主攻两块 —— **多 Agent 上下文工程**与 **RAG 进阶** —— **均已收官**：
+前者四件套全部有结局（Isolate ✅ / 回放保真 ✅ / Compress 层 A+B ✅ / Select ❌ / Write ❌），
+后者以三个**否决式结论**结束（BGE 前缀、hybrid、rerank 全域适用性全被自建的评测尺子判出局）。
+
+剩下的都是零碎收尾，没有整片未动的大模块。
+
+---
+
+## 1. 阶段序列 P1–P7 结算
+
+原表在 `docs/roadmap.md`，停更于 07-24，其中 P1 / P5 早已完工却没勾。此处为核对后的真实状态。
+
+| # | 切片 | 状态 | 依据 |
+|---|---|---|---|
+| P1 | 文档解析层 | ✅ 2026-07-29 | `design/pdf-parsing-v1.md` 五步全完成。**但白名单只放开到 pdf**，docx/xlsx 见待办 ② |
+| P2 | 异步任务业务迁移 | ✅ 2026-07-23 | 未等 P1，提前做掉 |
+| P3 | 记忆系统 v1 | 🔶 **一半** | 内容 1（Compress B）✅ 08-01；内容 2（跨会话长期记忆）❌ 未起，见待办 ④ |
+| P4 | 引用溯源 | 🔶 一半 · **延后** | 定位信息（标题链 + 页码）已透到检索结果并在前端显示；剩「回答里标引用 + 点开原文 + prompt 约束」约 1 天。真题 0 次，不排期 |
+| P5 | Skill 执行 + 沙箱 | ✅ 2026-07-30 | 三进程形态 + 两 driver + 61 条单测，见 `design/skill-sandbox-v1.md` |
+| P6 | VectorStore + Milvus | ➖ **降级为验证** | 不进程序：现有检索全是贴着 PG 的原生 SQL（CTE 候选池 / `hnsw.ef_search` / tsvector+GIN），搬不过去要在 Milvus 侧重做，2~3 天且动核心。**跑一遍拿实感即可** |
+| P7 | Agent 执行记录 + 观测 | ❌ **砍** | 原计划投入里性价比最低。注：观测方向本就未定案，重启前先看 roadmap.md 的 P7 节警告，别重新推导 |
+
+**P3 完成判据的口径变更（记账，避免日后误判）**：原判据是「input_tokens 曲线在封存点下折
+**且 prompt cache 命中率不崩**」+「新会话带出上一会话偏好」。08-01 收官时**明确砍掉 cache 命中率那半测量** ——
+理由是我们不单列缓存字段，且「视角化换应答者」是更大的缓存杀手（换人历史整个重渲染、前缀从第一个字就变），
+压缩的影响会被它淹没。曲线下折已实测达成（`10,542 → 5,022`，砍 52%）；第二条随待办 ④ 一并未达成。
+
+---
+
+## 2. V2 主线结算（P0 / P1 / P2）
+
+### P0-1 多 Agent 上下文工程 ✅ 收官
+
+| 件 | 结局 |
+|---|---|
+| Isolate | ✅ V1 就有（视角化 + subagent 隔离） |
+| 回放保真 | ✅ 07-14 + 07-31 两轮。原不在计划内，实测翻车逼出来的；**是层 B 的地基** |
+| Compress 层 A | ✅ 07-20，单次 run 内的膨胀保险丝 |
+| Compress 层 B | ✅ **08-01 收官**，跨回复历史压缩。当初定的调子全部落地（封存边界 + 摘要落独立表跨轮复用护 cache + 中性摘要一份 + 近段照旧视角化 + 阈值取 API usage） |
+| Select | ❌ 否决 —— 与 Compress 的设计前提直接冲突：按 query 挑则每轮前缀都变、cache 全丢，而层 B 整套就是为护 cache 而定的。两者只能取一 |
+| Write（共享白板） | ❌ 划掉 —— 原始诉求已被沙箱产物系统覆盖（形态是文件不是内存，解的是同一个问题）。`WorkspaceContextMiddleware` 空壳保留当接缝 |
+
+### P0-2 RAG 进阶 ✅ 收官
+
+混合检索 ✅ / Rerank ✅ / 评估体系 ✅ / 切块优化 ✅（07-29）。
+**最大产出是尺子本身**：搭出评测设施后用它否决了三个方案，而不是"做出了混合检索"。
+两条量化结论：hybrid 与 rerank 的收益**都取决于域、不取决于模型**（价值在互补性不在腿强度；向量吃干净的域加什么都是噪音）。
+**产品默认回退纯向量。** 翻案唯一路径 = 本地 ES 单容器上真 BM25 后重考（pg_search 已否决）。
+
+**本块唯一还欠的** = 子块拼标题，见待办 ①。
+
+### P1 生产化基建 ✅
+
+SAQ 队列 + 独立 worker + 文档处理管线迁移（07-23）。
+**已定原则**：有队列 ≠ 什么都进队列。判据是「这活丢了要不要有人负责」——
+文档向量化丢了用户永远卡 processing（必须有人负责，进队列）；会话起名丢了下次进对话自动补上（没人负责，做成独立端点）。
+
+### P2 能力扩展
+
+MCP 工具接入 ✅（06-28）/ 沙箱产物 ✅（07-30）/ 多会话并发流 ✅ / per-turn token 用量 ✅。
+
+**KB-as-tool v2 已整条清空**（2026-08-01）：主体随 07-20 库级检索设置落地；剩下两小条 —— KB slug 与
+`create_retriever_tool` 工厂收口 —— 同日经源码实证**双双否决**，理由见 §4。**本条不再是待办。**
+
+---
+
+## 3. 待办总表
+
+散在各处的 ⏳ 收成这一张表。**每条都附 08-01 亲自核过的代码锚点**，防止再出现「误记为待办」或「误记为已完工」。
+
+| # | 待办 | 模块 | 成本 | 代码依据（08-01 核） | 来源 |
+|---|---|---|---|---|---|
+| ① | **子块拼标题上下文** | RAG | 一行 + 重跑 | `document_processor.py:128` 仍是 `splitter.split(paragraph.content, chunk_cfg)` —— 标题链早已算出并存进 `Paragraph.title`，就是没拼进送去 embedding 的文本 | roadmap |
+| ② | **多格式 docx / xlsx** | RAG | 半天 | `schemas/knowledge/document_schema.py:20` 的 `ALLOWED_FILE_TYPES` 仍是 `{md, txt, pdf}`；`Parser` ABC 已在，加两个实现即可 | 面试 |
+| ③ | **Agent 可靠性工程** | Agent | 半天 | 全项目 grep **无 `recursion_limit`**，`app/agents/` 内无 timeout / retry。当前靠 LangGraph 默认递归上限 25 兜底 —— 那是框架默认值，不是自己的设计 | 面试 |
+| ④ | **跨会话长期记忆**（P3 后半） | Agent | 1~2 天 | 无相关代码。分层可参考 Letta：core block（可编辑常驻）/ archival（向量检索）/ recall（历史搜索），轻量实现即可 | roadmap |
+| ⑤ | **多 @ 并发应答** | Workspace | 中型 | `routes/workspace/stream.py:89` 取 `mentioned_member_ids[0]` —— 只认第一个。需后端一条 SSE 多路复用 N 路应答 + 前端按成员维护 N 个并发气泡 | roadmap |
+| ⑥ | **admin 用户管理接真后端** | Admin | 小 | `routes/user/user.py` 只有 `register` / `login` / `me` 三个端点，无 list / 改角色 / 禁用 / 删。前端 mock 页早已就绪 | roadmap |
+| ⑦ | **`AIModel.meta` chat 侧能力标记** | Model | 中 | 见下方「§5 记账更正」——**不是"恒为 None"**，空的是 chat / rerank 两类 | 欠账 |
+| ⑧ | **README + release** | 收尾 | 小 | README 仅 122 字节；`git tag` 为空 | 收尾 |
+
+**「来源」一列的意义**：`roadmap` = 原路线上的计划；`面试` = 拿 174 家真题频次倒推出来的需求，**原路线里没有**
+（判据与逐项取舍见 `~/Amoy/面试/CoCoWork-实践取舍.md`）；两者混在一起记会让人误以为是同一回事。
+
+### 不算写功能的验证动作（跑一遍拿实感，不进产品）
+
+Milvus 跑一遍（顺手试它内置的 BM25 —— **它有 IDF 而 PG 的 `ts_rank` 没有**，正是本项目实测撞到的天花板）·
+本地部署一个模型（Ollama，空 API Key 支持本就是为它留的口子）· 扫描件走一遍云端解析路 · 压测拿 P95 / P99 与并发数。
+
+---
+
+## 4. 已否决 / 已砍（重新立项要先推翻理由，不是遗忘）
+
+| 项 | 理由 |
+|---|---|
+| **KB slug 字段** | **2026-08-01 源码实证否决**：前提「LLM 靠 tool name 选库」不成立。Dify 的 `dataset_retriever_tool.py:52` 是 `name=f"dataset_{dataset.id.replace('-','_')}"` —— **完整 UUID**，比我们的 8 位 hex 更不可读；选库全靠 description（同文件 46-48 行：用户填的描述，没填才自动拼「useful for when you want to answer queries about the {库名}」）。而我们 `runner.py:305` 的 description **库名永远在里面**，不管用户填没填描述，这点比 Dify 还稳。做 slug 要加字段 + 唯一性校验 + 迁移 + 改名处理，换一个业界证明不需要的收益 |
+| **`create_retriever_tool` 工厂收口** | **同日否决，且是负收益**。官方工厂签名 `(retriever, name, description, ...)` 第一参要 `BaseRetriever`，我们没有（检索在 service 层），得先写适配层；它返回 `StructuredTool` **不是 `CoCoTool`**，等于主动放弃 30 秒超时 / 4000 字截断 / 异常兜底 / `source_type` / `display_name`；格式化只剩 `document_prompt` + `document_separator` 两个钩子，做不出「相关度」。**那个工厂是给「一个 retriever、零定制」的场景准备的**，我们已有五个 bound 字段（kb_id / user / top_k / 库级 mode / rerank model）+ 统一基类，早已超出其适用范围 |
+| Select（按相关性挑历史） | 与 Compress 护 cache 的前提冲突，两者只能取一 |
+| Write（共享白板） | 诉求已被沙箱产物系统覆盖 |
+| 多向量（question / title） | 已砍。**但准备方式要改**：字面「多向量」真题仅 1 条，而「问答对 / FAQ」有 16 条 —— 问答对库就是它的产品形态。底层不实现，话术要能讲 |
+| P7 观测服务 | 0.3%，性价比最低 |
+| 有 key 的内置工具凭据层 | **前提不存在**：内置工具只有 `calculator` + `sleep`，都不需要 key；这类需求走 MCP 已经够了 |
+| pg_search（ParadeDB） | 已否决；要真 BM25 就上本地 ES 单容器 |
+| SaaS tracer（Langfuse / LangSmith 等） | 已排除，**不要再提议**。已接通的那份配 key 才生效、零维护，不再投入 |
+| 微调 / 图片多模态 / 知识图谱 / 意图识别 / MinerU / 引用溯源角标 | 真题频次全部垫底或为 0，逐项理由见取舍文档 |
+| 画布式工作流编排 | 「声明引用 + 后端持有拓扑 + LLM 运行时自主调度」的定位决策不变 |
+| RBAC / 多租户 · Skill 聚合站 · 生成端评测 | 本阶段不做（Skill **上传入库 + 导出**已在 P5 内） |
+
+---
+
+## 5. 08-01 代码核对的一处记账更正
+
+**`AIModel.meta` 不是「恒为 None」。** 旧记账说字段建了但从没写过，**核对结果是错的**：
+
+- `validators/openai_validators.py:50` 的 embedding validator 探测并返回 `{"embedding_dim": N}`，
+  `ai_model_service.py:76` 在创建时写入；`knowledge_base_service.py:136` 还有一条缺失时的兜底回写。
+- 真正空的是 **chat 与 rerank 两类** —— `openai_validators.py:30` 与 `rerank_validator.py:36` 都是 `return {}`，
+  经 `meta=probed_meta or None` 落成 `None`。
+
+**结论不变、记账要改**：痛点（是不是推理模型 → 决定 `max_tokens` 预算与能否关思考、context window 多大、上不上报 cache）
+恰好全在 chat 那一侧，所以这条待办依然成立，只是范围是「给 chat 侧补能力标记」而非「从零启用一个空字段」。
+**落点只能是模型实例级**：不能退到 `param_adapter` 层解决，那层的 key 是 LC provider 家族
+（`openai` 一格罩着 DeepSeek / 通义 / SiliconFlow / custom 全部），加进去等于对所有兼容端点盲传。
+
+---
+
+## 6. 挂账（知道欠着，不排期）
+
+- **外键列普遍缺索引**：Tortoise 的 `ForeignKeyField` 默认不建索引（PG 特有的坑，MySQL InnoDB 会自动建），
+  级联删除因此走 Seq Scan。**热路径 8 个已补** ✅（07-24 迁移 0018，cost 1341.91 → 8.30）；
+  仍欠 `conversations.workspace_id` 等，行数少、不疼。**规矩已定：新建 `ForeignKeyField` 一律显式 `db_index=True`。**
+- ES / 自定义词库 / Milvus 可插拔 / 生成端评测（自己写，不装 RAGAS）—— 永久挂账。
+- 语音 ASR/TTS：浅链路约 2-3 天，实时双工是独立项目量级，中间没有过渡地带。
+- 对话多模态输入（传图提问）：成本很低，零碎时间可插。
+
+---
+
+## 维护规则
+
+- **本文是唯一真源**，路线变更只改这里；`docs/context.md` 只记当前迭代进度，不重复记路线。
+- 一个功能「做完」才从待办表挪走，并在对应结算节标日期。
+- 否决项一律**记账理由**，不删除 —— 重新立项要先推翻理由。
+- 状态存疑时**去代码里核**，不要照抄上一份记账。本文第 5 节就是这么核出来的。
