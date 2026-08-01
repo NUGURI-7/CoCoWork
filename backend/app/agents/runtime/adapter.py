@@ -19,6 +19,7 @@ import logging
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Any
+from langgraph.errors import GraphRecursionError
 from langgraph.types import Command
 from app.agents.runtime.events import EventType
 
@@ -46,6 +47,12 @@ DEFAULT_STOP_REASON = "end_turn"
 # 错误事件
 ERROR_CODE_INTERNAL = "internal_error"
 ERROR_MESSAGE_GENERIC = "对话生成失败，请稍后重试"
+# 步数上限是保护装置生效、不是故障 —— 单独一个 code，日志与排查时能跟真 bug 分开
+ERROR_CODE_STEP_LIMIT = "step_limit_exceeded"
+ERROR_MESSAGE_STEP_LIMIT = (
+    "这一轮的步数用完了，任务没能做完。上面已经完成的部分保留着——"
+    "可以再说一句让我接着做。"
+)
 
 # Tool 结果摘要截断长度
 TOOL_SUMMARY_MAX_CHARS = 100
@@ -525,6 +532,20 @@ async def adapt_chat_stream(
                 if delegate_id is not None and payload.get("id") != delegate_id:
                     payload = {**payload, "delegate_id": delegate_id}
                 yield evt_type, payload
+    except GraphRecursionError as exc:
+        # 步数用完 ≠ 故障：这是 runner 里 RECURSION_LIMIT 那道保护正常生效。
+        # 与下面的通用分支只差三处，但每一处都要紧：
+        # ① warning 不带栈 —— 带栈会让它混进真异常里，排查时误导；异常自带的
+        #    消息里就有 limit 数值，不必反向 import runner 的常量（那会成循环）
+        # ② 文案说清「没做完」而不是「失败请重试」—— 重试解决不了，接着说才行
+        # ③ 单独的 code，后端日志 / 将来做统计时能分开（前端只读 message、不看 code）
+        logger.warning("撞到步数上限，本轮提前收尾：%s", exc)
+        async for out in _close_all(state):
+            yield out
+        yield EventType.ERROR, {
+            "code": ERROR_CODE_STEP_LIMIT,
+            "message": ERROR_MESSAGE_STEP_LIMIT,
+        }
     except Exception:
         # 内部异常完整 log 给后端；对前端只发通用文案，防细节外泄（栈 / 路径 / SQL）
         logger.exception("adapt_chat_stream failed; emitting cleanup + error event")

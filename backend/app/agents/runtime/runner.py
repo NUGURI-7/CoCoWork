@@ -53,6 +53,18 @@ from app.tools.knowledge_retrieval import KnowledgeRetrievalTool
 
 logger = logging.getLogger(__name__)
 
+# 一次回复内的最大步数（LangGraph 术语叫 super-step：模型说一次话算一步，
+# 跑一次工具算一步）。不设则吃 LangGraph 默认的 25 —— 那是框架默认值，不是
+# 我们的决定。
+#
+# 取 40 而非 25：workspace 比单 agent 深。supervisor 每派一个活就是「模型决定
+# 派谁 + 跑 task 工具」两步，派 10 个成员吃掉 20 步，加上开场和收尾，25 刚好卡
+# 在边缘。**卡边缘的坏处是撞线的会变成「正常但复杂的任务」而不是真死循环。**
+# 40 给复杂任务留余量，同时离失控还很远：真转起圈来 40 步照样兜得住。
+#
+# 对照：Dify 默认 10（可配到 99）、Letta 50、LangGraph 默认 25。
+RECURSION_LIMIT = 40
+
 # provider_type → LangChain model_provider
 # OpenAI 兼容 provider 全走 "openai"（靠 base_url 区分上游），只有 Anthropic 走官方协议。
 # 未知类型 fallback "openai" —— 最宽容 + log warning。
@@ -422,7 +434,11 @@ async def run_chat_stream(
     try:
         # Langfuse:配了 key 才挂 callback;trace 归因走 config.metadata(langfuse_* 键)
         handler = get_langfuse_handler()
-        config: dict[str, Any] = {}
+        # 步数上限。deepagents 的 task 工具里写明：父的 recursion_limit 会经
+        # langgraph 的 ensure_config 自动传给子 agent（子 agent 自绑的优先），
+        # 所以设这一处就同时罩住 supervisor 和它派活的每个成员 —— 各自一份
+        # 预算，不是全家共享。
+        config: dict[str, Any] = {"recursion_limit": RECURSION_LIMIT}
 
         if handler is not None:
             config["callbacks"] = [handler]
@@ -434,7 +450,9 @@ async def run_chat_stream(
         events = graph.astream_events(
             {"messages": messages},
             version="v2",
-            config=config or None,
+            # 不再写 `config or None`：加了 recursion_limit 之后这个字典永远
+            # 非空，那个兜底分支已经不可能触发
+            config=config,
         )
 
         async for event, payload in adapt_chat_stream(events, display_names):
