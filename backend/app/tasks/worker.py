@@ -16,7 +16,8 @@ from tortoise import Tortoise
 from app.core.redis import redis_client
 from app.db.postgresql import TORTOISE_CONFIG
 from app.tasks.document_task import process_document_task
-from app.tasks.registry import PROCESS_DOCUMENT
+from app.tasks.memory_digest_task import digest_memory_task
+from app.tasks.registry import DIGEST_MEMORY, PROCESS_DOCUMENT
 from app.tasks.queue import queue
 
 
@@ -36,7 +37,10 @@ async def shutdown(ctx: dict) -> None:
 
 settings = {
     "queue": queue,
-    "functions": [(PROCESS_DOCUMENT.name, process_document_task)],  # 一行一个任务
+    "functions": [                                      # 一行一个任务
+        (PROCESS_DOCUMENT.name, process_document_task),
+        (DIGEST_MEMORY.name, digest_memory_task),
+    ],
     "concurrency": 3,  # 同时嚼几个任务；重 IO 任务防打爆上游 API，先保守设 3
     "startup": startup,
     "shutdown": shutdown,

@@ -28,11 +28,19 @@ class TaskSpec:
     retry_delay: float = 5.0  # 首次重试前等待秒数
     retry_backoff: bool | float = True  # 指数退避：5s → 10s → 20s
 
-    async def enqueue(self, **kwargs: Any) -> Job | None:
+    async def enqueue(self, *, key: str | None = None, **kwargs: Any) -> Job | None:
         """入队一个任务实例。
 
             kwargs 是任务函数的参数，经 Redis 做 JSON 序列化，只能传 JSON 原生类型
             （UUID / datetime 等在入队侧转 str，任务函数里还原）。
+
+            key 是**去重键**：同一个 key 的任务只要还没跑完（排队中或正在跑），
+            再入队直接返回 None —— 注意是**丢弃，不是排在后面等**。适合「这次丢了
+            下次还会来、且下次读的是同一批数据」的周期性任务；不适合每一次都必须
+            执行到的任务。不传则每次都入队。
+
+            写成显式形参而不是混在 kwargs 里：SAQ 会把撞上 Job 字段名的 kwarg
+            悄悄当成 Job 属性（不是任务参数），一个叫 key 的业务参数会就这么消失。
         """
         return await queue.enqueue(
             self.name,
@@ -40,6 +48,7 @@ class TaskSpec:
             retries=self.retries,
             retry_delay=self.retry_delay,
             retry_backoff=self.retry_backoff,
+            **({"key": key} if key else {}),
             **kwargs,
         )
 
@@ -47,3 +56,11 @@ class TaskSpec:
 
 # 解析 → 切段 → 切块 → 向量化整条管线。大文档分批 embedding 慢，给足 30 分钟
 PROCESS_DOCUMENT = TaskSpec(name="knowledge.process_document", timeout=1800)
+
+
+# === 记忆 ===
+
+# 每 N 轮从最近的用户发言里沉淀一次常驻记忆。就一次模型调用，2 分钟够宽。
+# retries=0 是刻意的：这次没跑成，下次到点自然还会来，而且读的还是同一批消息，
+# 重试只会多烧一次模型调用。跟文档处理相反 —— 那个丢了用户永远卡在「处理中」
+DIGEST_MEMORY = TaskSpec(name="memory.digest", timeout=120, retries=0)

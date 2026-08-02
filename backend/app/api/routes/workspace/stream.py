@@ -32,6 +32,7 @@ from app.models import Conversation, Message, MessageStatus, SenderKind, Message
 from app.models.user import User
 from app.schemas.agent.chat_schema import ChatStreamRequest
 from app.schemas.workspace import ConversationStreamIn, MessageAppend
+from app.services.memory import should_digest
 from app.services.sandbox.attachment import resolve_refs
 from app.services.workspace import (
     CompactionService,
@@ -39,6 +40,7 @@ from app.services.workspace import (
     get_compaction_service,
     get_message_service,
 )
+from app.tasks.registry import DIGEST_MEMORY
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +161,21 @@ async def conversation_stream(
             conversation.context_tokens = collector.context_tokens
             update_fields.append("context_tokens")
         await conversation.save(update_fields=update_fields)
+
+        # 每 N 轮沉淀一次长期记忆。**去重键按用户**，不按对话也不按工作空间 ——
+        # 全局那格是这个人跨所有工作空间共享的一行，按工作空间去重挡不住两个
+        # 空间的整理任务同时改它。同 key 未跑完时入队直接被丢弃（不是排队），
+        # 而丢弃正合适：整理读的是「最近 N 条用户发言」，这次丢了那些话下次还在
+        try:
+            if await should_digest(conversation_id):
+                await DIGEST_MEMORY.enqueue(
+                    key=f"memory-digest-{current_user.id}",
+                    conversation_id=str(conversation_id),
+                )
+        except Exception:
+            # 入队失败（Redis 抖了）只记一笔：记忆晚几轮沉淀而已，
+            # 不该把已经答完的这一轮拖成错误
+            logger.exception("记忆整理入队失败 conversation_id=%s", conversation_id)
 
     async def stream():
         status = MessageStatus.STOPPED  # 悲观默认：没自然走完就是被掐

@@ -24,6 +24,9 @@ from langchain_core.tools import BaseTool
 
 logger = logging.getLogger(__name__)
 
+# 工具来源。写成别名而不是每处各抄一遍 Literal —— 加一种来源只改这一行
+ToolSourceType = Literal["builtin", "mcp", "knowledge", "memory"]
+
 # 单次工具输出能进上下文的字符上限（L1 上下文防爆）。
 # **跨轮回放沿用同一个数** —— 见 view_context_assembler._cap_result：
 # 一次执行能进多少，历史里就是多少，不另立一套标准。
@@ -35,7 +38,7 @@ class CoCoTool(BaseTool):
 
     # ---- 项目级元信息（LangChain BaseTool 没有的）----
     display_name: str  # 中文展示名；name 给 LLM（英文受正则约束）、本字段给人看
-    source_type: Literal["builtin", "mcp", "knowledge"] = "builtin"
+    source_type: ToolSourceType = "builtin"
     dangerous: bool = False  # 有副作用（删文件 / 发请求 / 花钱）的工具标 True，未来接人工确认
 
     # ---- 横切行为参数 ----

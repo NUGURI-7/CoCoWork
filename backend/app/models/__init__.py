@@ -1,5 +1,6 @@
 from app.models.agent import Agent
 from app.models.knowledge import Document, Embedding, KnowledgeBase, Paragraph
+from app.models.memory import UserMemory, WorkspaceMemory
 from app.models.model import AIModel, Provider, ProviderModelCatalog
 from app.models.sandbox import SandboxArtifact
 from app.models.user import User
@@ -39,4 +40,6 @@ __all__ = [
     "Skill",
     "SkillSource",
     "SandboxArtifact",
+    "UserMemory",
+    "WorkspaceMemory",
 ]

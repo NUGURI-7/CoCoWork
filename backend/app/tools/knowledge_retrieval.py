@@ -7,7 +7,6 @@
 LLM 选库靠 description（拼装时塞 KB 名 + 描述），name 只是身份标识。
 """
 
-from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -16,7 +15,7 @@ from app.models import User
 from app.models.knowledge import RetrievalMode
 from app.schemas.knowledge import RetrievalHit
 from app.services.knowledge.retrieval import RetrievalParams, RetrievalService
-from app.tools.base import CoCoTool
+from app.tools.base import CoCoTool, ToolSourceType
 
 # RetrievalService 无状态（dispatch 表是类属性），模块级共享一个实例。
 _retrieval_service = RetrievalService()
@@ -36,7 +35,7 @@ class KnowledgeRetrievalTool(CoCoTool):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    source_type: Literal["builtin", "mcp", "knowledge"] = "knowledge"
+    source_type: ToolSourceType = "knowledge"
     args_schema: type[BaseModel] = KnowledgeRetrievalInput
 
     # ---- per-instance bound fields（构造时必传）----

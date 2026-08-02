@@ -54,12 +54,14 @@ from app.models import SenderKind
 from app.models import User, Workspace, WorkspaceMember
 from app.schemas.agent.chat_schema import ChatStreamRequest
 from app.schemas.agent.config_schema import AgentConfig
+from app.services.memory import MemoryService, MemorySnapshot
 from app.services.sandbox.artifact import collect_artifacts, group_by_message
 from app.services.sandbox.attachment import describe_unavailable, inject_attachments
 from app.services.skill.builtin import resolve_builtin_skills
 from app.services.skill.mount import SkillMount, build_skill_mount
 from app.services.workspace.compaction_service import latest_summary
 from app.tools import resolve_tools
+from app.tools.memory_update import MemoryUpdateTool
 from app.tools.tool_result_fetch import ToolResultFetchTool
 
 logger = logging.getLogger(__name__)
@@ -139,6 +141,36 @@ def _workspace_base_prompt(
         "要派活就真的调派活工具、要用工具就真的调用 —— 自己写一段"
         "「〔我 派活给 X：… → 完成〕X 返回：…」，活并没有派出去，那段结果是你编的。\n"
         "文件清单只由系统标注，你自己不要写 <artifacts> 行 —— 你写的那行不会让任何文件出现。\n"
+    )
+
+
+def _memory_section(*, about_user: str, about_workspace: str) -> str:
+    """常驻记忆片段 —— 拼在 system prompt 的**最末尾**。
+
+    放最后是为了护 prompt cache:前面那些(协议说明、成员名单、日期、用户填的
+    人设)变得都比记忆慢,把最容易变的一段垫在最底下,它一变只作废尾巴,
+    前面的前缀还能接着命中。
+
+    两段各自可空,空的那段整节不出现 —— 留一个「关于这位用户:(空)」的空壳,
+    等于告诉模型「这里本该有东西但没有」,平白引它去猜。
+
+    开头那句约束是必要的:这些话用户**这一轮并没有说**,少了这句,模型会
+    张口就是「你刚才说你喜欢…」,而用户根本没说过,当场就穿帮。
+    """
+    parts: list[str] = []
+    if about_user:
+        parts.append(f"关于这位用户:\n{about_user}")
+    if about_workspace:
+        parts.append(f"关于这个工作区:\n{about_workspace}")
+    if not parts:
+        return ""
+
+    body = "\n\n".join(parts)
+    return (
+        "## 记忆\n\n"
+        "以下是过去的对话里攒下来的,**不是用户这一轮说的** —— 用它来理解用户,"
+        "但不要说成「你刚才说」。它和用户当场说的冲突时,一律以当场的为准。\n\n"
+        f"{body}"
     )
 
 
@@ -228,6 +260,8 @@ async def _member_to_subagent(
         user: User,
         fallback_model: BaseChatModel,
         mount: SkillMount | None,
+        *,
+        memory_section: str,
 ) -> tuple[CompiledSubAgent, dict[str, str]]:
     """把一个招募成员装配成 supervisor 可派活的子 agent。
 
@@ -241,6 +275,11 @@ async def _member_to_subagent(
 
     mount 是 supervisor 那个同一个实例，不是各自新建的：派活发生在同一张图、
     同一次回复里，成员产出的文件 supervisor 必须看得见（决策 12）。
+
+    memory_section 只带工作区那一段,不带用户级:派活成员不直接跟用户说话,
+    它收到的是 supervisor 写好的任务描述,用户是谁对它没有用。而工作区的约定
+    它必须知道 —— 「对全区所有 agent 生效、又不写进任何一个 agent 自己」正是
+    工作区记忆存在的理由。
     """
     agent = member.agent
 
@@ -265,6 +304,9 @@ async def _member_to_subagent(
         middleware.append(mount.middleware)
         tools = [*tools, *mount.artifact_tools]  # 同应答者那份，跟文件工具同进同出
         system_prompt = f"{system_prompt}\n\n{mount.prompt_for(member_cfg)}"
+
+    if memory_section:
+        system_prompt = f"{system_prompt}\n\n{memory_section}"
 
     profile = await build_capability_profile(member_cfg, user)
 
@@ -435,6 +477,17 @@ async def build_workspace_graph(
         # 派活成员不需要它 —— 它们只收到一段任务描述，根本看不见历史
         tools = [*tools, ToolResultFetchTool(conversation_id=conversation_id)]
 
+    # 常驻记忆:一次取两个尺度。挂在(user, workspace)上,按**当前登录用户**取,
+    # 不按 workspace.created_by —— 今天二者相同,工作区哪天能共享时前者才是对的
+    memory: MemorySnapshot = await MemoryService().snapshot(
+        user_id=user.id, workspace_id=workspace.id
+    )
+
+    # 写记忆只有 supervisor 一个入口 —— @直连成员这一轮虽然也是应答者、也读记忆,
+    # 但不给它写:写入要的是全局视角,而它只看得见自己被 @ 的这一段
+    if responder is None:
+        tools = [*tools, MemoryUpdateTool(user_id=user.id, workspace_id=workspace.id)]
+
     # 派活成员的 config 先 parse 出来：既要参与 skill 并集，又要传给 _member_to_subagent，
     # 免得同一份 jsonb 解两遍。@直连时不派活，场上只有应答者自己。
     member_cfgs: list[tuple[WorkspaceMember, AgentConfig]] = (
@@ -488,7 +541,13 @@ async def build_workspace_graph(
 
     if can_delegate:
         built = [
-            await _member_to_subagent(member, member_cfg, user, chat_model, mount)
+            await _member_to_subagent(
+                member, member_cfg, user, chat_model, mount,
+                # 只给工作区那段 —— 派活成员不直接面对用户
+                memory_section=_memory_section(
+                    about_user="", about_workspace=memory.workspace_scope
+                ),
+            )
             for member, member_cfg in member_cfgs
         ]
         subagents = [subagent for subagent, _ in built]
@@ -504,6 +563,14 @@ async def build_workspace_graph(
         # 只在场上真有人带 skill 时才补这段，否则是废话
         if mount is not None and any(mount.has_skills(c) for _, c in member_cfgs):
             system_prompt = f"{system_prompt}\n\n{_DELEGATE_SKILL_NOTE}"
+
+    # 记忆垫在整段 system prompt 的最后一节(见 _memory_section 的说明)。
+    # 应答者两段都给:supervisor 和被 @ 直连的成员,这一轮都在直接跟用户说话
+    responder_memory = _memory_section(
+        about_user=memory.user_scope, about_workspace=memory.workspace_scope
+    )
+    if responder_memory:
+        system_prompt = f"{system_prompt}\n\n{responder_memory}"
 
     responder_agent = create_agent(
         model=chat_model,
