@@ -1,4 +1,5 @@
 from pathlib import Path
+from urllib.parse import quote
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -71,7 +72,17 @@ class Settings(BaseSettings):
 
     @property
     def pg_url(self) -> str:
-        return f"postgres://{self.PG_USER}:{self.PG_PASSWORD}@{self.PG_HOST}:{self.PG_PORT}/{self.PG_DATABASE}"
+        """asyncpg 版连接串。
+
+        用户名与密码必须做 URL 编码：密码含 `@` / `:` / `#` / `/` 时，裸拼会让
+        解析器从**第一个** `@` 处切开，把密码后半段并进主机名（本项目的密码就
+        含 `@`，裸拼版曾把 host 解析成 `Ly@118.25.77.231`）。
+
+        主机名和库名不编码 —— 它们本就不该含保留字符，编了反而掩盖配置错误。
+        """
+        user = quote(self.PG_USER, safe="")
+        password = quote(self.PG_PASSWORD, safe="")
+        return f"postgres://{user}:{password}@{self.PG_HOST}:{self.PG_PORT}/{self.PG_DATABASE}"
 
     # ==================== 存储后端 ====================
     STORAGE_BACKEND: str = "r2"  # r2 | local
