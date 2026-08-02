@@ -8,6 +8,7 @@ import type {
   ApiContentBlock,
   ApiTextBlock,
   Artifact,
+  AskAnswer,
   AssistantMessage as AssistantMessageType,
   UserMessage as UserMessageType,
 } from '@/types'
@@ -15,6 +16,7 @@ import { cn } from '@/lib/utils'
 
 import { ArtifactCard } from './ArtifactCard'
 import { AttachmentChip } from './AttachmentChip'
+import { AskBlock } from './blocks/AskBlock'
 import { DelegateBlock } from './blocks/DelegateBlock'
 import { TextBlock } from './blocks/TextBlock'
 import { ThinkingBlock } from './blocks/ThinkingBlock'
@@ -248,6 +250,13 @@ const AssistantMessageRow = memo(function AssistantMessageRow({
   message: AssistantMessageType
 }) {
   const isStreaming = message.status === 'streaming'
+  // 提交人工确认的答案 —— 块本身不认识 store，由这里传下去
+  const answerAsk = useChat((s) => s.answerAsk)
+  const onAnswer = useCallback(
+    (blockIndex: number, answer: AskAnswer) =>
+      void answerAsk(message.id, blockIndex, answer),
+    [answerAsk, message.id],
+  )
   // 只有 @直连成员才露身份（头像 + 名）；supervisor / Playground（senderMemberId 空）
   // 保持裸气泡（ChatGPT 风、默认对话方）。
   const identity = useSubagentInfo(
@@ -267,6 +276,11 @@ const AssistantMessageRow = memo(function AssistantMessageRow({
         }
         if (block.type === 'delegate') {
           return <DelegateBlock key={block.index} block={block} />
+        }
+        if (block.type === 'ask') {
+          return (
+            <AskBlock key={block.index} block={block} onAnswer={onAnswer} />
+          )
         }
         return <ToolUseBlock key={block.index} block={block} />
       })}

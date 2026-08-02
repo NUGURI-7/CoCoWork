@@ -15,6 +15,7 @@ from app.core.exceptions import register_exception_handlers
 from app.core.http import register_middlewares
 from app.core.logging import setup_logging
 from app.core.redis import RedisClient
+from app.db.checkpointer import init_checkpointer, shutdown_checkpointer
 from app.db.postgresql import TORTOISE_CONFIG
 from app.scripts.seed_admin import seed_admin
 from app.services.skill.builtin import load_builtin_skills
@@ -32,6 +33,7 @@ async def lifespan(app: FastAPI):
         app.state.redis = redis_conn
         await seed_admin()
         load_builtin_skills()  # 同步函数，扫盘 + 校验，不合规直接抛
+        await init_checkpointer()  # 连不上库直接抛，不让应用带病启动
         langfuse_on = init_langfuse()
         jieba.initialize()  # 预热分词词典（~1s），开门前付掉，别让首个检索请求付
         logger.info(
@@ -44,6 +46,7 @@ async def lifespan(app: FastAPI):
         finally:
             await task_queue.disconnect()  # 队列自持一条 Redis 连接，与上面的 RedisClient 各自独立
             await redis_conn.close()
+            await shutdown_checkpointer()
             shutdown_langfuse()
     logger.info("👋 应用已停止")
 

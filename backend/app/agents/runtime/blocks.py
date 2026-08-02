@@ -87,13 +87,30 @@ class ArtifactRefBlock(_BlockBase):
     size: int = 0
 
 
-ContentBlock = TextBlock | ThinkingBlock | ToolUseBlock | ArtifactRefBlock
+class AskBlock(_BlockBase):
+    """人工确认的表单 —— 停下来问用户的那一张。
+
+    存进 content 而不是只发一帧 SSE：否则用户刷新页面后，这条消息只剩一个
+    「卡着」的状态，前端不知道该渲染什么表单，等于死在那儿。
+
+    answer 为 None = 还没答。答完由「继续」接口回填，历史里就能看到
+    「当时问了什么、我答了什么」，而不只是一行工具调用记录。
+    """
+
+    type: Literal["ask"]
+    interrupt_id: str = ""  # LangGraph 给这次中断分配的 id
+    payload: dict[str, Any] = {}  # AskPayload 的原样内容（问题 / 字段 / 按钮）
+    answer: dict[str, Any] | None = None
+
+
+ContentBlock = TextBlock | ThinkingBlock | ToolUseBlock | ArtifactRefBlock | AskBlock
 
 _BLOCK_TYPES: dict[str, type[ContentBlock]] = {
     "text": TextBlock,
     "thinking": ThinkingBlock,
     "tool_use": ToolUseBlock,
     "artifact_ref": ArtifactRefBlock,
+    "ask": AskBlock,
 }
 
 

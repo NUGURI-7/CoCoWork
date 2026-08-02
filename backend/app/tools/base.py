@@ -21,6 +21,7 @@ from abc import abstractmethod
 from typing import Any, Literal
 
 from langchain_core.tools import BaseTool
+from langgraph.errors import GraphBubbleUp
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,13 @@ class CoCoTool(BaseTool):
         except asyncio.TimeoutError:
             logger.warning("tool %r timeout after %ss", self.name, self.timeout_seconds)
             return f"工具「{self.display_name}」执行超时（超过 {self.timeout_seconds:g} 秒）"
+        except GraphBubbleUp:
+            # LangGraph 的控制流信号（人工确认的中断、工具返回 Command 注入 state、
+            # 图排空），全靠抛异常向上冒泡实现 —— **它们不是「工具出错」**。
+            # 被下面那个 except Exception 截住的话，用户永远等不到那张表单，
+            # 只会收到一句「执行出错」，整套中断机制静默失效。
+            # 顺序不能与下面对调：Python 按书写顺序匹配 except 分支
+            raise
         except Exception as exc:
             # 异常不外抛、不让 traceback 进 LLM context —— 翻成一句话，由 LLM 自行决定换法
             logger.exception("tool %r failed", self.name)

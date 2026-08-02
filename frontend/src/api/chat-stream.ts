@@ -15,7 +15,7 @@
  * - SSE 流中错误（event: error 帧）     — 不在此层处理，由 store switch 接住
  */
 
-import type { ChatStreamRequest } from '@/types'
+import type { AskAnswer, ChatStreamRequest } from '@/types'
 
 const API_BASE = '/api/v1'
 
@@ -120,7 +120,8 @@ export async function* parseSSEStream(
  */
 export async function* streamChat(
   endpoint: string,
-  body: ChatStreamRequest,
+  /** 新开一轮 = ChatStreamRequest；提交人工确认的答案 = AskAnswer（走 resume 端点） */
+  body: ChatStreamRequest | AskAnswer,
   opts?: { signal?: AbortSignal },
 ): AsyncGenerator<SSEEvent> {
   const token = localStorage.getItem('token')

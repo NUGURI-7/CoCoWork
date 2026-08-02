@@ -83,8 +83,13 @@ export type MessageRole = 'user' | 'assistant'
 /** 业务层发送方：真人 / 管家 / 普通成员（对齐后端 SenderKind） */
 export type SenderKind = 'user' | 'supervisor' | 'member'
 
-/** 落库终态（对齐后端 MessageStatus；流式中间态不入库） */
-export type MessageStatus = 'done' | 'error' | 'stopped'
+/**
+ * 落库状态（对齐后端 MessageStatus；流式中间态不入库）。
+ *
+ * interrupted **不是终态** —— 这条消息停在人工确认的表单上，还没说完，
+ * 等用户填完由「继续」接口续写。
+ */
+export type MessageStatus = 'done' | 'error' | 'stopped' | 'interrupted'
 
 /**
  * 对齐后端 MessageOut。

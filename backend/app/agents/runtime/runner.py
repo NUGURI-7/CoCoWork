@@ -23,6 +23,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.tools import BaseTool
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import Command
 from uuid_utils import compat as uuid_compat
 
 from app.models.sandbox import SandboxArtifact
@@ -302,11 +303,12 @@ def build_display_names(tools: list[BaseTool]) -> dict[str, str]:
     workspace 应答者 / workspace 成员），后两处都要在 tools 追加过
     ToolResultFetchTool、artifact_tools 之后才算，时机与装配点对不齐。
     """
-    return {
-        tool.name: display_name
-        for tool in tools
-        if (display_name := getattr(tool, "display_name", None))
-    }
+    names: dict[str, str] = {}
+    for tool in tools:
+        display_name = getattr(tool, "display_name", None)
+        if display_name:
+            names[tool.name] = display_name
+    return names
 
 
 def _build_kb_tool_description(kb: KnowledgeBase) -> str:
@@ -407,7 +409,7 @@ async def prepare_stream(
 
 async def run_chat_stream(
         graph: CompiledStateGraph,
-        messages: list[BaseMessage],
+        graph_input: list[BaseMessage] | Command,
         *,
         message_id: UUID,
         collect: ArtifactCollector | None = None,
@@ -418,6 +420,10 @@ async def run_chat_stream(
         display_names: dict[str, str] | None = None,
 ) -> AsyncIterator[str]:
     """SSE 流主编排 —— 包 message_start / 驱动 adapter / 兜底 message_stop。
+
+    graph_input：消息列表 = 新开一轮对话；Command = 用户填完表单后从存档继续。
+    后者**不带历史** —— 存档里已有完整的执行现场，再拼一遍就是同一段对话
+    进两次。
 
     sink：可选事件旁路。每个事件在粘成 SSE 字符串之前，原样 (EventType, payload)
     先喂 sink 一份 —— 一份流前端、一份进桶（Unix tee 分叉）。Playground 不传、
@@ -434,6 +440,10 @@ async def run_chat_stream(
     _feed_sink(sink, EventType.MESSAGE_START, start_payload)
     yield sse_event(EventType.MESSAGE_START, start_payload)
 
+    # 本轮是否卡在人工确认上。必须在 try 之前定义 —— finally 里要读它，
+    # 而 try 内部任何一步抛异常都可能让 try 里的赋值来不及执行
+    interrupted = False
+
     try:
         # Langfuse:配了 key 才挂 callback;trace 归因走 config.metadata(langfuse_* 键)
         handler = get_langfuse_handler()
@@ -441,7 +451,14 @@ async def run_chat_stream(
         # langgraph 的 ensure_config 自动传给子 agent（子 agent 自绑的优先），
         # 所以设这一处就同时罩住 supervisor 和它派活的每个成员 —— 各自一份
         # 预算，不是全家共享。
-        config: dict[str, Any] = {"recursion_limit": RECURSION_LIMIT}
+        # thread_id = 本轮 assistant 消息 ID —— 一次回复一个存档槽。
+        # 不用 conversation_id：历史由业务侧按应答者视角另拼，若按对话粒度复用
+        # 同一个槽，add_messages 的追加语义会把上一轮的视角历史叠进来。
+        # Playground 的图没挂 checkpointer，传了会被安全忽略（已实测）
+        config: dict[str, Any] = {
+            "recursion_limit": RECURSION_LIMIT,
+            "configurable": {"thread_id": str(message_id)},
+        }
 
         if handler is not None:
             config["callbacks"] = [handler]
@@ -451,7 +468,9 @@ async def run_chat_stream(
                 config["metadata"] = trace.to_config_metadata()
 
         events = graph.astream_events(
-            {"messages": messages},
+            # 两种输入形态：消息列表 = 新开一轮；Command = 从存档接着跑。
+            # astream_events 本来就两种都吃，这里只原样转手、不替它判断
+            {"messages": graph_input} if isinstance(graph_input, list) else graph_input,
             version="v2",
             # 不再写 `config or None`：加了 recursion_limit 之后这个字典永远
             # 非空，那个兜底分支已经不可能触发
@@ -459,12 +478,18 @@ async def run_chat_stream(
         )
 
         async for event, payload in adapt_chat_stream(events, display_names):
+            if event == EventType.INTERRUPT:
+                interrupted = True
             _feed_sink(sink, event, payload)
             yield sse_event(event, payload)
 
     finally:
+        # 暂停不是收尾：卡在表单上时这轮还没跑完。此时收产物会重复收（等用户
+        # 填完、「继续」那条流跑到底时还要再收一次），销毁容器更会把 Agent 做
+        # 到一半的东西连锅端掉 —— 用户填完答案接着跑时工作区得还在。
+        # 容器就这么开着等人的风险由 sandboxd 的反收割兜（用户不填就走超时）
         # 产物帧必须赶在 message_stop 之前 —— 前端收到 stop 就把这条消息收口了
-        if collect is not None:
+        if collect is not None and not interrupted:
             try:
                 artifacts = await collect()
                 if artifacts:
@@ -491,7 +516,7 @@ async def run_chat_stream(
         # 销毁容器**必须排在收产物之后**：产物就躺在容器里，先销毁就什么都没了。
         # 它也不是唯一保障 —— 用户掐断时抛的是 CancelledError（继承 BaseException），
         # 这里接不住、这段根本执行不到，那种情况由 sandboxd 的反收割兜底。
-        if close is not None:
+        if close is not None and not interrupted:
             try:
                 await close()
             except Exception:
@@ -501,6 +526,10 @@ async def run_chat_stream(
         # generator finally 兜底：自身 yield 也包 try，二次失败只 log 不再 raise
         try:
             stop_payload: dict[str, Any] = {"id": str(message_id)}
+            if interrupted:
+                # 前端据此知道「别收气泡，下面要渲染表单」。正常结束时不带这个
+                # 字段 —— 对不认识它的旧前端向后兼容
+                stop_payload["reason"] = "interrupted"
             if usage is not None:
                 try:
                     stop_payload |= usage()

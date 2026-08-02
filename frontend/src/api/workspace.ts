@@ -130,6 +130,20 @@ export function conversationStreamEndpoint(
   return `/workspaces/${workspaceId}/conversations/${conversationId}/stream`
 }
 
+/**
+ * 提交人工确认的答案，从存档接着往下跑。
+ *
+ * 与 /stream 是**两条独立的流**：那条消息在这里被续写，不新建 —— 所以用的是
+ * 同一个 message_id，前端也把新内容追加进同一个气泡。
+ */
+export function conversationResumeEndpoint(
+  workspaceId: string,
+  conversationId: string,
+  messageId: string,
+): string {
+  return `/workspaces/${workspaceId}/conversations/${conversationId}/messages/${messageId}/resume`
+}
+
 // ============ Member（nested: /workspaces/{wid}/members） ============
 
 /** 列出 workspace 成员（后端按招募时间正序，先来的在前）。 */

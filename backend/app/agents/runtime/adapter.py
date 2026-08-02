@@ -486,6 +486,25 @@ async def _on_tool_end(
 
 # ============ 主入口 ============
 
+def _interrupt_asks(ev: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """从事件里认出中断，没有则返回 None。
+
+    实测形态：根图的 on_chain_stream，data.chunk 里多出一个 `__interrupt__`
+    键，值是 Interrupt 元组 —— 元组是因为一次可能有多个（几个成员同时举手）。
+
+    id 由 LangGraph 分配。前端提交答案时原样带回来，多个中断并存时靠它对号。
+    """
+    if ev.get("event") != "on_chain_stream":
+        return None
+    chunk = (ev.get("data") or {}).get("chunk")
+    if not isinstance(chunk, dict):
+        return None
+    interrupts = chunk.get("__interrupt__")
+    if not interrupts:
+        return None
+    return [{"id": i.id, "payload": i.value} for i in interrupts]
+
+
 async def adapt_chat_stream(
         events: AsyncIterator[dict[str, Any]],
         display_names: dict[str, str] | None = None,
@@ -516,6 +535,14 @@ async def adapt_chat_stream(
                 call_id = state.task_call_by_pos.get(pos) if pos is not None else None
                 if call_id is not None:
                     state.lane_to_delegate[_lane_key(meta)] = call_id
+
+            # 中断不属于任何泳道 —— 对前端而言就是「整轮停了、等你填」。
+            # 必须抢在 handler 分发之前：on_chain_stream 没注册 handler，
+            # 落到下面会被 continue 掉
+            asks = _interrupt_asks(ev)
+            if asks is not None:
+                yield EventType.INTERRUPT, {"asks": asks}
+                continue
 
             handler = _HANDLERS.get(ev.get("event", ""))
             if handler is None:

@@ -37,6 +37,8 @@ class MessageCollector:
         self.message_id: str = ""
         self.saw_error: bool = False
         self.error_message: str = ""
+        # 本轮是否停在人工确认上 —— 决定落库状态是 interrupted 还是 done
+        self.saw_interrupt: bool = False
         # 本轮上下文规模（主道最后一次模型调用的 input_tokens）——落 Conversation
         # 而非 Message，是层 B 下一轮判断该不该压缩的依据
         self.context_tokens: int = 0
@@ -113,6 +115,9 @@ class MessageCollector:
             case EventType.ERROR:
                 self.saw_error = True
                 self.error_message = payload.get("message", "")
+            case EventType.INTERRUPT:
+                self.saw_interrupt = True
+                self._append_ask(payload)
             case _:
                 # CONTENT_BLOCK_STOP / TOOL_USE_STOP / MESSAGE_STOP —— 桶无动作：
                 # 块的"完整性"由内容本身体现，不需要关块标记。
@@ -132,6 +137,26 @@ class MessageCollector:
         if delegate_id:
             block["delegate_id"] = delegate_id
         self._blocks[index] = block
+
+    def _append_ask(self, payload: dict[str, Any]) -> None:
+        """表单存成一个块，接在已有块的末尾。
+
+        INTERRUPT 事件不带 index —— 它不是模型流式输出的一部分，而是图停下来
+        的信号，所以自己算一个接在最后。
+
+        只取第一个：实测中断是一个一个来的（图撞上第一个就整体冻住），asks
+        恒为单元素；真出现多个也只存第一个，剩下的下一轮还会再来。
+        """
+        asks = payload.get("asks") or []
+        if not asks:
+            return
+        index = max(self._blocks) + 1 if self._blocks else 0
+        self._blocks[index] = {
+            "type": "ask",
+            "interrupt_id": asks[0].get("id", ""),
+            "payload": asks[0].get("payload") or {},
+            "answer": None,
+        }
 
     def _append_delta(self, payload: dict[str, Any]) -> None:
         """content_block_delta → 按 index 找块、追加内容增量。"""

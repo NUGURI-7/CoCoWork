@@ -47,6 +47,9 @@ class MessageStatus(StrEnum):
     DONE = "done"
     ERROR = "error"
     STOPPED = "stopped"
+    # 卡在人工确认上 —— **不是终态**：这条消息还没说完，等用户填完表单由
+    # 「继续」接口接着往下写。前端据此重新渲染表单（刷新页面也能恢复）
+    INTERRUPTED = "interrupted"
 
 
 class Message(UUIDBaseModel, TimestampMixin):
@@ -83,7 +86,7 @@ class Message(UUIDBaseModel, TimestampMixin):
         MessageStatus,
         max_length=16,
         default=MessageStatus.DONE,
-        description="终态:done/error/stopped(流式中不入库)",
+        description="done/error/stopped/interrupted(流式中不入库；interrupted 非终态)",
     )
     error_message = fields.CharField(
         max_length=500, default="", description="错误友好文案(给用户看,技术细节走 log)",

@@ -12,6 +12,8 @@
 import { previewFromPartialJson } from '@/stores/chat-store'
 import type {
   ApiContentBlock,
+  AskAnswer,
+  AskPayload,
   ChatMessage,
   DelegateBlock,
   RenderBlock,
@@ -34,6 +36,19 @@ function translateOne(
       status: 'done',
       content: b.thinking,
       collapsed: true,
+    }
+  }
+
+  if (b.type === 'ask') {
+    // 人工确认那张表单。刷新页面后它得原样回来 —— answer 为 null 时还是可交互的
+    // 表单（用户当时没答完，现在还能答）；有 answer 则渲染成只读结果行
+    return {
+      type: 'ask',
+      index,
+      interruptId: typeof b.interrupt_id === 'string' ? b.interrupt_id : '',
+      payload: b.payload as AskPayload,
+      answer: (b.answer as AskAnswer | null) ?? null,
+      submitting: false,
     }
   }
 
@@ -175,7 +190,13 @@ export function workspaceMessagesToChatMessages(
     return {
       role: 'assistant',
       id: m.id,
-      status: m.status === 'error' ? 'error' : 'completed',
+      // interrupted = 这条消息停在表单上还没答完，气泡不收口、输入框保持锁住
+      status:
+        m.status === 'error'
+          ? 'error'
+          : m.status === 'interrupted'
+            ? 'awaiting'
+            : 'completed',
       blocks: toRenderBlocks(m.content),
       usage: null,
       // 本轮消耗：流式那份由 message_stop 帧写进同名字段，这里是刷新后从 DB 还原的

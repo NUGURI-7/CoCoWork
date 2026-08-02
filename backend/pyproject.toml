@@ -25,6 +25,11 @@ dependencies = [
     "langchain-anthropic>=1.4.4",
     "deepagents>=0.6.10",
     "langgraph>=1.2.4",
+    # checkpointer 的 Postgres 后端。psycopg 必须显式带上两个 extra：
+    # binary 提供预编译的 libpq（缺了直接 no pq wrapper available），
+    # pool 提供连接池实现（psycopg 本体只会连单条）
+    "langgraph-checkpoint-postgres>=3.1.1",
+    "psycopg[binary,pool]>=3.3.4",
     "langfuse>=4.11.0",
     "langchain-mcp-adapters>=0.3.0",
     "jieba>=0.42.1",

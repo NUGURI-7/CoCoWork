@@ -14,6 +14,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
+from langgraph.types import Command
 from uuid_utils import compat as uuid_compat
 
 from app.agents.runtime import (
@@ -30,7 +31,8 @@ from app.core.exceptions.types import AppApiException
 from app.core.observability import TraceContext
 from app.models import Conversation, Message, MessageStatus, SenderKind, MessageRole, WorkspaceMember
 from app.models.user import User
-from app.schemas.agent.chat_schema import ChatStreamRequest
+from app.schemas.agent.chat_schema import ChatStreamRequest, TextBlock
+from app.schemas.agent.interrupt_schema import AskAnswer
 from app.schemas.workspace import ConversationStreamIn, MessageAppend
 from app.services.memory import should_digest
 from app.services.sandbox.attachment import resolve_refs
@@ -54,6 +56,90 @@ MessageServiceDep = Annotated[MessageService, Depends(get_message_service)]
 CompactionServiceDep = Annotated[CompactionService, Depends(get_compaction_service)]
 
 SSE_MEDIA_TYPE = "text/event-stream"
+
+
+def _assistant_append(
+        collector: MessageCollector,
+        *,
+        message_id: UUID,
+        status: MessageStatus,
+        responder: WorkspaceMember | None,
+) -> MessageAppend:
+    """collector 攒下的东西 → 一条 assistant 消息的落库数据。
+
+    抽出来是因为两条路要用同一份组装：首轮走 svc.append 新建，用户填完表单后
+    「继续」那条流走 svc.continue_message 续写 —— 字段口径必须一模一样，
+    否则同一条消息的前后两段会对不上（将来 MessageAppend 加字段，也只改这一处）。
+
+    saw_error 优先于传入的 status：流里出过错就是 error，不管调用方本来想记什么。
+    """
+    return MessageAppend(
+        id=message_id,
+        role=MessageRole.ASSISTANT,
+        # 应答者身份：supervisor(responder=None) 或被 @ 的成员
+        sender_kind=SenderKind.SUPERVISOR if responder is None else SenderKind.MEMBER,
+        sender_member_id=None if responder is None else responder.id,
+        content=collector.blocks,
+        status=MessageStatus.ERROR if collector.saw_error else status,
+        error_message=collector.error_message,
+        prompt_tokens=collector.prompt_tokens,
+        completion_tokens=collector.completion_tokens,
+        token_usage=collector.usage_rows,
+    )
+
+
+async def _load_interrupted(
+        workspace_id: UUID,
+        conversation_id: UUID,
+        message_id: UUID,
+        current_user: User,
+) -> tuple[Conversation, Message, WorkspaceMember | None]:
+    """取出一条卡在人工确认上的消息，并还原出当时是谁在应答。
+
+    「谁在应答」不需要另外记：那条 assistant 消息落库时存了 sender_kind /
+    sender_member_id（见 persist_assistant），照着读回来就是。
+
+    三个条件缺一不可 —— 归属（这个用户的这个工作区的这个对话）、消息确实
+    属于该对话、状态确实是中断态。任一不满足都是 404：不区分「不存在」和
+    「已经答过了」，免得靠错误信息探出别人的消息 id 是否存在。
+    """
+    conversation = (
+        await Conversation.filter(
+            id=conversation_id,
+            workspace_id=workspace_id,
+            workspace__created_by=current_user,
+        )
+        .prefetch_related("workspace")
+        .first()
+    )
+    if conversation is None:
+        raise NotFound404("Conversation 不存在")
+
+    message = await Message.filter(
+        id=message_id,
+        conversation_id=conversation_id,
+        status=MessageStatus.INTERRUPTED,
+    ).first()
+    if message is None:
+        raise NotFound404("这条消息不存在，或已经不在等待确认的状态")
+
+    if message.sender_kind != SenderKind.MEMBER:
+        return conversation, message, None  # supervisor 在应答
+
+    responder = (
+        await WorkspaceMember.filter(
+            id=message.sender_member_id,
+            workspace_id=workspace_id,
+        )
+        .select_related("agent")  # build_workspace_graph 要 responder.agent.config
+        .first()
+    )
+    if responder is None:
+        # 中断期间成员被移出了空间。据实说 —— 这次回复没法继续，让用户重新
+        # 发起，而不是悄悄换成 supervisor 顶替（那等于换了个人接着说话）
+        raise NotFound404("当时应答的成员已被移出工作区，这条回复无法继续")
+
+    return conversation, message, responder
 
 
 @router.post("/stream", summary="Workspace 对话流（supervisor 应答）")
@@ -128,30 +214,16 @@ async def conversation_stream(
 
     async def persist_assistant(status: MessageStatus) -> None:
         """流收尾落库：assistant 消息 + touch 对话活跃时间。"""
-        final = MessageStatus.ERROR if collector.saw_error else status
-
         # message_id 由 route 生成（见上），不必再从 MESSAGE_START 帧里捡回来 ——
-        # 「早断没收到帧」这个 fallback 分支随之消失，id 一定有
-
-        # 应答者身份：supervisor(responder=None) 或被 @ 的成员
-        if responder is None:
-            sender_kind, sender_member_id = SenderKind.SUPERVISOR, None
-        else:
-            sender_kind, sender_member_id = SenderKind.MEMBER, responder.id
-
+        # 「早断没收到帧」这个 fallback 分支随之消失，id 一定有。
+        # 字段组装与「继续」那条流共用 _assistant_append，口径不会分叉
         await svc.append(
             conversation_id,
-            MessageAppend(
-                id=message_id,
-                role=MessageRole.ASSISTANT,
-                sender_kind=sender_kind,
-                sender_member_id=sender_member_id,
-                content=collector.blocks,
-                status=final,
-                error_message=collector.error_message,
-                prompt_tokens=collector.prompt_tokens,
-                completion_tokens=collector.completion_tokens,
-                token_usage=collector.usage_rows,
+            _assistant_append(
+                collector,
+                message_id=message_id,
+                status=status,
+                responder=responder,
             ),
         )
         # usage 拿不到时（provider 不报）保留上一轮的值：清零会让判据永远不超线，
@@ -242,11 +314,135 @@ async def conversation_stream(
                     ),
             ):
                 yield sse
-            status = MessageStatus.DONE  # 自然走到这行 = 完整流完
+            # 自然走到这行 = 流完整跑完。但「跑完」有两种：真说完了，或者停在
+            # 表单上等用户 —— 后者必须记成 interrupted，否则「继续」接口按状态
+            # 找不到这条消息，用户填完表单没人接得住
+            status = (
+                MessageStatus.INTERRUPTED if collector.saw_interrupt
+                else MessageStatus.DONE
+            )
         finally:
             # 用户中断时本 task 已被 cancel，finally 里裸 await 可能被再次打断；
             # shield 给落库协程穿防弹衣 —— 外层取消不波及它，INSERT 必然跑完。
             # 而中断（stopped）恰恰是最不能丢落库的路径：半截消息也是历史。
             await asyncio.shield(persist_assistant(status))
+
+    return StreamingResponse(stream(), media_type=SSE_MEDIA_TYPE)
+
+
+@router.post(
+    "/messages/{message_id}/resume",
+    summary="提交人工确认的答案，从存档接着往下跑",
+)
+async def resume_stream(
+        workspace_id: UUID,
+        conversation_id: UUID,
+        message_id: UUID,
+        body: AskAnswer,
+        current_user: CurrentUserDep,
+        svc: MessageServiceDep,
+) -> StreamingResponse:
+    """用户填完表单后调这里，接着上次停住的地方继续。
+
+    与 /stream 的三点差异：
+    - **不落 user 消息**：用户没说新话，只是填了个表，右边不该多出一个气泡
+    - **不拼历史**：存档里已有完整的执行现场，喂 Command 即可（再拼一遍就是
+      同一段对话进两次）
+    - **不新建消息**：续写到同一条上，用户看到的是一条连贯回复中间插了张表单
+    """
+    # ① 校验 + 还原当时是谁在应答（不合法一律 404，SSE 还没起）
+    conversation, message, responder = await _load_interrupted(
+        workspace_id, conversation_id, message_id, current_user
+    )
+
+    collector = MessageCollector()
+
+    async def persist_continuation(status: MessageStatus) -> None:
+        """流收尾：续写同一条消息 + touch 对话活跃时间。"""
+        # 字段组装与首轮共用，口径不会分叉；只有落库动作不同（续写而非新建）
+        updated = await svc.continue_message(
+            message_id,
+            _assistant_append(
+                collector,
+                message_id=message_id,
+                status=status,
+                responder=responder,
+            ),
+            answer=body.model_dump(mode="json"),
+        )
+        if updated is None:
+            # 走到这儿说明中断态在流跑的过程中被别人改掉了（重复提交）。
+            # 内容已经流给前端了、也没法回退，据实记一笔即可
+            logger.warning("续写落库落空，消息已不在中断态 message_id=%s", message_id)
+
+        update_fields = ["updated_at"]
+        if collector.context_tokens > 0:
+            conversation.context_tokens = collector.context_tokens
+            update_fields.append("context_tokens")
+        await conversation.save(update_fields=update_fields)
+
+    async def stream():
+        status = MessageStatus.STOPPED  # 悲观默认：没自然走完就是被掐
+        try:
+            # ② 装配：**必须重走一遍**。恢复时那个节点会从头重跑，得有跟中断时
+            #    同一套工具与 prompt。返回的 messages 用不上（历史在存档里），
+            #    这里只要它的图与沙箱句柄
+            try:
+                prepared = await build_workspace_graph(
+                    conversation.workspace,
+                    # 这次没有新输入。content 至少要一项（schema 约束），
+                    # 给个空文本块占位 —— 这个函数产出的 messages 不参与，
+                    # 我们只要它的图和沙箱句柄
+                    ChatStreamRequest(content=[TextBlock(text="")], history=[]),
+                    current_user,
+                    past=[],  # 同理：历史由存档提供，不在这里拼
+                    responder=responder,
+                    message_id=message_id,
+                    conversation_id=conversation_id,
+                    attachments=[],
+                )
+            except Exception as e:
+                # 同 /stream：SSE 已开，只能发错误帧，且必须先发 message_start
+                logger.exception("resume 装配失败 message_id=%s", message_id)
+                yield sse_event(EventType.MESSAGE_START, {"id": str(message_id)})
+                yield sse_event(EventType.ERROR, {
+                    "code": ERROR_CODE_INTERNAL,
+                    "message": (
+                        e.message if isinstance(e, AppApiException) else ERROR_MESSAGE_GENERIC
+                    ),
+                })
+                status = MessageStatus.ERROR
+                return
+
+            # ③ 输入是 Command 而非消息列表 —— 从存档接着跑
+            async for sse in run_chat_stream(
+                    prepared.graph,
+                    Command(resume=body.model_dump(mode="json")),
+                    message_id=message_id,
+                    collect=prepared.collect,
+                    close=prepared.close,
+                    display_names=prepared.display_names,
+                    sink=collector.feed,
+                    usage=lambda: collector.usage_summary,
+                    trace=TraceContext(
+                        user_id=str(current_user.id),
+                        session_id=str(conversation_id),
+                        name="workspace_resume",
+                        tags=["workspace_chat", "resume"],
+                        metadata={
+                            "workspace_id": str(workspace_id),
+                            "responder": "supervisor" if responder is None else str(responder.id),
+                        },
+                    ),
+            ):
+                yield sse
+            # 可能又撞上一次中断（模型接着问第二轮），那就还是 interrupted
+            status = (
+                MessageStatus.INTERRUPTED if collector.saw_interrupt
+                else MessageStatus.DONE
+            )
+        finally:
+            # 同 /stream：用户掐断时本 task 已被 cancel，shield 保落库跑完
+            await asyncio.shield(persist_continuation(status))
 
     return StreamingResponse(stream(), media_type=SSE_MEDIA_TYPE)

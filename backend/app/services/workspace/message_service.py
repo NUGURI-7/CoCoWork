@@ -1,7 +1,8 @@
+from typing import Any
 from uuid import UUID
 
 from app.core.exceptions import NotFound404
-from app.models import Conversation, Message, User
+from app.models import Conversation, Message, MessageStatus, User
 from app.schemas.sandbox import ArtifactOut
 from app.schemas.workspace import MessageAppend, MessageOut
 from app.services.sandbox.artifact import group_by_message
@@ -77,6 +78,52 @@ class MessageService:
         )
 
         return MessageOut.model_validate(message)
+
+    async def continue_message(
+        self, message_id: UUID, data: MessageAppend, *, answer: dict[str, Any],
+    ) -> MessageOut | None:
+        """给一条卡在人工确认上的消息续写 —— 「继续」那条流跑完后调。
+
+        与 append 的分工：append **新建**一条消息，本方法把新内容接到**同一条**
+        上。用户看到的是一条连贯的回复中间插了张表单，而不是被切成两条气泡；
+        checkpoint 的 thread_id 用的也是这条消息的 id，两边对得上。
+
+        content 追加不覆盖：中断前已经说过的话要留着。
+        token 三项同理累加 —— 一条消息的用量是两段之和。
+
+        status 进 WHERE 而不是查完再判断，可以挡掉大部分重复提交；但查与写
+        是两步，并非严格的并发锁 —— 真正兜住的是 LangGraph 那层：同一个存档
+        恢复过一次之后，第二次就没有中断在等着了。
+
+        返回 None = 消息不存在或已不在中断态，由调用方翻成 4xx。
+        """
+        message = await Message.filter(
+            id=message_id, status=MessageStatus.INTERRUPTED
+        ).first()
+        if message is None:
+            return None
+
+        # 把答案回填进最后一个未作答的表单块 —— 历史里就能看到「当时问了什么、
+        # 我答了什么」，而不是只剩一个空表单。从后往前找：一条消息可能问过好
+        # 几轮，只有最后那个是这次答的
+        for block in reversed(message.content):
+            if block.get("type") == "ask" and block.get("answer") is None:
+                block["answer"] = answer
+                break
+
+        message.content = [*message.content, *data.content]
+        message.status = data.status
+        message.error_message = data.error_message
+        message.prompt_tokens += data.prompt_tokens
+        message.completion_tokens += data.completion_tokens
+        message.token_usage = [*message.token_usage, *data.token_usage]
+
+        await message.save(update_fields=[
+            "content", "status", "error_message",
+            "prompt_tokens", "completion_tokens", "token_usage", "updated_at",
+        ])
+        return MessageOut.model_validate(message)
+
 
 async def get_message_service() -> MessageService:
     return MessageService()

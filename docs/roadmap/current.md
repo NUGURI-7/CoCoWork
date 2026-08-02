@@ -97,6 +97,13 @@ MCP 工具接入 ✅（06-28）/ 沙箱产物 ✅（07-30）/ 多会话并发流
 **补上 MCP 那条完全裸奔的路**（框架自带的两道兜底都只认 `ToolException`，而传输层失败不是它的子类）。
 挂载两处罩住全部三个 `create_agent`；用户掐断不受影响（`CancelledError` 继承 `BaseException`，`except Exception` 接不住）。
 
+**HITL 人工确认 ✅ 08-02**（来源=面试，原不在待办表）：agent 停下来问用户、用户填完表单接着跑。
+LangGraph `interrupt` + Postgres checkpointer（独立小池、表由框架 `setup()` 自建、不进 `migrations/`）+
+`INTERRUPTED` 非终态 + `resume` 端点续写同一条消息 + 前端 `AskBlock`。
+**兑现了此前定的契约**：checkpointer 只当「暂停现场保存器」，永不当历史存储。
+踩到的坑：`GraphBubbleUp` 必须在 `CoCoTool._arun` 与 `ToolGuardMiddleware` 两处放行 ——
+中断靠抛异常冒泡实现，被 `except Exception` 截住的话用户永远等不到表单、模型只收到「执行失败」就自顾自往下答。
+
 **KB-as-tool v2 已整条清空**（2026-08-01）：主体随 07-20 库级检索设置落地；剩下两小条 —— KB slug 与
 `create_retriever_tool` 工厂收口 —— 同日经源码实证**双双否决**，理由见 §4。**本条不再是待办。**
 
@@ -109,7 +116,7 @@ MCP 工具接入 ✅（06-28）/ 沙箱产物 ✅（07-30）/ 多会话并发流
 | # | 待办 | 模块 | 成本 | 代码依据（08-01 核） | 来源 |
 |---|---|---|---|---|---|
 | ② | **多格式 docx / xlsx** | RAG | 半天 | `schemas/knowledge/document_schema.py:20` 的 `ALLOWED_FILE_TYPES` 仍是 `{md, txt, pdf}`；`Parser` ABC 已在，加两个实现即可 | 面试 |
-| ⑤ | **多 @ 并发应答** | Workspace | 中型 | `routes/workspace/stream.py:89` 取 `mentioned_member_ids[0]` —— 只认第一个。需后端一条 SSE 多路复用 N 路应答 + 前端按成员维护 N 个并发气泡 | roadmap |
+| ⑤ | **多 @ 并发应答** | Workspace | 中型 | `stream.py` 取 `mentioned_member_ids[0]` —— 只认第一个。**08-02 重估：成本比原记的低**，HITL 已把「一条流 = 一个 message_id」显式化（resume 全程按 id 走、应答者身份从 DB 的 `sender_kind`/`sender_member_id` 还原），实剩三件 —— 后端单 responder → N（`asyncio.Queue` 汇一条 SSE）、每帧带 message_id（`runner.py` 的 `sse_event` 出口一处收口）、前端 17 处「取最后一条」改按 id 查（`chat-store.ts` 的 `answerAsk` 是现成样板）。另注意 @N 人 = N 个沙箱容器同时开 | roadmap |
 | ⑥ | **admin 用户管理接真后端** | Admin | 小 | `routes/user/user.py` 只有 `register` / `login` / `me` 三个端点，无 list / 改角色 / 禁用 / 删。前端 mock 页早已就绪 | roadmap |
 | ⑦ | **`AIModel.meta` chat 侧能力标记** | Model | 中 | 见下方「§5 记账更正」——**不是"恒为 None"**，空的是 chat / rerank 两类 | 欠账 |
 | ⑧ | **README + release** | 收尾 | 小 | README 仅 122 字节；`git tag` 为空 | 收尾 |

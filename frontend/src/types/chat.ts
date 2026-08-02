@@ -37,11 +37,53 @@ export interface ApiArtifactRefBlock {
   content_type: string
 }
 
+// ---- 人工确认（HITL）：停下来问用户的那张表单 ----
+
+/** 表单里的一个字段。四种类型靠 type 判别，各自的字段不通用。 */
+export type AskField =
+  | { type: 'text'; name: string; label: string; required: boolean; default: string | null; multiline: boolean }
+  | { type: 'select'; name: string; label: string; required: boolean; options: string[]; default: string | null; allow_custom: boolean }
+  | { type: 'multi_select'; name: string; label: string; required: boolean; options: string[]; default: string[]; allow_custom: boolean }
+  | { type: 'boolean'; name: string; label: string; required: boolean; default: boolean }
+
+export interface AskAction {
+  id: string
+  label: string
+  style: 'default' | 'primary' | 'danger'
+}
+
+/** 后端 AskPayload 的原样内容 —— 停下来时问什么、给哪些按钮。 */
+export interface AskPayload {
+  question: string
+  fields: AskField[]
+  actions: AskAction[]
+  /** 谁在问：supervisor 或某个成员（群聊里要显示「张三在问你」） */
+  asker_kind: 'supervisor' | 'member'
+  asker_name: string
+  asker_member_id: string | null
+}
+
+/** 用户填完提交回去的东西 —— 点了哪个按钮 + 各字段的值。 */
+export interface AskAnswer {
+  action: string
+  values: Record<string, string | boolean | string[]>
+}
+
+/**
+ * 落库那份表单块。answer 为 null = 还没答 —— 刷新页面靠它把表单重新画出来。
+ */
+export interface ApiAskBlock {
+  type: 'ask'
+  interrupt_id: string
+  payload: AskPayload
+  answer: AskAnswer | null
+}
+
 /**
  * 加 union 成员不破坏上层（discriminator: type）。
  * P1 加 ApiToolUseBlock / ApiImageBlock 时继续往这儿扩。
  */
-export type ApiContentBlock = ApiTextBlock | ApiArtifactRefBlock
+export type ApiContentBlock = ApiTextBlock | ApiArtifactRefBlock | ApiAskBlock
 
 export interface ApiHistoryMessage {
   role: 'user' | 'assistant'
@@ -106,6 +148,17 @@ export interface TokenUsage {
 
 export interface MessageStopPayload extends Partial<TokenUsage> {
   id: string
+  /**
+   * 'interrupted' = 这条消息**没说完**，停在表单上等用户 —— 别收气泡、别停光标，
+   * 下面要渲染表单。正常结束时该字段缺席。
+   */
+  reason?: 'interrupted'
+}
+
+/** interrupt 帧 —— 图停下来了，这是要问用户的东西。 */
+export interface InterruptPayload {
+  /** 后端恒发单元素（中断是一个一个来的），仍用数组是为了贴合底层形状 */
+  asks: { id: string; payload: AskPayload }[]
 }
 
 export interface Usage {
@@ -276,11 +329,30 @@ export interface DelegateBlock {
   argsJson: string
 }
 
+/**
+ * 人工确认块 —— 渲染成一张表单，答完塌缩成一行结果。
+ *
+ * 它跟别的块不同：**用户要跟它交互**。所以除了展示数据，还带一份本地填写
+ * 状态（values），提交前只存在于前端；提交后由 answer 接管，表单变成只读。
+ */
+export interface AskBlock {
+  type: 'ask'
+  index: number
+  /** LangGraph 给这次中断分的 id；提交时原样带回后端 */
+  interruptId: string
+  payload: AskPayload
+  /** null = 还没答；有值 = 已提交，渲染成只读的结果行 */
+  answer: AskAnswer | null
+  /** 正在提交中（禁用按钮防重复点） */
+  submitting: boolean
+}
+
 export type RenderBlock =
   | TextBlock
   | ThinkingBlock
   | ToolUseBlock
   | DelegateBlock
+  | AskBlock
 
 // ============ Message（user / assistant union） ============
 
@@ -295,8 +367,12 @@ export interface AssistantMessage {
   role: 'assistant'
   /** 后端 message_start 给的 message_id */
   id: string
-  /** streaming — 流中、completed — 正常结束、error — 中断 */
-  status: 'streaming' | 'completed' | 'error'
+  /**
+   * streaming — 流中、completed — 正常结束、error — 中断
+   * awaiting  — **停在表单上等用户作答**：这条消息还没说完，气泡不收口，
+   *             用户填完由「继续」接口接着往同一条上写
+   */
+  status: 'streaming' | 'completed' | 'error' | 'awaiting'
   blocks: RenderBlock[]
   /** message_delta 给的 token 计数；usage 内部保留 snake_case（透传） */
   usage: Usage | null

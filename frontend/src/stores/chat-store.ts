@@ -35,6 +35,8 @@ import type {
   ApiContentBlock,
   ApiHistoryMessage,
   ArtifactsPayload,
+  AskAnswer,
+  InterruptPayload,
   CompactStopPayload,
   AssistantMessage,
   ChatMessage,
@@ -150,6 +152,15 @@ export interface ChatState {
   compactedBeforeIds: string[]
 
   send: (content: ApiContentBlock[], mentionedMemberIds?: string[]) => Promise<void>
+  /**
+   * 提交人工确认的答案，从存档接着往下跑。
+   *
+   * 与 send 是两条独立的流，但续的是**同一条消息** —— 后端用同一个 message_id，
+   * 前端也把新内容追加进同一个气泡（message_start 那里认 id 复用）。
+   *
+   * 没配 resumeEndpoint 的 store（Playground）调用无效果：那边不支持人工确认。
+   */
+  answerAsk: (messageId: string, blockIndex: number, answer: AskAnswer) => Promise<void>
   stop: () => void
   reset: () => void
   /** 用 DB 历史一次性灌入 messages（进对话回放）。流中不可调 —— 调用方靠
@@ -168,11 +179,15 @@ export type ChatStore = StoreApi<ChatState>
 export function createChatStore({
   endpoint,
   sendHistory = true,
+  resumeEndpoint,
 }: {
   endpoint: string
   /** body 是否携带 history。沙盒（Playground）前端持历史须送 true；
    *  workspace 历史真源在 DB、后端自己拼，传 false 不送。 */
   sendHistory?: boolean
+  /** 人工确认的「继续」地址（按 messageId 拼）。不传 = 该 store 不支持人工确认
+   *  —— Playground 就是这样：它的消息不入库，停下来也无处恢复。 */
+  resumeEndpoint?: (messageId: string) => string
 }): ChatStore {
   // AbortController 内部维护 —— send 时新建、stop / reset / 完成时丢弃
   let abortCtrl: AbortController | null = null
@@ -188,6 +203,15 @@ export function createChatStore({
           case 'message_start': {
             const p = payload as MessageStartPayload
             set((s) => {
+              // 「继续」那条流也会发这一帧，但它续的是同一条消息（后端用的是同一个
+              // message_id）—— 撞上就沿用原气泡、只把状态改回 streaming，
+              // 不然用户填完表单会凭空多出一个空气泡
+              const last = s.messages[s.messages.length - 1]
+              if (last?.role === 'assistant' && last.id === p.id) {
+                last.status = 'streaming'
+                last.errorMessage = null
+                return
+              }
               s.messages.push({
                 role: 'assistant',
                 id: p.id,
@@ -409,6 +433,28 @@ export function createChatStore({
             })
             return
           }
+          case 'interrupt': {
+            const p = payload as InterruptPayload
+            const ask = p.asks[0] // 后端恒发单元素：中断是一个一个来的
+            if (!ask) return
+            set((s) => {
+              const m = s.messages[s.messages.length - 1]
+              if (m?.role !== 'assistant') return
+              m.blocks.push({
+                type: 'ask',
+                // 接在已有块之后。中断不是模型流式输出的一部分（没有自己的
+                // index），自己算一个
+                index: m.blocks.length
+                  ? Math.max(...m.blocks.map((b) => b.index)) + 1
+                  : 0,
+                interruptId: ask.id,
+                payload: ask.payload,
+                answer: null,
+                submitting: false,
+              })
+            })
+            return
+          }
           case 'message_stop': {
             const p = payload as MessageStopPayload
             set((s) => {
@@ -440,7 +486,9 @@ export function createChatStore({
                 }
               }
               sweep(m.blocks)
-              m.status = 'completed'
+              // 「停在表单上」不是说完了 —— 气泡留着、下面渲染表单，等用户作答。
+              // 后端只在中断时带这个字段，正常结束时缺席
+              m.status = p.reason === 'interrupted' ? 'awaiting' : 'completed'
             })
             return
           }
@@ -541,6 +589,59 @@ export function createChatStore({
           } catch (err) {
             handleStreamError(err)
           } finally {
+            set((s) => {
+              s.isLoading = false
+            })
+            abortCtrl = null
+          }
+        },
+
+        async answerAsk(messageId, blockIndex, answer) {
+          if (!resumeEndpoint || get().isLoading) return
+
+          // 先把这个块标记成提交中：按钮禁用、防止连点两次
+          const markSubmitting = (submitting: boolean) => {
+            set((s) => {
+              const m = s.messages.find(
+                (x) => x.role === 'assistant' && x.id === messageId,
+              )
+              if (m?.role !== 'assistant') return
+              const b = m.blocks.find(
+                (x) => x.type === 'ask' && x.index === blockIndex,
+              )
+              if (b?.type === 'ask') b.submitting = submitting
+            })
+          }
+          markSubmitting(true)
+          set((s) => {
+            s.isLoading = true
+          })
+
+          abortCtrl = new AbortController()
+          try {
+            for await (const { event, data } of streamChat(
+              resumeEndpoint(messageId),
+              answer,
+              { signal: abortCtrl.signal },
+            )) {
+              dispatch(event, data ? JSON.parse(data) : {})
+            }
+            // 流跑完了才把答案落到块上 —— 表单随即变成只读的结果行。
+            // 放在这里而不是提交前：中途失败时表单还在，用户可以重试
+            set((s) => {
+              const m = s.messages.find(
+                (x) => x.role === 'assistant' && x.id === messageId,
+              )
+              if (m?.role !== 'assistant') return
+              const b = m.blocks.find(
+                (x) => x.type === 'ask' && x.index === blockIndex,
+              )
+              if (b?.type === 'ask') b.answer = answer
+            })
+          } catch (err) {
+            handleStreamError(err)
+          } finally {
+            markSubmitting(false)
             set((s) => {
               s.isLoading = false
             })

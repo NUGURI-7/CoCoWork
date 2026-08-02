@@ -3,6 +3,7 @@ import { useStore } from 'zustand'
 import { ring } from 'ldrs'
 
 import {
+  conversationResumeEndpoint,
   conversationStreamEndpoint,
   listMembers,
   listMessages,
@@ -73,8 +74,17 @@ export function WorkspaceChat({
   const endpoint = conversationStreamEndpoint(workspaceId, conversationId)
   const store = useMemo(
     () =>
-      getOrCreateChatStore(conversationId, () => createChatStore({ endpoint, sendHistory: false })),
-    [conversationId, endpoint],
+      getOrCreateChatStore(conversationId, () =>
+        createChatStore({
+          endpoint,
+          sendHistory: false,
+          // 人工确认的「继续」地址。Playground 不传这个 —— 它的消息不入库，
+          // 停下来也无处恢复
+          resumeEndpoint: (messageId) =>
+            conversationResumeEndpoint(workspaceId, conversationId, messageId),
+        }),
+      ),
+    [conversationId, endpoint, workspaceId],
   )
   const [historyLoading, setHistoryLoading] = useState(true)
 
@@ -181,13 +191,23 @@ function WorkspaceChatBody({
   topFade: boolean
 }) {
   const isEmpty = useChat((s) => s.messages.length === 0)
+  // 最后一条消息停在人工确认上时锁住输入 —— 这轮回复还没说完，
+  // 用户得先处理那张表单（填了或跳过）才能继续说话
+  const awaitingAnswer = useChat((s) => {
+    const last = s.messages[s.messages.length - 1]
+    return last?.role === 'assistant' && last.status === 'awaiting'
+  })
 
   return (
     <>
       {isEmpty ? <EmptyHint /> : <MessageList topFade={topFade} />}
       <MessageInput
-        disabled={!supervisorReady}
-        disabledHint="先在右侧「空间配置」里给管家选一个对话模型"
+        disabled={!supervisorReady || awaitingAnswer}
+        disabledHint={
+          awaitingAnswer
+            ? '先回复上面那个问题，或者点「跳过」'
+            : '先在右侧「空间配置」里给管家选一个对话模型'
+        }
         mentionItems={mentionItems}
         // 产出物面板的卡片可以拖进来当附件（后端决策 25）。
         // Playground 那条路不传 —— 它没有「本对话」，后端直接拒（决策 26）

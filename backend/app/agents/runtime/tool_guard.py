@@ -26,6 +26,7 @@ import logging
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.types import ToolCallRequest
 from langchain_core.messages import ToolMessage
+from langgraph.errors import GraphBubbleUp
 from langgraph.types import Command
 
 from app.tools.base import MAX_TOOL_OUTPUT_CHARS
@@ -56,6 +57,14 @@ class ToolGuardMiddleware(AgentMiddleware):
                 tool_call_id=call_id,
                 status="error",
             )
+        except GraphBubbleUp:
+            # LangGraph 的控制流信号（人工确认的中断、工具返回 Command 注入
+            # state、图排空），全靠抛异常向上冒泡实现 —— **它们不是「工具失败」**。
+            # 被下面那个 except Exception 截住的话，用户永远等不到那张表单，
+            # 模型只会收到一句「执行失败」然后自顾自往下答（实测过一次）。
+            # 顺序不能与下面对调：Python 按书写顺序匹配 except 分支。
+            # 同 CoCoTool._arun 里那道口子 —— 两层兜底都得开，漏一层就白搭
+            raise
         except Exception:
             # 细节只进日志 —— 栈 / URL / 凭据不喂给模型（同 adapter 的口径）
             logger.exception("工具执行失败 name=%s", name)

@@ -70,6 +70,14 @@ class Settings(BaseSettings):
     PG_POOL_MIN_SIZE: int = 1
     PG_POOL_MAX_SIZE: int = 10
 
+    # checkpointer 独占的小池。定这个数看的是「同时在跑几个对话」而非写入频率：
+    # 一轮对话产生十几条 checkpoint，但它们摊在整轮里、每条之间隔着一次模型调用，
+    # 单条写入只占几毫秒 —— 5 条连接足以扛住十几个并发对话（撞上也只排队几毫秒）。
+    # 比 Tortoise 那个池小得多，是因为它服务的是长流程而非高频 HTTP；两池分开也是
+    # 隔离：免得一跑几分钟的对话占着业务连接不放，拖垮毫秒级的接口
+    PG_CHECKPOINT_POOL_MIN_SIZE: int = 2
+    PG_CHECKPOINT_POOL_MAX_SIZE: int = 5
+
     @property
     def pg_url(self) -> str:
         """asyncpg 版连接串。
@@ -79,10 +87,17 @@ class Settings(BaseSettings):
         含 `@`，裸拼版曾把 host 解析成 `Ly@118.25.77.231`）。
 
         主机名和库名不编码 —— 它们本就不该含保留字符，编了反而掩盖配置错误。
+
+        注：psycopg 那条串不在这里拼，见 app/db/checkpointer.py —— 那边走
+        make_conninfo()，格式不同（keyword/value），转义规则也不同。
         """
         user = quote(self.PG_USER, safe="")
         password = quote(self.PG_PASSWORD, safe="")
         return f"postgres://{user}:{password}@{self.PG_HOST}:{self.PG_PORT}/{self.PG_DATABASE}"
+
+    # 注：psycopg 那条连接串不在这里拼 —— 见 app/db/checkpointer.py。
+    # 手拼 URL 会被密码里的 @ / : / # 等字符切坏，交给 psycopg 自己的
+    # make_conninfo() 处理转义；且那串只有 checkpointer 一家用，理应由它自备
 
     # ==================== 存储后端 ====================
     STORAGE_BACKEND: str = "r2"  # r2 | local

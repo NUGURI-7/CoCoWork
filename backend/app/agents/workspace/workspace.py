@@ -30,6 +30,8 @@ from langgraph.errors import GraphRecursionError
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 
+from app.db.checkpointer import get_checkpointer
+
 from app.agents.runtime.runner import (
     ArtifactCollector,
     PreparedStream,
@@ -62,6 +64,7 @@ from app.services.skill.mount import SkillMount, build_skill_mount
 from app.services.workspace.compaction_service import latest_summary
 from app.tools import resolve_tools
 from app.tools.memory_update import MemoryUpdateTool
+from app.tools.ask_human import AskHumanTool
 from app.tools.tool_result_fetch import ToolResultFetchTool
 
 logger = logging.getLogger(__name__)
@@ -305,6 +308,15 @@ async def _member_to_subagent(
         tools = [*tools, *mount.artifact_tools]  # 同应答者那份，跟文件工具同进同出
         system_prompt = f"{system_prompt}\n\n{mount.prompt_for(member_cfg)}"
 
+    # 成员也能直接问用户。中断实测是一个一个来的（图撞上第一个就整体冻住，
+    # 后面的工具压根没执行），所以不存在几个成员同时弹表单的情况，
+    # 不必为并发另做处理
+    tools = [*tools, AskHumanTool(
+        asker_kind=SenderKind.MEMBER,
+        asker_name=member_label(member.id, agent.name),
+        asker_member_id=member.id,
+    )]
+
     if memory_section:
         system_prompt = f"{system_prompt}\n\n{memory_section}"
 
@@ -535,6 +547,14 @@ async def build_workspace_graph(
         tools = [*tools, *mount.artifact_tools]
         system_prompt = f"{system_prompt}\n\n{mount.prompt_for(cfg)}"
 
+    # 问用户的工具。asker 用上面算好的应答者身份绑死，模型改不了自己是谁 ——
+    # 前端据此显示「张三在问你」而不是笼统的「AI 在问你」
+    tools = [*tools, AskHumanTool(
+        asker_kind=SenderKind.SUPERVISOR if responder is None else SenderKind.MEMBER,
+        asker_name=self_name,
+        asker_member_id=None if responder is None else responder.id,
+    )]
+
     # 工具展示名：应答者自己的先收着（此时 tools 已追加完取回工具 / 文件工具、
     # 彻底定型），派活成员的在下面并进来
     display_names = build_display_names(tools)
@@ -585,7 +605,9 @@ async def build_workspace_graph(
     builder.add_node("supervisor", responder_agent)
     builder.add_edge(START, "supervisor")
     builder.add_edge("supervisor", END)
-    graph = builder.compile()
+    # 只挂外层：内层 responder_agent 作为节点嵌进来，跟着外层的存档走。
+    # 两层都挂会写两份
+    graph = builder.compile(checkpointer=get_checkpointer())
 
     # 这次回复的 user 输入 = 正文 + 附件标注。不走 to_lc_messages 是因为那是通用摊平
     # （history + current 一起翻），这里只要当前一句、还得在尾巴上接一行标注

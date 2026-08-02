@@ -40,6 +40,10 @@ class EventType(StrEnum):
     COMPACT_START = "compact_start"
     COMPACT_STOP = "compact_stop"
 
+    # 人工确认 —— 图停在某处等用户填表，本次流到此为止；
+    # 用户提交答案后由「继续」接口另起一条流接着往下跑
+    INTERRUPT = "interrupt"
+
 
 def sse_event(event: EventType | str, data: dict[str, Any]) -> str:
     """把事件类型 + 字典 payload 序列化成 SSE 帧（`event: ...\\ndata: ...\\n\\n`）。
