@@ -4,12 +4,14 @@
 （解析模型、docker SDK 等）拖进来。本模块除 queue 单例外不 import 任何业务代码。
 
 新增任务：这里加一条 TaskSpec → 写任务模块实现 → 在 worker.py 的 functions 登记。
+定时任务用 CronSpec，最后一步改为在 worker.py 的 cron_jobs 里 to_cron_job 绑函数。
 """
 
 from dataclasses import dataclass
 from typing import Any
 
-from saq import Job
+from saq import CronJob, Job
+from saq.types import Function
 
 from app.tasks.queue import queue
 
@@ -52,6 +54,37 @@ class TaskSpec:
             **kwargs,
         )
 
+
+@dataclass(frozen=True, slots=True)
+class CronSpec:
+    """一个定时任务的契约：多久跑一次 + 执行策略。
+
+        与 TaskSpec 的三点不同：
+
+        - **没有 name**。SAQ 的 CronJob 只收裸函数，队列里的名字由它自己取自
+          `函数.__qualname__` —— TaskSpec 那条「名字与 Python 符号解耦」在这儿
+          落不了地。认了：那条防的是「入队后躺着等人取」的任务改名丢 handler，
+          cron 没这个风险，改名重启后下个周期照常来。
+        - **不自己入队**。谁来定时入队是 worker 的事（它按 cron 算下一次的时刻），
+          这里只描述「多久一次、跑多久算超时」。
+        - **函数不在这儿绑**。本模块不 import 任何业务代码（见模块 docstring），
+          绑定发生在 worker.py 的 cron_jobs。
+        """
+
+    cron: str  # 五段 croniter 表达式，**按 UTC 算**（Worker 的 cron_tz 默认 UTC）
+    timeout: int  # 秒。同 TaskSpec：不显式给会掉回 SAQ 的 10 秒默认
+    retries: int = 0  # 定时任务默认不重试：这次没跑成，下个周期自然还会来
+
+    def to_cron_job(self, function: Function) -> CronJob:
+        """绑上函数，交给 worker 的 cron_jobs。"""
+        return CronJob(
+            function=function,
+            cron=self.cron,
+            timeout=self.timeout,
+            retries=self.retries,
+        )
+
+
 # === 知识库 ===
 
 # 解析 → 切段 → 切块 → 向量化整条管线。大文档分批 embedding 慢，给足 30 分钟
@@ -64,3 +97,12 @@ PROCESS_DOCUMENT = TaskSpec(name="knowledge.process_document", timeout=1800)
 # retries=0 是刻意的：这次没跑成，下次到点自然还会来，而且读的还是同一批消息，
 # 重试只会多烧一次模型调用。跟文档处理相反 —— 那个丢了用户永远卡在「处理中」
 DIGEST_MEMORY = TaskSpec(name="memory.digest", timeout=120, retries=0)
+
+
+# === 图存档（LangGraph checkpoint）===
+
+# 每天清一次。UTC 18:00 = 北京时间凌晨 2 点，避开白天在用的时候
+# （cron 按 UTC 算，见 CronSpec.cron 的注释）。
+# timeout 给 10 分钟：一批最多 5000 个 thread、每个一次数据库往返，
+# 远端库按 50ms 算也就 4 分钟出头，留一倍余量
+CLEANUP_CHECKPOINTS = CronSpec(cron="0 18 * * *", timeout=600)

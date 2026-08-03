@@ -13,6 +13,7 @@
 """
 
 import logging
+from datetime import datetime, timedelta, timezone
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg.conninfo import make_conninfo
@@ -115,6 +116,19 @@ def get_checkpointer() -> AsyncPostgresSaver:
     return _saver
 
 
+def _require_pool() -> AsyncConnectionPool:
+    """取池 —— sweep 要自己发一条 SELECT，而 saver 只提供存档读写、没有通用查询入口。
+
+    与 get_checkpointer 同生共死（init 里一起赋值），分成两个函数只是因为
+    返回的东西不同。
+    """
+    if _pool is None:
+        raise RuntimeError(
+            "checkpointer 未初始化 —— 检查 lifespan / worker startup 是否调用了 init_checkpointer()"
+        )
+    return _pool
+
+
 async def shutdown_checkpointer() -> None:
     """关池，与 init 对称，挂在 lifespan 的 finally 里。"""
     global _saver, _pool
@@ -122,3 +136,62 @@ async def shutdown_checkpointer() -> None:
         await _pool.close()
         logger.info("👋 LangGraph checkpointer 连接池已关闭")
     _saver, _pool = None, None
+
+
+# 一次最多清多少个存档。有这道闸是为了让每次运行的时长有上界：
+# 万一积压了几万个，无上限的一趟会撞上任务超时、失败回滚，第二天从头再来一遍，
+# 永远清不完。切成小批则每天都有进展，反正它是每天都来的
+_SWEEP_BATCH = 5000
+
+# 选出「该删的存档」。三个判断都在这条 SQL 里：
+#
+# ① 存档最后一次写入超过 stale_before —— 也就是这轮早就结束了。**这一条同时
+#    护住了正在跑的那轮**：那时存档已在写、assistant 消息却要等流跑完才落库，
+#    单看数据它跟没主的存档长得一模一样，全靠这道时间线把它挡在外面
+# ② LEFT JOIN 是刻意的：消息行不存在（对话被删了、存档留在原地）也要能选出来 ——
+#    这种孤儿恰恰是从消息表那头永远查不到的那批
+# ③ 只有「还在等用户填表单」的存档享受更长的宽限期，到期一样清
+#
+# thread_id = assistant 消息的 id（见 runtime/runner.py 里配 configurable 那段），
+# 所以能直接跟 messages 表对上。
+_SWEEP_SQL = """
+SELECT c.thread_id
+FROM checkpoints c
+LEFT JOIN messages m ON m.id::text = c.thread_id
+GROUP BY c.thread_id, m.status, m.created_at
+HAVING max((c.checkpoint->>'ts')::timestamptz) < %(stale_before)s
+   AND (m.status IS DISTINCT FROM 'interrupted'
+        OR m.created_at < %(interrupted_before)s)
+LIMIT %(batch)s
+"""
+
+
+async def sweep() -> int:
+    """清掉过期存档，返回清了几个。由每日定时任务调用。
+
+    **读表用 SQL、删表用官方 API**，这个分工是刻意的：读只碰 thread_id 和一个
+    时间戳，就算框架哪天加列也波及不到；而删要同时打三张表，交给
+    adelete_thread 去做，我们就不必把框架的表结构抄进自己的代码里。
+
+    单个删不批量，是因为 adelete_thread 只收一个 thread_id、没有批量版。它内部
+    走 pipeline（三条 DELETE 一个来回），一天几百个走常驻池不到一秒。
+
+    删到一半失败就让它抛：这活是幂等的，剩下的明天接着清，不必自己兜。
+    """
+    saver = get_checkpointer()
+    now = datetime.now(timezone.utc)
+
+    async with _require_pool().connection() as conn, conn.cursor() as cur:
+        await cur.execute(_SWEEP_SQL, {
+            "stale_before": now - timedelta(days=settings.CHECKPOINT_RETENTION_DAYS),
+            "interrupted_before": now - timedelta(
+                days=settings.CHECKPOINT_INTERRUPTED_RETENTION_DAYS
+            ),
+            "batch": _SWEEP_BATCH,
+        })
+        thread_ids = [row["thread_id"] for row in await cur.fetchall()]
+
+    for thread_id in thread_ids:
+        await saver.adelete_thread(thread_id)
+
+    return len(thread_ids)

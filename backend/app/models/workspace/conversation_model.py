@@ -4,8 +4,10 @@ Conversation = workspace 里一条对话流，1 workspace : N conversations。
 对应前端 conversation 切换条的每个 tab。
 
 设计要点：
-- 跟 LangGraph checkpointer 一对一映射：`thread_id = conversation.id.hex`，
-  conversation 即"会话线程"的业务库映射，运行时状态在 checkpointer 那侧
+- **与 checkpointer 不是一对一**：thread_id 取的是「本轮 assistant 消息 id」，
+  一次回复一个存档槽（见 runtime/runner.py 里配 configurable 那段）。原先约定
+  按 conversation 粒度复用同一个槽，08-02 挂 checkpointer 时改口 —— 历史由业务侧
+  按应答者视角每轮重算，复用同一个槽会让 add_messages 把上一轮的视角历史叠进来
 - title 可空字符串（新建对话还没起名）；系统可后续根据首条用户消息自动生成
 - `config` jsonb 留扩展口子：对话级临时覆盖（换模型 / 开 thinking / 临时挂 KB），
   对齐 Workspace / Agent / Member 范式

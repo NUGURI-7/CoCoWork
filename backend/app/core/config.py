@@ -78,6 +78,14 @@ class Settings(BaseSettings):
     PG_CHECKPOINT_POOL_MIN_SIZE: int = 2
     PG_CHECKPOINT_POOL_MAX_SIZE: int = 5
 
+    # 存档保留天数。一轮回复跑完，它的存档就没用了 —— 留一天纯粹是给「正在跑
+    # 的那一轮」让路：那时存档已在写、消息还没落库，看上去跟没主的存档一模一样，
+    # 没有这道时间线就会被当垃圾删掉
+    CHECKPOINT_RETENTION_DAYS: int = 1
+    # 停在表单上等用户作答的，宽限久一些 —— 人可能明天才回来点「继续」。
+    # 超过这个天数就当作废，连存档一起删；用户再点继续按「已过期」处理
+    CHECKPOINT_INTERRUPTED_RETENTION_DAYS: int = 3
+
     @property
     def pg_url(self) -> str:
         """asyncpg 版连接串。
