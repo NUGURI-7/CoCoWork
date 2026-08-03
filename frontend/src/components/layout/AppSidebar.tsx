@@ -1,5 +1,7 @@
 import { useNavigate, useRouterState } from '@tanstack/react-router'
-import { ArrowRight, ShieldCheck, Sparkles } from 'lucide-react'
+import { ArrowRight, ShieldCheck } from 'lucide-react'
+
+import { LogoMark } from '@/components/brand/Logo'
 
 import {
   Sidebar,
@@ -39,10 +41,12 @@ export function AppSidebar() {
           <SidebarMenuItem>
             <SidebarMenuButton
               tooltip="CoCoWork"
-              className="h-10 gap-3"
+              // 收起态按钮是 size-8 + p-2 → 内容区仅 16px，装不下 24px 的 logo 会顶偏；
+              // 这里把内边距收到 4px，让内容区正好等于 logo 尺寸、自然居中
+              className="h-10 gap-3 [&>svg]:size-7 group-data-[collapsible=icon]:p-1! group-data-[collapsible=icon]:[&>svg]:size-6"
               onClick={() => handleNav('/')}
             >
-              <Sparkles />
+              <LogoMark />
               <span className="font-display text-xl leading-none font-semibold tracking-tight">
                 CoCoWork
               </span>

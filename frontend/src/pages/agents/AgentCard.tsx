@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import dayjs from 'dayjs'
 import { Bot, BookOpen, Copy, MoreHorizontal, Trash2, Wrench } from 'lucide-react'
+
+import { AgentAvatar } from '@/components/brand/AgentAvatar'
 import { toast } from 'sonner'
 
 import { deleteAgent } from '@/api/agent'
@@ -57,9 +59,6 @@ export function AgentCard({ agent, modelNameMap, onDeleted }: AgentCardProps) {
   const knowledgeCount = agent.config.knowledge?.length ?? 0
   const toolCount =
     (agent.config.builtin_tools?.length ?? 0) + (agent.config.skills?.length ?? 0)
-  // P0 不暴露上传 UI：所有 Agent 头像统一用默认 gopher；未来加上传后这里 fallback
-  const avatarUrl = agent.config.ui?.avatar_url ?? '/gopher-fcb-glass.png'
-
   function handleClick() {
     navigate({ to: '/agents/$agentId', params: { agentId: agent.id } })
   }
@@ -84,10 +83,11 @@ export function AgentCard({ agent, modelNameMap, onDeleted }: AgentCardProps) {
           {/* 标题区：头像 + 名字 + 第二行 template · description */}
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 items-start gap-3">
-              <img
-                src={avatarUrl}
+              <AgentAvatar
+                seed={agent.id}
+                src={agent.config.ui?.avatar_url}
                 alt={agent.name}
-                className="size-10 shrink-0 rounded-full object-cover"
+                className="size-10"
               />
               <div className="min-w-0 flex-1">
                 <h3 className="truncate font-medium">{agent.name}</h3>

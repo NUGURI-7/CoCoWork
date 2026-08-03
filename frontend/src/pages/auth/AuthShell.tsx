@@ -8,6 +8,8 @@
 import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 
+import { LogoLockup } from '@/components/brand/Logo'
+
 interface AuthShellProps {
   children: ReactNode
   navAction?: ReactNode
@@ -18,9 +20,8 @@ export default function AuthShell({ children, navAction }: AuthShellProps) {
     <div className="bg-background flex min-h-dvh flex-col duration-500 animate-in fade-in">
       {/* 顶部 nav */}
       <header className="flex h-16 items-center justify-between px-6 lg:px-10">
-        <Link to="/" className="flex items-center gap-2">
-          <img src="/mark-rotating.svg" className="size-7" alt="CoCoWork" />
-          <span className="font-display text-xl font-semibold tracking-tight">CoCoWork</span>
+        <Link to="/">
+          <LogoLockup />
         </Link>
         {navAction}
       </header>

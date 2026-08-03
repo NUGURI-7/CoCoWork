@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { UserPlus, X } from 'lucide-react'
 
+import { AgentAvatar } from '@/components/brand/AgentAvatar'
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -175,19 +177,16 @@ export function MemberStrip({ members, onRecruit }: MemberStripProps) {
           {members.map((m) => (
             <Tooltip key={m.id}>
               <TooltipTrigger asChild>
-                <img
-                  src={m.avatarUrl ?? '/gopher-fcb-glass.png'}
+                <AgentAvatar
+                  seed={m.seed}
+                  src={m.avatarUrl}
                   alt={m.name}
-                  className="size-6 cursor-default rounded-full object-cover"
+                  className="size-6 cursor-default"
                 />
               </TooltipTrigger>
               {/* 品牌淡色底（覆写默认 bg-foreground 深色）+ 同色系文字；箭头一并染成 brand-subtle */}
               <TooltipContent className="bg-brand-subtle text-brand border-brand-border flex items-center gap-2.5 border px-2.5 py-2 [&>svg]:bg-brand-subtle [&>svg]:fill-brand-subtle">
-                <img
-                  src={m.avatarUrl ?? '/gopher-fcb-glass.png'}
-                  alt=""
-                  className="size-7 rounded-full object-cover"
-                />
+                <AgentAvatar seed={m.seed} src={m.avatarUrl} className="size-7" />
                 <div className="min-w-0 leading-tight">
                   <div className="text-brand text-sm font-medium">{m.name}</div>
                   <div className="text-brand/70 text-[11px]">{m.subtitle}</div>
@@ -228,11 +227,7 @@ function MemberRow({
   return (
     <div className="group flex items-center gap-2.5 rounded-md px-2 py-1.5 transition hover:bg-muted">
       <div className="relative shrink-0">
-        <img
-          src={member.avatarUrl ?? '/gopher-fcb-glass.png'}
-          alt={member.name}
-          className="size-7 rounded-full object-cover"
-        />
+        <AgentAvatar seed={member.seed} src={member.avatarUrl} alt={member.name} className="size-7" />
         {showStatus && (
           <span
             className={cn(

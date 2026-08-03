@@ -1,0 +1,11 @@
+<!--
+  favicon 专用变体：16px 下连线只剩不到 2px 可见、必然糊成一团，
+  因此按 optical sizing 惯例去掉连线、放大四个节点，只保留「一大三小」的骨架。
+  完整版（带连线）见 logo.svg。
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <circle cx="16" cy="16" r="6" fill="#2f6b53"/>
+  <circle cx="16" cy="4.6" r="4" fill="#2f6b53"/>
+  <circle cx="6.13" cy="21.7" r="4" fill="#2f6b53"/>
+  <circle cx="25.87" cy="21.7" r="4" fill="#2f6b53"/>
+</svg>

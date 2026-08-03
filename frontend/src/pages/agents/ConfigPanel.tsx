@@ -3,6 +3,8 @@ import { AxiosError } from 'axios'
 import { Check, ChevronsUpDown, Info } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { AgentAvatar } from '@/components/brand/AgentAvatar'
+
 import { updateAgent, type AgentUpdatePayload } from '@/api/agent'
 import { listKnowledgeBases } from '@/api/knowledge'
 import { listMCPServers } from '@/api/mcp'
@@ -221,7 +223,6 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
   const template = mockTemplates.find((t) => t.key === agent.template)
   const templateKind = template?.kind ?? 'loop'
   const selectedToolIds = form.tool_ids
-  const avatarUrl = agent.config.ui?.avatar_url ?? '/gopher-fcb-glass.png'
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -248,10 +249,11 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
           <Section label="身份">
             <div className="bg-muted/40 space-y-3 rounded-lg border p-4">
               <div className="flex items-center gap-3">
-                <img
-                  src={avatarUrl}
+                <AgentAvatar
+                  seed={agent.id}
+                  src={agent.config.ui?.avatar_url}
                   alt={form.name}
-                  className="size-14 shrink-0 rounded-full object-cover"
+                  className="size-14"
                 />
                 <div className="flex min-w-0 flex-1 items-center gap-2">
                   <Input

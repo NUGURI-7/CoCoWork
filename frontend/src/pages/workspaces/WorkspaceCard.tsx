@@ -3,6 +3,8 @@ import { useNavigate } from '@tanstack/react-router'
 import dayjs from 'dayjs'
 import { Crown, MoreHorizontal, Trash2 } from 'lucide-react'
 
+import { AgentAvatar, SUPERVISOR_SEED } from '@/components/brand/AgentAvatar'
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,11 +36,7 @@ interface WorkspaceCardProps {
 function SupervisorBadge() {
   return (
     <div className="flex min-w-0 items-center gap-2">
-      <img
-        src="/gopher-fcb-glass.png"
-        alt="管家"
-        className="bg-background size-7 rounded-full object-cover"
-      />
+      <AgentAvatar seed={SUPERVISOR_SEED} alt="管家" className="bg-background size-7" />
       <span className="text-muted-foreground inline-flex items-center gap-1 text-xs">
         <Crown className="text-brand size-3.5" />
         管家

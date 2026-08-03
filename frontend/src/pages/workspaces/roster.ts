@@ -6,12 +6,18 @@
  * MemberRoster / MemberStrip 渲染。
  */
 
+import { SUPERVISOR_SEED } from '@/components/brand/AgentAvatar'
 import type { WorkspaceMemberOut } from '@/types'
 
 export interface RosterMember {
   /** 管家固定 'supervisor'；真成员用 member.id（踢人按它） */
   id: string
   name: string
+  /**
+   * 生成头像用的稳定 seed —— 成员取 agent.id（不是 member.id），
+   * 这样同一个 agent 被招进不同工作空间仍是同一张脸。
+   */
+  seed: string
   avatarUrl?: string | null
   /** 管家一个，其余都是 agent 成员 */
   role: 'supervisor' | 'agent'
@@ -23,6 +29,7 @@ export interface RosterMember {
 export const SUPERVISOR_ROSTER: RosterMember = {
   id: 'supervisor',
   name: '管家',
+  seed: SUPERVISOR_SEED,
   role: 'supervisor',
   subtitle: '调度',
 }
@@ -32,6 +39,7 @@ export function memberToRoster(m: WorkspaceMemberOut): RosterMember {
   return {
     id: m.id,
     name: m.agent.name,
+    seed: m.agent.id,
     avatarUrl: m.agent.avatar_url,
     role: 'agent',
     subtitle: '成员',

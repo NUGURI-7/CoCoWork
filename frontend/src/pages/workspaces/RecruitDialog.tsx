@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ring } from 'ldrs'
 
 import { listAgents } from '@/api/agent'
+import { AgentAvatar } from '@/components/brand/AgentAvatar'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -133,11 +134,7 @@ export function RecruitDialog({
                             : 'hover:bg-muted',
                       )}
                     >
-                      <img
-                        src={a.config?.ui?.avatar_url ?? '/gopher-fcb-glass.png'}
-                        alt={a.name}
-                        className="size-8 shrink-0 rounded-full object-cover"
-                      />
+                      <AgentAvatar seed={a.id} src={a.config?.ui?.avatar_url} alt={a.name} />
                       <div className="min-w-0 flex-1">
                         <div
                           className={cn(
