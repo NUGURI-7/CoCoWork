@@ -12,6 +12,7 @@ import type {
   AssistantMessage as AssistantMessageType,
   UserMessage as UserMessageType,
 } from '@/types'
+import { memberKey } from '@/lib/identifiers'
 import { cn } from '@/lib/utils'
 
 import { ArtifactCard } from './ArtifactCard'
@@ -260,9 +261,7 @@ const AssistantMessageRow = memo(function AssistantMessageRow({
   // 只有 @直连成员才露身份（头像 + 名）；supervisor / Playground（senderMemberId 空）
   // 保持裸气泡（ChatGPT 风、默认对话方）。
   const identity = useSubagentInfo(
-    message.senderMemberId
-      ? `member_${message.senderMemberId.slice(0, 8)}`
-      : '',
+    message.senderMemberId ? memberKey(message.senderMemberId) : '',
   )
 
   const body = (

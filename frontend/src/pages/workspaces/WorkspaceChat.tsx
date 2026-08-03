@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { useStore } from 'zustand'
 import { ring } from 'ldrs'
 
+import { agentAvatarUrl } from '@/components/brand/AgentAvatar'
+import { memberKey } from '@/lib/identifiers'
+
 import {
   conversationResumeEndpoint,
   conversationStreamEndpoint,
@@ -117,8 +120,8 @@ export function WorkspaceChat({
         const d: Record<string, SubagentInfo> = {}
         const items: MentionItem[] = []
         for (const m of members) {
-          const avatar = m.agent.avatar_url ?? '/gopher-fcb-glass.png'
-          d[`member_${m.id.slice(0, 8)}`] = { name: m.agent.name, avatarUrl: avatar }
+          const avatar = agentAvatarUrl(m.agent.id, m.agent.avatar_url)
+          d[memberKey(m.id)] = { name: m.agent.name, avatarUrl: avatar }
           items.push({ id: m.id, label: m.agent.name, avatar })
         }
         setDirectory(d)

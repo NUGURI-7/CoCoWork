@@ -23,6 +23,7 @@ from app.agents.runtime.blocks import (
     ToolUseBlock,
     parse_blocks,
 )
+from app.core.identifiers import short_id
 from app.models import ConversationSummary, Message, SandboxArtifact, SenderKind
 from app.services.sandbox.artifact import human_size
 from app.tools.base import MAX_TOOL_OUTPUT_CHARS
@@ -50,12 +51,12 @@ REPLAY_PREVIEW_CHARS = 500
 
 def member_key(member_id: UUID) -> str:
     """成员在派活协议里的机器键(task 的 subagent_type / 块上的 subagent 戳)。"""
-    return f"member_{member_id.hex[:8]}"
+    return f"member_{short_id(member_id)}"
 
 
 def member_label(member_id: UUID, name: str) -> str:
     """成员的唯一显示标签(<msg from> / 花名册 / 行动痕迹共用) —— 名字#id8。"""
-    return f"{name}#{member_id.hex[:8]}"
+    return f"{name}#{short_id(member_id)}"
 
 
 def split_at_cursor(
@@ -337,7 +338,7 @@ class ViewContextAssembler:
                 # id 是 tool_call ↔ 结果的配对凭据，缺一半 API 当场报错。
                 # adapter 保证有（拿不到 id 根本不开块），这个兜底是给手改过的
                 # 脏 jsonb 留的：拿消息 id + 序号造一个，跨消息也不会撞
-                calls.append((b.id or f"{message_id.hex[:8]}-{seq}", b))
+                calls.append((b.id or f"{short_id(message_id)}-{seq}", b))
                 seq += 1
 
         flush()

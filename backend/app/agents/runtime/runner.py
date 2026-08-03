@@ -36,6 +36,7 @@ from app.agents.runtime.spec import AgentSpec
 from app.agents.runtime.tool_guard import ToolGuardMiddleware
 from app.agents.templates import get_template
 from app.core.exceptions import ValidationException
+from app.core.identifiers import short_id
 from app.core.observability import TraceContext, get_langfuse_handler
 from app.models import KnowledgeBase, MCPServer, User
 from app.models.model import AIModel
@@ -279,7 +280,9 @@ async def assemble_tools(cfg: AgentConfig, user: User) -> list[BaseTool]:
 
             tools.append(
                 KnowledgeRetrievalTool(
-                    name=f"knowledge_{kb.id.hex[:8]}",
+                    # 取后 8 位而非前 8 位：UUIDv7 前面是毫秒时间戳，同一分钟建的
+                    # 两个库前 8 位一样 —— 同时挂给一个 agent 就是两个重名工具
+                    name=f"knowledge_{short_id(kb.id)}",
                     description=_build_kb_tool_description(kb),
                     display_name=f"知识库《{kb.name}》",
                     kb_id=kb.id,
