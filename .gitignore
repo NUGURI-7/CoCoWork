@@ -240,3 +240,13 @@ __marimo__/
 
 # 探测脚本产物（原始 API 返回、下载的解析结果），不进版本库
 backend/out/
+
+# 内部文档（设计稿 / 路线图 / AI 上下文 / 参考代码），不对外；
+# 只有 README 引用的图片资源例外
+/docs/*
+!/docs/assets/
+
+# Claude Code 本地配置与 skill（launch.json 例外，它是共享的 dev server 配置）
+.claude/settings.local.json
+.claude/skills/
+skills-lock.json
