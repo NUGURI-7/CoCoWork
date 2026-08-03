@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from app.schemas.model.provider_schema import ModelType
 
@@ -59,6 +59,16 @@ class ModelOut(BaseModel):
     is_enabled: bool
     created_at: datetime
     updated_at: datetime
+
+    @computed_field
+    @property
+    def reasoning_levels(self) -> list[str]:
+        """支持的思考档位，空 = 不是推理模型或不认识它。
+
+        由 model_name 推出、**不落库** —— 档位这事随上游半年一变，
+        写在代码里改完即生效，不用迁移也不用回填存量。
+        """
+        return list(resolve_reasoning_levels(self.model_name))
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -117,3 +127,25 @@ PARAM_DEFINITIONS: dict[str, ModelTypeParams] = {
         ],
     ),
 }
+
+
+# ==================== 思考强度 ====================
+
+ReasoningEffort = Literal["off", "low", "high", "max"]
+
+# 哪个模型认哪几档。值取 DeepSeek 原生档位，"off" 是我们加的显式关闭档。
+# key 用小写子串匹配而非全等 —— 同一个模型经不同网关转发时名字带前缀
+# （SiliconFlow 上叫 deepseek-ai/DeepSeek-V4-Pro），全等匹配会漏。
+_REASONING_LEVELS: dict[str, list[ReasoningEffort]] = {
+    "deepseek-v4-flash": ["off", "low", "high", "max"],
+    "deepseek-v4-pro": ["off", "high", "max"],
+}
+
+
+def resolve_reasoning_levels(model_name: str) -> list[ReasoningEffort]:
+    """这个模型支持的思考档位；认不出来返回空 —— 前端据此决定画不画控件。"""
+    lowered = model_name.lower()
+    for pattern, levels in _REASONING_LEVELS.items():
+        if pattern in lowered:
+            return levels
+    return []

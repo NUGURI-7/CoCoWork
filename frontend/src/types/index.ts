@@ -74,9 +74,15 @@ export type {
   // 协议层
   ApiTextBlock,
   ApiArtifactRefBlock,
+  ApiAskBlock,
   ApiContentBlock,
   ApiHistoryMessage,
   ChatStreamRequest,
+  // 人工确认（HITL）
+  AskField,
+  AskAction,
+  AskPayload,
+  AskAnswer,
   // SSE event payload
   MessageStartPayload,
   MessageStopPayload,
@@ -96,11 +102,13 @@ export type {
   CompactStartPayload,
   CompactStopPayload,
   ArtifactsPayload,
+  InterruptPayload,
   // 渲染层
   TextBlock,
   ThinkingBlock,
   ToolUseBlock,
   DelegateBlock,
+  AskBlock,
   RenderBlock,
   // Message union
   UserMessage,

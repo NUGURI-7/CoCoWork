@@ -34,13 +34,18 @@ export interface Template {
 /**
  * 模型槽位调用参数（chat / tts / stt 各槽位独立）。
  *
- * 后端 ModelParams extra="allow" —— 透传 reasoning_effort / response_format / stop /
- * seed 等扩展参数给 LangChain init_chat_model。前端 index signature 兜底类型。
+ * 后端 ModelParams extra="allow" —— 透传 response_format / stop / seed 等扩展
+ * 参数给 LangChain init_chat_model。前端 index signature 兜底类型。
  */
 export interface ModelParams {
   temperature?: number | null
   top_p?: number | null
   max_tokens?: number | null
+  /**
+   * 思考档位（off / low / high / max）；缺省或 null = 不传，由模型自己的默认决定。
+   * 不是原样透传的参数 —— 后端会翻译成各家上游的方言。
+   */
+  reasoning_effort?: string | null
   [key: string]: unknown
 }
 

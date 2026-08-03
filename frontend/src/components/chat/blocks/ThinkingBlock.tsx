@@ -34,8 +34,8 @@ export function ThinkingBlock({ block }: ThinkingBlockProps) {
         onClick={() => setCollapsed((c) => !c)}
         className="text-muted-foreground hover:text-foreground -mx-1 inline-flex max-w-full cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm transition-colors"
       >
-        <Brain size={14} className={cn(isActive && 'animate-pulse')} />
-        <span className="text-foreground/80 font-medium">
+        <Brain size={14} className={cn('shrink-0', isActive && 'animate-pulse')} />
+        <span className="text-foreground/80 shrink-0 font-medium whitespace-nowrap">
           {isActive ? '思考中…' : '已思考'}
         </span>
         <ChevronDown

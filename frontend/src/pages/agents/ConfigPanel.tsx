@@ -50,6 +50,7 @@ import type {
   AIModel,
   KnowledgeBase,
   MCPServer,
+  ModelParams,
   Skill,
   Tool,
 } from '@/types'
@@ -143,6 +144,26 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
 
   function patch<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }))
+  }
+
+  const selectedModel = useMemo(
+    () => chatModels.find((m) => m.id === form.model_id),
+    [chatModels, form.model_id],
+  )
+
+  /**
+   * 换模型 = 连调用参数一起换成新模型的预设。
+   *
+   * 参数是跟着模型走的：留着上一个模型的值会产生「非推理模型配着 max 档」
+   * 这种脏组合，上游未必报错、但配置面板显示的东西就不作数了。
+   */
+  function selectModel(modelId: string) {
+    const preset = chatModels.find((m) => m.id === modelId)?.config
+    setForm((prev) => ({
+      ...prev,
+      model_id: modelId,
+      params: fromApiParams(preset as ModelParams | undefined),
+    }))
   }
 
   function setToolSelection(names: string[]) {
@@ -264,7 +285,7 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
               <Field label="模型" hint="必填——不配模型沙盒没法跑">
                 <Select
                   value={form.model_id ?? undefined}
-                  onValueChange={(v) => patch('model_id', v)}
+                  onValueChange={selectModel}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="选择对话模型" />
@@ -294,6 +315,7 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
                     <ModelParamsFields
                       value={form.params}
                       onChange={(v) => patch('params', v)}
+                      reasoningLevels={selectedModel?.reasoning_levels}
                     />
                   </AccordionContent>
                 </AccordionItem>

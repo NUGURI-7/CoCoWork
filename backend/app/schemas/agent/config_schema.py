@@ -15,6 +15,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.model.ai_model_schema import ReasoningEffort
+
 
 # ============ 模型槽位 ============
 
@@ -22,9 +24,13 @@ from pydantic import BaseModel, ConfigDict, Field
 class ModelParams(BaseModel):
     """单个模型槽位的调用参数。
 
-        显式列 chat 常用三个；其他参数（presence_penalty / response_format /
-        reasoning_effort / stop / seed 等）走 extra="allow" 透传给 LangChain，
+        显式列 chat 常用三个 + 思考档位；其他参数（presence_penalty /
+        response_format / stop / seed 等）走 extra="allow" 透传给 LangChain，
         不在此处穷举。
+
+        `reasoning_effort` 之所以显式列而不走 extra：它不能原样透传 ——
+        要翻译成上游方言（见 `chat_models.apply_reasoning_params`），
+        且前端要按模型渲染下拉，得是个有名有姓的字段。
     """
 
     model_config = ConfigDict(extra="allow")
@@ -32,6 +38,10 @@ class ModelParams(BaseModel):
     temperature: float | None = None
     top_p: float | None = None
     max_tokens: int | None = None
+    reasoning_effort: ReasoningEffort | None = Field(
+        default=None,
+        description="思考档位；None = 不传，由模型自己的默认决定（DeepSeek 默认开）",
+    )
 
 
 class ModelSlot(BaseModel):

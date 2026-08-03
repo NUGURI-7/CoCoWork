@@ -74,6 +74,11 @@ export interface AIModel {
   config: Record<string, unknown>
   /** 类型相关元数据：embedding 模型带 embedding_dim */
   meta?: { embedding_dim?: number } | null
+  /**
+   * 这个模型支持的思考档位（后端由 model_name 推出，不落库）。
+   * 空数组 = 不是推理模型或后端不认识它 → 前端不画思考强度控件。
+   */
+  reasoning_levels: string[]
   has_custom_base_url: boolean
   has_custom_credentials: boolean
   is_enabled: boolean

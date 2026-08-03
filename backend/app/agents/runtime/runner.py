@@ -29,6 +29,7 @@ from uuid_utils import compat as uuid_compat
 from app.models.sandbox import SandboxArtifact
 from app.services.sandbox.artifact import collect_artifacts
 from app.agents.runtime.adapter import adapt_chat_stream
+from app.agents.runtime.chat_models import ReasoningChatOpenAI, apply_reasoning_params
 from app.agents.runtime.events import EventType, sse_event
 from app.agents.runtime.param_adapter import get_param_adapter
 from app.agents.runtime.spec import AgentSpec
@@ -125,7 +126,11 @@ _PROVIDER_TYPE_TO_LC: dict[str, str] = {
     "anthropic": "anthropic",
 }
 
-_DEFAULT_LC_PROVIDER = "openai"
+# OpenAI 兼容家族 —— DeepSeek / 通义 / SiliconFlow / custom 全归这一格，
+# 它们共用 ChatOpenAI 走同一套协议，故推理内容的缺口也一处补齐。
+_LC_PROVIDER_OPENAI = "openai"
+
+_DEFAULT_LC_PROVIDER = _LC_PROVIDER_OPENAI
 
 # AIModel.model_type 期望值（防 stt / tts 模型误塞 chat 槽位）
 _EXPECTED_MODEL_TYPE_CHAT = "chat"
@@ -175,8 +180,11 @@ async def build_chat_model(slot: ModelSlot) -> BaseChatModel:
 
     lc_provider = _resolve_lc_provider(provider.provider_type)
 
-    # params：exclude_none —— 没填的让 provider 用自己默认；再按 provider 家族方言翻译入参
+    # params：exclude_none —— 没填的让 provider 用自己默认
+    # 顺序有讲究：先翻思考档位（会往 extra_body 写），再走 provider 家族适配
+    # （它也往 extra_body 写 max_tokens，靠 setdefault 合并而非互相覆盖）
     params = slot.params.model_dump(exclude_none=True)
+    params = apply_reasoning_params(params)
     init_kwargs = get_param_adapter(lc_provider).to_init_kwargs(params)
 
     # 空 Key：占位符过 SDK 构造校验，再把真正发出的 Authorization 覆盖成空，
@@ -185,6 +193,17 @@ async def build_chat_model(slot: ModelSlot) -> BaseChatModel:
         headers = {**init_kwargs.get("default_headers", {}), "Authorization": ""}
         init_kwargs["default_headers"] = headers
         api_key = "placeholder"
+
+    # openai 家族绕开 init_chat_model 工厂 —— 它按 model_provider 固定选中
+    # ChatOpenAI，而我们要的是补了推理内容的子类。anthropic 等其余家族
+    # 没有这个缺口，继续走工厂。
+    if lc_provider == _LC_PROVIDER_OPENAI:
+        return ReasoningChatOpenAI(
+            model=ai_model.model_name,
+            base_url=base_url,
+            api_key=api_key,
+            **init_kwargs,
+        )
 
     return init_chat_model(
         model=ai_model.model_name,

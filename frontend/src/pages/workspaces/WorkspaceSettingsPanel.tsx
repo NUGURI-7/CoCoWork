@@ -92,6 +92,21 @@ export function WorkspaceSettingsPanel({
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
+  const selectedModel = useMemo(
+    () => chatModels.find((m) => m.id === form.model_id),
+    [chatModels, form.model_id],
+  )
+
+  /** 换模型 = 连调用参数一起换成新模型的预设（同 ConfigPanel，理由见那边）。 */
+  function selectModel(modelId: string) {
+    const preset = chatModels.find((m) => m.id === modelId)?.config
+    setForm((prev) => ({
+      ...prev,
+      model_id: modelId,
+      params: fromApiParams(preset as ModelParams | undefined),
+    }))
+  }
+
   async function save() {
     const name = form.name.trim()
     if (!name) {
@@ -174,7 +189,7 @@ export function WorkspaceSettingsPanel({
           <Label className="text-xs font-medium tracking-wide uppercase">对话模型</Label>
           <Select
             value={form.model_id ?? undefined}
-            onValueChange={(v) => patch('model_id', v)}
+            onValueChange={selectModel}
           >
             <SelectTrigger className="w-full">
               <SelectValue placeholder="选择对话模型" />
@@ -194,6 +209,7 @@ export function WorkspaceSettingsPanel({
           <ModelParamsFields
             value={form.params}
             onChange={(v) => patch('params', v)}
+            reasoningLevels={selectedModel?.reasoning_levels}
           />
         </div>
 
