@@ -6,7 +6,7 @@
 
 **多 Agent 协作平台**
 
-多个 Agent 在同一会话内协作 —— supervisor 调度 · @ 直连成员 · RAG 混合检索 · 沙箱产出物 · 跨会话记忆
+多个 Agent 在同一会话内协作 —— supervisor 调度 · @ 直连成员 · Agentic RAG · 沙箱产出物 · 跨会话记忆
 
 [核心能力](#核心能力) · [技术栈](#技术栈) · [架构](#架构) · [快速开始](#快速开始) · [项目结构](#项目结构)
 
@@ -43,9 +43,13 @@ supervisor 接收指令后拆解任务并分派至成员，成员独立执行并
 
 <img src="docs/assets/screenshots/workspace-artifacts.webp" alt="沙箱产出物">
 
-### 知识库与混合检索
+### Agentic RAG
 
-文档经解析、切段、切块、向量化入库，检索支持三种模式：
+知识库不以「检索结果拼进 system prompt」的方式接入，而是**每个知识库封装为一个独立工具**（retriever tool）交给模型：检索时机、检索内容、是否需要多次检索、跨哪几个库检索，均由模型在推理过程中自行决定。
+
+工具描述携带知识库的名称与简介，模型据此判断该查哪个库。多个知识库挂载于同一 Agent 时，模型可按需分别调用。
+
+底层检索支持三种模式：
 
 | 模式 | 实现 |
 |---|---|
@@ -59,7 +63,7 @@ supervisor 接收指令后拆解任务并分派至成员，成员独立执行并
 
 ### Agent 装配
 
-Agent 基于模板装配：绑定模型、配置 system prompt、挂载知识库、内置工具、MCP server 与 Skill。知识库以工具形式暴露给模型（Agentic RAG），检索时机与检索内容由模型自行决定。
+Agent 基于模板装配：绑定模型、配置 system prompt、挂载知识库、内置工具、MCP server 与 Skill。所有资源在装配阶段统一收敛为工具集交给模型，来源差异对模型透明。
 
 <img src="docs/assets/screenshots/agents.webp" alt="Agent 装配">
 
