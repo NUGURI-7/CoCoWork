@@ -2,13 +2,14 @@
  * 登录 / 注册共用双栏布局壳（Claude 风）
  *  - 顶部：logo wordmark（左）+ navAction（右，放切换链接）
  *  - 左列：children（表单内容）
- *  - 右列：gopher 视觉卡（lg 以上显示）
+ *  - 右列：WorkspacePreview 产品演示动画（lg 以上显示）
  */
 
 import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 
 import { LogoLockup } from '@/components/brand/Logo'
+import WorkspacePreview from './WorkspacePreview'
 
 interface AuthShellProps {
   children: ReactNode
@@ -33,21 +34,10 @@ export default function AuthShell({ children, navAction }: AuthShellProps) {
           <div className="w-full max-w-sm">{children}</div>
         </div>
 
-        {/* 右列：两张 gopher 错落叠放（lg+，无卡片背景） */}
+        {/* 右列：产品演示动画（lg+）—— 首屏无声地演一遍「多 Agent 派活」是什么样 */}
         <div className="hidden items-center justify-center p-10 lg:flex">
-          <div className="relative aspect-square w-full max-w-lg">
-            {/* 背景图：右上，偏小，向中间靠 */}
-            <img
-              src="/gopher-fcb-glass.png"
-              className="absolute top-[4%] right-0 w-[58%] object-contain duration-700 animate-in fade-in zoom-in-95"
-              alt="CoCoWork mascot"
-            />
-            {/* 前景图：左下，偏大，向中间靠，叠在上层 + 投影 */}
-            <img
-              src="/gopher-dao.png"
-              className="absolute bottom-[2%] left-0 z-10 w-[66%] object-contain drop-shadow-xl fill-mode-both delay-150 duration-700 animate-in fade-in slide-in-from-bottom-4"
-              alt="CoCoWork mascot"
-            />
+          <div className="fill-mode-both delay-150 duration-700 animate-in fade-in slide-in-from-bottom-4">
+            <WorkspacePreview />
           </div>
         </div>
       </div>

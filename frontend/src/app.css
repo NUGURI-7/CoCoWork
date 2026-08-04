@@ -278,3 +278,289 @@ body {
   white-space: nowrap;
 }
 
+/* =============================================
+ * 登录页「工作空间派活」演示动画（WorkspacePreview.tsx 专用）
+ *
+ * 一条 8s 的公共时间轴，每个元素用自己的 keyframe 在轴上占一个窗口 ——
+ * 刻意不用 animation-delay 错峰：delay 只推迟第一次播放，infinite 循环
+ * 从第二轮起就会全部挤在一起，节奏塌掉。所有元素同 duration 同起点，
+ * 先后顺序写在百分比里。
+ *
+ * 时间轴：用户提问 → supervisor 分派 → 两名成员先后干活 → 产出物落地 → 淡出重来
+ * ============================================= */
+@keyframes cw-slot-a {
+  0%,
+  3% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  8%,
+  94% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@keyframes cw-slot-b {
+  0%,
+  13% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  18%,
+  94% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@keyframes cw-slot-c {
+  0%,
+  24% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  29%,
+  94% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@keyframes cw-slot-d {
+  0%,
+  33% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  38%,
+  94% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@keyframes cw-slot-e {
+  0%,
+  70% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  76%,
+  94% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+/* 成员状态：转圈与打勾是两个叠放的元素，靠互补的可见窗口交接 */
+@keyframes cw-busy-1 {
+  0%,
+  28% {
+    opacity: 0;
+  }
+  30%,
+  50% {
+    opacity: 1;
+  }
+  53%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes cw-done-1 {
+  0%,
+  52% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  56%,
+  94% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes cw-busy-2 {
+  0%,
+  37% {
+    opacity: 0;
+  }
+  39%,
+  62% {
+    opacity: 1;
+  }
+  65%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes cw-done-2 {
+  0%,
+  64% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  68%,
+  94% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* 连线：从 supervisor 向下生长到成员卡 */
+/* opacity 必须在起点就写死 1 —— 只在 100% 声明一个 opacity:0，浏览器会拿元素
+   的初始值当 0% 帧，于是整条线从头淡到尾，看起来像在慢慢消失 */
+/* 主干虚线的「延伸」：靠 clip-path 自上而下揭开，**不能用 scaleY**
+   —— 缩放会把虚线的每一节一起拉长，看起来是线在变形而不是在生长 */
+@keyframes cw-thread {
+  0%,
+  18% {
+    opacity: 1;
+    clip-path: inset(0 0 100% 0);
+  }
+  42%,
+  94% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    opacity: 0;
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+/* 虚线本体画在 ::after 上，好让「揭开」（父层 clip-path，跟着 8s 主时间轴）
+   与「流动」（子层 background-position，自己 1s 循环）两件事互不干扰 */
+.cw-dash-y,
+.cw-dash-x {
+  bottom: 2.75rem;
+}
+.cw-dash-x {
+  top: calc(50% - 1px);
+  bottom: auto;
+}
+.cw-dash-y::after,
+.cw-dash-x::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+.cw-dash-y::after {
+  background-image: repeating-linear-gradient(to bottom, var(--brand) 0 5px, transparent 5px 10px);
+  background-size: 100% 10px;
+  animation: cw-flow-y 0.9s linear infinite;
+  opacity: 0.5;
+}
+.cw-dash-x::after {
+  background-image: repeating-linear-gradient(to right, var(--brand) 0 5px, transparent 5px 10px);
+  background-size: 10px 100%;
+  animation: cw-flow-x 0.9s linear infinite;
+  opacity: 0.5;
+}
+@keyframes cw-flow-y {
+  to {
+    background-position-y: 10px;
+  }
+}
+@keyframes cw-flow-x {
+  to {
+    background-position-x: 10px;
+  }
+}
+
+/* supervisor 副文案两段式：成员卡都出来之后，「正在分派」就是句假话了 */
+@keyframes cw-dispatching {
+  0%,
+  17% {
+    opacity: 0;
+  }
+  19%,
+  36% {
+    opacity: 1;
+  }
+  40%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes cw-dispatched {
+  0%,
+  40% {
+    opacity: 0;
+  }
+  44%,
+  94% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* 标题栏状态点 —— 与主时间轴无关，独立慢呼吸 */
+@keyframes cw-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* supervisor 打字的三个点 */
+@keyframes cw-typing {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+.cw-cycle {
+  animation-duration: 8s;
+  animation-timing-function: ease-out;
+  animation-iteration-count: infinite;
+  animation-fill-mode: both;
+}
+
+/* 无障碍：用户在系统里要求减少动效时，直接停在终态（信息一样看得全，只是不动） */
+@media (prefers-reduced-motion: reduce) {
+  .cw-cycle,
+  .cw-cycle * {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  /* 终态里成员已经干完了，转圈那层要真正撤掉 —— 否则会和打勾叠在同一格 */
+  .cw-busy {
+    display: none !important;
+  }
+}
