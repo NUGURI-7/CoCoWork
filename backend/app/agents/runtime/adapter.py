@@ -22,6 +22,7 @@ from typing import Any
 from langgraph.errors import GraphRecursionError
 from langgraph.types import Command
 from app.agents.runtime.events import EventType
+from app.agents.stream_contract import EMIT_TEXT_KEY, INTERNAL_STEP_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -183,7 +184,12 @@ def _push_pos(metadata: dict[str, Any]) -> int | None:
 # adapter 对外吐的事件原料：(事件类型, payload dict)。粘成 SSE 字符串是 runner 的活。
 AdapterEvent = tuple[EventType, dict[str, Any]]
 
-Handler = Callable[[StreamState, "LaneState", dict[str, Any]], AsyncIterator[AdapterEvent]]
+# 第四个参数是事件自身的 metadata —— handler 靠它认出「内部工序」那类事件。
+# 不走 LaneState：graph 模板的节点 ns 是 `research:` / `answer:`，不含 `tools:` 段，
+# 按 _lane_key 全归主道，泳道级的标记会互相污染。
+Handler = Callable[
+    [StreamState, "LaneState", dict[str, Any], dict[str, Any]], AsyncIterator[AdapterEvent]
+]
 _HANDLERS: dict[str, Handler] = {}
 
 
@@ -317,6 +323,40 @@ async def _emit_singleton_stop(slot: SingletonSlot) -> AsyncIterator[AdapterEven
         slot.index = None
 
 
+def _emitted_texts(ev: dict[str, Any]) -> list[str]:
+    """从节点产出里挑出带 emit 戳的消息文本（见 stream_contract.emit_text）。
+
+    只认 on_chain_stream 且 metadata.langgraph_node 非空的事件 —— 顶层图（node 为
+    None）会把同一批消息再报一遍，认了就发两次。
+    """
+    if ev.get("event") != "on_chain_stream":
+        return []
+    if not (ev.get("metadata") or {}).get("langgraph_node"):
+        return []
+    chunk = (ev.get("data") or {}).get("chunk")
+    messages = chunk.get("messages") if isinstance(chunk, dict) else None
+    if not messages:
+        return []
+    return [
+        m.text for m in messages
+        if (getattr(m, "additional_kwargs", None) or {}).get(EMIT_TEXT_KEY) and m.text
+    ]
+
+
+async def _emit_static_text(state: StreamState, text: str) -> AsyncIterator[AdapterEvent]:
+    """把一段现成文本补发成一个完整文本块（开 → 一次性 delta → 关）。
+
+    不复用 lane.text 那个单例槽：这段文本不是流出来的、没有后续增量，开完立刻就关；
+    借用活块槽反而会跟真在流的模型输出抢同一个 index。
+    """
+    index = state.allocate()
+    yield EventType.CONTENT_BLOCK_START, {"index": index, "type": BLOCK_TEXT}
+    yield EventType.CONTENT_BLOCK_DELTA, {
+        "index": index, "type": DELTA_TYPE_TEXT, DELTA_KEY_TEXT: text,
+    }
+    yield EventType.CONTENT_BLOCK_STOP, {"index": index}
+
+
 # ============ tool 流处理（结构特殊，单独写） ============
 
 async def _emit_tool_call_chunk(
@@ -402,21 +442,26 @@ async def _close_all(state: StreamState) -> AsyncIterator[AdapterEvent]:
 
 @_register("on_chat_model_stream")
 async def _on_chat_model_stream(
-        state: StreamState, lane: LaneState, data: dict[str, Any],
+        state: StreamState, lane: LaneState, data: dict[str, Any], meta: dict[str, Any],
 ) -> AsyncIterator[AdapterEvent]:
     """一个 AIMessageChunk 可能同时带 text / reasoning / tool_call_chunks，各自分流到本道。"""
     chunk = data.get("chunk")
     if chunk is None:
         return
 
-    async for ev in _emit_singleton_delta(
-            state, lane.text, BLOCK_TEXT, DELTA_TYPE_TEXT, DELTA_KEY_TEXT, _extract_text(chunk),
-    ):
-        yield ev
-    async for ev in _emit_singleton_delta(
-            state, lane.thinking, BLOCK_THINKING, DELTA_TYPE_THINKING, DELTA_KEY_THINKING, _extract_reasoning(chunk),
-    ):
-        yield ev
+    # 内部工序（graph 模板的中间节点，见 events.INTERNAL_STEP_KEY）只闭嘴、不缺席：
+    # 文本与思考不外发 —— 那是工序，用户看了只会觉得同一件事说了两遍；
+    # 工具调用照常往下走 —— 「正在搜索」这类进度是用户唯一能看到的反馈，
+    # 全静默的话检索那十几秒界面就是死的。
+    if not meta.get(INTERNAL_STEP_KEY):
+        async for ev in _emit_singleton_delta(
+                state, lane.text, BLOCK_TEXT, DELTA_TYPE_TEXT, DELTA_KEY_TEXT, _extract_text(chunk),
+        ):
+            yield ev
+        async for ev in _emit_singleton_delta(
+                state, lane.thinking, BLOCK_THINKING, DELTA_TYPE_THINKING, DELTA_KEY_THINKING, _extract_reasoning(chunk),
+        ):
+            yield ev
     for tc in getattr(chunk, "tool_call_chunks", None) or []:
         async for ev in _emit_tool_call_chunk(state, lane, tc):
             yield ev
@@ -424,7 +469,7 @@ async def _on_chat_model_stream(
 
 @_register("on_chat_model_end")
 async def _on_chat_model_end(
-        state: StreamState, lane: LaneState, data: dict[str, Any],
+        state: StreamState, lane: LaneState, data: dict[str, Any], meta: dict[str, Any],
 ) -> AsyncIterator[AdapterEvent]:
     """模型一轮 chat 完事：关**本道**活块 + 发 message_delta(usage)。
 
@@ -451,7 +496,7 @@ async def _on_chat_model_end(
 
 @_register("on_tool_end")
 async def _on_tool_end(
-        state: StreamState, lane: LaneState, data: dict[str, Any],
+        state: StreamState, lane: LaneState, data: dict[str, Any], meta: dict[str, Any],
 ) -> AsyncIterator[AdapterEvent]:
     """工具执行完成：从 ToolMessage.tool_call_id 反查 block、发 tool_result。
 
@@ -544,6 +589,12 @@ async def adapt_chat_stream(
                 yield EventType.INTERRUPT, {"asks": asks}
                 continue
 
+            # 代码直接产出的消息（见 stream_contract.emit_text）。同样必须抢在
+            # handler 分发之前：on_chain_stream 没注册 handler，落下去就被 continue 掉
+            for emitted in _emitted_texts(ev):
+                async for out in _emit_static_text(state, emitted):
+                    yield out
+
             handler = _HANDLERS.get(ev.get("event", ""))
             if handler is None:
                 continue
@@ -551,7 +602,7 @@ async def adapt_chat_stream(
             lane_key = _lane_key(meta)
             lane = state.lane(lane_key)  # 按 ns 把事件归到对应泳道
             delegate_id = state.lane_to_delegate.get(lane_key)  # 第 2 步 · 盖戳：本道归属哪次派活
-            async for evt_type, payload in handler(state, lane, ev.get("data", {})):
+            async for evt_type, payload in handler(state, lane, ev.get("data", {}), meta):
                 if agent_name is not None:
                     payload = {**payload, "subagent": agent_name}
                 # 不给"派活块自己"的事件盖戳（其 id == delegate_id，如 task 的 tool_result）——

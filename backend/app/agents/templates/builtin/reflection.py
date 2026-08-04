@@ -16,6 +16,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
 
+from app.agents.stream_contract import emit_text, internal_step
 from app.agents.templates.base import GraphTemplate, compose_prompt
 from app.agents.templates.registry import register
 
@@ -58,9 +59,9 @@ _CRITIQUE_PROMPT = """现在你的任务是审查下面这版稿子，不是重�
 必要时可以使用你的工具核对事实，不要仅凭印象判断对错。
 
 **回复格式（必须遵守）**：第一行只写一个词 —— 稿子已达要求写 PASS，需要修改写 REVISE。
-从第二行开始写审查结论，这部分用户会看到，要像话：
-- 写 REVISE 时，逐条说明问题出在哪、该怎么改。
-- 写 PASS 时，用一句话说清你核对了哪几项、结论是什么，不要只留一个孤零零的 PASS。
+从第二行开始写审查结论，这部分会原样交给下一轮改稿用：
+- 写 REVISE 时，逐条说明问题出在哪、该怎么改，写得具体、可执行。
+- 写 PASS 时，一句话说清你核对了哪几项即可。
 
 判断从严：没有具体问题可写的时候才算 PASS。"""
 
@@ -124,18 +125,22 @@ class ReflectionTemplate(GraphTemplate):
         mw = list(middleware or [])
 
         # 装配期建好、节点闭包捕获：每进一次节点重建一个 agent 是白烧
-        drafter = create_agent(
+        # internal_step：草稿与评审都是工序，不是交付物。不标的话用户会依次看到
+        # 草稿全文 → 一个孤零零的 REVISE（内部协议词漏出去了）→ 一整篇自我批评 →
+        # 第二版草稿 → 又一篇批评 → 最后定稿，而定稿跟最后那版草稿是同一份内容。
+        # 协议词那条尤其没得商量：它在首行，流式发出去就收不回来。
+        drafter = internal_step(create_agent(
             model=chat_model,
             tools=tools,
             system_prompt=compose_prompt(_DRAFT_PROMPT, system_prompt),
             middleware=mw,
-        )
-        critic = create_agent(
+        ))
+        critic = internal_step(create_agent(
             model=chat_model,
             tools=tools,
             system_prompt=compose_prompt(_CRITIQUE_PROMPT, system_prompt),
             middleware=mw,
-        )
+        ))
 
         # 节点都收 config 并原样透传给内层 agent —— 事件流、interrupt 冒泡、
         # 步数预算全挂在它身上，断了内层就成了黑盒（前端什么也看不见）
@@ -166,8 +171,13 @@ class ReflectionTemplate(GraphTemplate):
             }
 
         async def finalize_node(state: ReflectionState) -> dict:
-            """把定稿放回 messages —— 这张图对外只交付这一条。"""
-            return {"messages": [AIMessage(content=state.get("draft", ""))]}
+            """把定稿放回 messages —— 这张图对外只交付这一条。
+
+            用 emit_text 而不是裸 AIMessage：定稿是代码从 state 里取的、没经过模型，
+            而 adapter 只翻译模型事件 —— 裸构造的话前端一个字都收不到（这正是此前
+            用户只看得见草稿和评审、看不见成品的原因）。
+            """
+            return {"messages": [emit_text(state.get("draft", ""))]}
 
         def route(state: ReflectionState) -> str:
             """过了、或者轮数用完，收尾；否则回去改。"""
