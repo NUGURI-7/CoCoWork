@@ -18,7 +18,11 @@ export function AdminShell({ children }: { children: ReactNode }) {
           <Separator orientation="vertical" className="mr-2 data-[orientation=vertical]:h-4" />
         </header>
         <TabBar useStore={useAdminTabsStore} />
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 p-4">{children}</div>
+        {/* overflow-y-auto 不可省：外层 h-svh 锁死高度，没有滚动容器时超出一屏的
+            内容会画到 SidebarInset 的圆角卡片外面（表现为边框中途断掉） */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+          {children}
+        </div>
       </SidebarInset>
     </SidebarProvider>
   )
