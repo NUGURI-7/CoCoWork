@@ -32,9 +32,11 @@ from app.tools.artifact_fetch import ArtifactFetchTool
 
 # 单条命令的默认超时与硬上限（秒）。LLM 可为单条命令调高，但不得超过上限 ——
 # deepagents 的 max_execute_timeout 默认 3600，一个 skill 脚本跑一小时是失控
-# 不是耐心，收到 5 分钟。
-_EXECUTE_TIMEOUT = 120
-_EXECUTE_TIMEOUT_CEILING = 600
+# 不是耐心，收到 10 分钟。
+# 名字不带下划线是有意的：最外层的工具护栏必须按这个上限单独给 execute 放宽
+# （tool_guard._TOOL_TIMEOUT_BUDGETS），两边各写一个数迟早漂移。
+EXECUTE_TIMEOUT = 120
+EXECUTE_TIMEOUT_CEILING = 600
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,7 +161,7 @@ async def build_skill_mount(
     return SkillMount(
         middleware=FilesystemMiddleware(
             backend=backend,
-            max_execute_timeout=_EXECUTE_TIMEOUT_CEILING,
+            max_execute_timeout=EXECUTE_TIMEOUT_CEILING,
         ),
         paths=paths,
         backend=backend,
@@ -180,8 +182,8 @@ def _docker_backend(
         paths=paths,
         skill_tar=pack_skill_dirs(skill_dirs),
         env=credentials,  # 容器的 PATH / HOME 由镜像给，不需要 _sandbox_env 那套
-        timeout=_EXECUTE_TIMEOUT,
-        max_timeout=_EXECUTE_TIMEOUT_CEILING,
+        timeout=EXECUTE_TIMEOUT,
+        max_timeout=EXECUTE_TIMEOUT_CEILING,
     )
     return paths, backend
 
@@ -203,7 +205,7 @@ def _local_backend(
         # 它也从来不是安全边界，deepagents 自己的告警原话：
         # "virtual_mode does not restrict shell execution"。
         virtual_mode=False,
-        timeout=_EXECUTE_TIMEOUT,
+        timeout=EXECUTE_TIMEOUT,
         env={**credentials, **_sandbox_env(paths)},
         inherit_env=False,  # 显式写出：宿主机环境（DB 密码 / R2 密钥）绝不外泄
     )

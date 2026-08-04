@@ -14,15 +14,24 @@ import pytest
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
-from app.agents.runtime.tool_guard import GUARD_TIMEOUT_SECONDS, ToolGuardMiddleware
+from app.agents.runtime.tool_guard import (
+    GUARD_TIMEOUT_SECONDS,
+    ToolGuardMiddleware,
+    _timeout_for,
+)
 from app.tools.base import MAX_TOOL_OUTPUT_CHARS
 
 
 class _Req:
-    """够用的 ToolCallRequest 替身 —— 护栏只读 tool_call 里的 name / id。"""
+    """够用的 ToolCallRequest 替身 —— 护栏只读 tool_call 里的 name / id 和 tool。
 
-    def __init__(self, name: str = "web_search", call_id: str = "call_1"):
+    tool 默认 None：真实契约里这个字段可以是 None（工具没注册到 ToolNode），
+    正好也是「工具没自报超时」那一档。
+    """
+
+    def __init__(self, name: str = "web_search", call_id: str = "call_1", tool=None):
         self.tool_call = {"name": name, "id": call_id, "args": {}}
+        self.tool = tool
 
 
 def _handler_returning(result):
@@ -76,6 +85,31 @@ async def test_超时转成消息(monkeypatch):
     assert isinstance(out, ToolMessage)
     assert out.status == "error"
     assert "超时" in out.content
+
+
+async def test_长跑工具不吃默认闸():
+    """execute（沙箱命令）/ task（委派一整段子 agent）必须按预算表放宽。
+
+    默认 60 秒罩住这两个，等于沙箱那套 600 秒上限和整段委派永远没机会跑完。
+    """
+    from app.services.skill.mount import EXECUTE_TIMEOUT_CEILING
+
+    assert _timeout_for(_Req(name="execute"), "execute") > EXECUTE_TIMEOUT_CEILING
+    assert _timeout_for(_Req(name="task"), "task") > GUARD_TIMEOUT_SECONDS
+
+
+async def test_工具自报超时不被外层废掉():
+    """CoCoTool 把 timeout_seconds 调到默认闸之上时，护栏得比它更有耐心。"""
+
+    class _SlowTool:
+        timeout_seconds = 90.0
+
+    assert _timeout_for(_Req(tool=_SlowTool()), "artifact_fetch") > 90.0
+
+
+async def test_没自报的落回默认闸():
+    """MCP 动态工具这一档 —— 谁也不知道它要跑多久，只能给兜底值。"""
+    assert _timeout_for(_Req(), "web_search") == GUARD_TIMEOUT_SECONDS
 
 
 async def test_超长输出被截断():

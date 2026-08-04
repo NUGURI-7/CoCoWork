@@ -29,13 +29,35 @@ from langchain_core.messages import ToolMessage
 from langgraph.errors import GraphBubbleUp
 from langgraph.types import Command
 
+from app.services.skill.mount import EXECUTE_TIMEOUT_CEILING
 from app.tools.base import MAX_TOOL_OUTPUT_CHARS
 
 logger = logging.getLogger(__name__)
 
+# 兜底闸：给「谁也不知道它要跑多久」的工具用（MCP 动态工具是主力）。
 # 比 CoCoTool 自己的 30 秒明显宽 —— 这是最后一道闸，不是工具的定制策略。
 # 定得跟内层一样，会把工具自己调大的超时（将来某个慢工具设 60 秒）当场废掉。
 GUARD_TIMEOUT_SECONDS = 60.0
+
+# 工具自报超时之上再留的余量：内层那道闸响了之后还要拼错误消息、回传，护栏
+# 必须比内层更有耐心，否则内层的定制超时等于没写（同 docker_sandbox._HTTP_MARGIN）。
+GUARD_TIMEOUT_MARGIN = 15.0
+
+# 点名放宽的工具 —— 它们不是「一次函数调用」，默认闸对它们是误伤：
+#
+# - execute：沙箱里跑一条 shell 命令，自带 120s 默认 / 600s 上限，真正掐它的是
+#   容器里那条 `timeout` 命令；护栏卡 60 秒的话，那套上限从来没机会生效。
+# - task：委派一个成员 = 一整段子 agent 运行（多次模型调用 + 若干工具），而里面
+#   每个工具**已经各自被这同一个护栏罩过**。外面再压 60 秒是重复设限，还会把
+#   跑到一半的成员整个掐掉。这里的 600 秒只兜「整段委派挂死」。
+#   注意它比 execute 那档略小：成员真跑一条逼近 600 秒上限的沙箱命令时，是委派
+#   先超时。实测 skill 脚本远够不着这个量级，先按 600 收着。
+#
+# 键是工具在 LLM 眼里的 name（deepagents 写死的两个字面量），不是中文展示名。
+_TOOL_TIMEOUT_BUDGETS: dict[str, float] = {
+    "execute": EXECUTE_TIMEOUT_CEILING + GUARD_TIMEOUT_MARGIN,
+    "task": 600.0,
+}
 
 
 class ToolGuardMiddleware(AgentMiddleware):
@@ -48,12 +70,13 @@ class ToolGuardMiddleware(AgentMiddleware):
     async def awrap_tool_call(self, request: ToolCallRequest, handler):
         name = request.tool_call.get("name") or "?"
         call_id = request.tool_call.get("id") or ""
+        limit = _timeout_for(request, name)
         try:
-            result = await asyncio.wait_for(handler(request), GUARD_TIMEOUT_SECONDS)
+            result = await asyncio.wait_for(handler(request), limit)
         except asyncio.TimeoutError:
-            logger.warning("工具执行超时 name=%s limit=%ss", name, GUARD_TIMEOUT_SECONDS)
+            logger.warning("工具执行超时 name=%s limit=%ss", name, limit)
             return ToolMessage(
-                content=f"工具「{name}」执行超时（超过 {GUARD_TIMEOUT_SECONDS:g} 秒），本次没有结果。",
+                content=f"工具「{name}」执行超时（超过 {limit:g} 秒），本次没有结果。",
                 tool_call_id=call_id,
                 status="error",
             )
@@ -74,6 +97,25 @@ class ToolGuardMiddleware(AgentMiddleware):
                 status="error",
             )
         return _cap_result(result, name)
+
+
+def _timeout_for(request: ToolCallRequest, name: str) -> float:
+    """这次调用给多少墙钟预算 —— 从具体到笼统三档。
+
+    1. 预算表点名的（execute / task）：按表。
+    2. 工具自报 `timeout_seconds` 的（`CoCoTool` 全家）：取「自报 + 余量」与默认闸
+       的较大者。让内层那道闸先响 —— 它的报错话术带中文展示名、更像人话，护栏只
+       在它没响（卡在 await 里根本回不来）时兜底。
+    3. 其余：默认 60 秒。`request.tool` 可能是 None（没注册到 ToolNode 的调用），
+       getattr 那行把这种情况一并吃掉，不额外判。
+    """
+    budget = _TOOL_TIMEOUT_BUDGETS.get(name)
+    if budget is not None:
+        return budget
+    declared = getattr(request.tool, "timeout_seconds", None)
+    if isinstance(declared, (int, float)):
+        return max(float(declared) + GUARD_TIMEOUT_MARGIN, GUARD_TIMEOUT_SECONDS)
+    return GUARD_TIMEOUT_SECONDS
 
 
 def _cap_result(result, name: str):
