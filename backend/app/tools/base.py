@@ -28,6 +28,18 @@ logger = logging.getLogger(__name__)
 # 工具来源。写成别名而不是每处各抄一遍 Literal —— 加一种来源只改这一行
 ToolSourceType = Literal["builtin", "mcp", "knowledge", "memory"]
 
+# 工具能力分类。两个消费者：前端工具卡片上的标签（给人看），以及模板的配置校验
+# （给程序看）—— Retrieve-then-Read 要问的是「用户有没有挂能查到外部信息的工具」。
+#
+# **按能力分，不按主题分**：不是 search / weather / finance 那种给人浏览工具市场
+# 用的标签（Dify 的 tool tags 是那一路）。网页搜索、数据库查询、知识库检索主题上
+# 八竿子打不着、能力上是同一类；按主题分的话，校验处就得写一份
+# category in ("search", "database", ...) 的白名单，每加一种数据源改它一次。
+#
+# 只开有真实用途的档：calculator 单独立一档「计算」在卡片上更好看，但一共就两个
+# 内置工具、分成两类每类一个，那不叫分类。等 utility 这格真塞不下了再按拥挤程度拆。
+ToolCategory = Literal["data_source", "utility"]
+
 # 单次工具输出能进上下文的字符上限（L1 上下文防爆）。
 # **跨轮回放沿用同一个数** —— 见 view_context_assembler._cap_result：
 # 一次执行能进多少，历史里就是多少，不另立一套标准。
@@ -40,6 +52,10 @@ class CoCoTool(BaseTool):
     # ---- 项目级元信息（LangChain BaseTool 没有的）----
     display_name: str  # 中文展示名；name 给 LLM（英文受正则约束）、本字段给人看
     source_type: ToolSourceType = "builtin"
+    # 能力分类。默认给最弱的一档 —— 没主动声明的工具不会被误认成数据源。
+    # 漏标的后果是「模板说你没配数据源」（用户看得见、能改），而不是「模板以为你
+    # 配了、跑起来查不到东西」（用户看不见、只能怀疑系统坏了）
+    category: ToolCategory = "utility"
     dangerous: bool = False  # 有副作用（删文件 / 发请求 / 花钱）的工具标 True，未来接人工确认
 
     # ---- 横切行为参数 ----

@@ -2,13 +2,23 @@ import { AlertTriangle, Code2, Server, Wrench } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
-import type { Tool, ToolSource } from '@/types'
+import type { Tool, ToolCategory, ToolSource } from '@/types'
 
 /** 来源 → 图标 + 标签（后端不下发图标，前端按来源统一给） */
 const SOURCE_META: Record<ToolSource, { label: string; icon: LucideIcon }> = {
   builtin: { label: '内置', icon: Wrench },
   mcp: { label: 'MCP', icon: Server },
   custom: { label: '自定义', icon: Code2 },
+}
+
+/**
+ * 能力分类 → 标签。不配图标 —— 来源 badge 也是纯文字，图标只出现在卡片左侧
+ * 那个大色块里，一行 badge 里再塞图标会把「有副作用」那个真正需要视觉警示的
+ * 标记淹掉。
+ */
+const CATEGORY_META: Record<ToolCategory, string> = {
+  data_source: '数据源',
+  utility: '实用工具',
 }
 
 /**
@@ -32,6 +42,9 @@ export function ToolCard({ tool }: { tool: Tool }) {
           <div className="mt-0.5 flex items-center gap-1.5">
             <Badge variant="outline" className="px-1.5 py-0 text-[11px] font-normal">
               {meta.label}
+            </Badge>
+            <Badge variant="outline" className="px-1.5 py-0 text-[11px] font-normal">
+              {CATEGORY_META[tool.category]}
             </Badge>
             {tool.dangerous && (
               <Badge

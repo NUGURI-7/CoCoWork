@@ -17,4 +17,5 @@ class ToolOut(BaseModel):
     display_name: str  # 中文名
     description: str   # 能力描述
     source_type: str   # builtin / mcp / custom —— 前端按这个分组
+    category: str      # data_source / utility —— 能力分类，卡片上的标签
     dangerous: bool    # 有副作用（删文件 / 发请求 / 花钱）标记
