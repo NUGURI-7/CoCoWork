@@ -1,12 +1,64 @@
+# CoCoWork 五服务编排：pg / redis / app / worker / sandboxd。
+# 这份 = 部署机上跑通的那份，换机器时 scp 下去 + 备好 .env 即可 `docker compose up -d`。
+#
+# 镜像走私有仓库（部署机只有 2G 内存，build 不动，一律在别处构建好再推上去）。
+# 三个应用服务共用同一镜像，故抽成锚点 —— 换 tag 只改这一行。
+#
+# 起服务前：cp backend/.env.example .env && 编辑它
+
+x-app: &app
+  image: crpi-cwyvl6vckkv4k4p7.cn-hangzhou.personal.cr.aliyuncs.com/nuguri_ddd/cocowork:latest
+  env_file: .env
+  restart: unless-stopped
+
 services:
+  pg:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: cocowork
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
   app:
-    image: crpi-cwyvl6vckkv4k4p7.cn-hangzhou.personal.cr.aliyuncs.com/nuguri_ddd/cocowork:latest
+    <<: *app
+    # 迁移在应用启动前跑，exec 让 uvicorn 接管 PID 1（信号能传到，停容器才是优雅退出）
     command: sh -c "tortoise migrate && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"
     ports:
-      - "8000:8000"
-    env_file: .env
+      # 只绑回环：对外由宿主机上的 Caddy 反代，容器端口不直接暴露公网
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./data:/app/backend/data
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    restart: unless-stopped
+    depends_on:
+      pg:
+        condition: service_healthy
+
+  worker:
+    <<: *app
+    command: worker
+    volumes:
+      - ./data:/app/backend/data
+    depends_on:
+      pg:
+        condition: service_healthy
+
+  sandboxd:
+    <<: *app
+    command: sandboxd
+    environment:
+      # 独占 docker SDK 的那个进程，要被 app 容器按服务名访问，故不能只听回环
+      SANDBOXD_HOST: 0.0.0.0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  pgdata:
