@@ -55,7 +55,7 @@ export default function WorkspacesPage() {
         <div>
           <h1 className="text-xl font-semibold">工作空间</h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            把 agent 招进同一会话协作 —— 管家调度 + @ 直选，资源共享注入。
+            把 agent 招进同一会话协作 —— Supervisor 调度 + @ 直选，资源共享注入。
           </p>
         </div>
         <Button size="sm" onClick={() => setDialogOpen(true)}>

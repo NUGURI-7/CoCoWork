@@ -182,7 +182,7 @@ export function WorkspaceSettingsPanel({
 
         <div className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium tracking-wide uppercase">
           <Crown className="text-brand size-3.5" />
-          管家配置
+          Supervisor 配置
         </div>
 
         <div className="space-y-2">
@@ -223,7 +223,7 @@ export function WorkspaceSettingsPanel({
           <Textarea
             id="ws-set-prompt"
             value={form.system_prompt}
-            placeholder="管家的角色与行事风格，如：你是这个工作空间的管家，负责协调和回答问题。"
+            placeholder="Supervisor 的角色与行事风格，如：你是这个工作空间的 Supervisor，负责协调和回答问题。"
             onChange={(e) => patch('system_prompt', e.target.value)}
             className="min-h-28 resize-none"
           />

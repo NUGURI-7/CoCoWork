@@ -28,7 +28,7 @@ export interface RosterMember {
 /** 合成的管家行 —— 固定置顶、不可踢。 */
 export const SUPERVISOR_ROSTER: RosterMember = {
   id: 'supervisor',
-  name: '管家',
+  name: 'Supervisor',
   seed: SUPERVISOR_SEED,
   role: 'supervisor',
   subtitle: '调度',

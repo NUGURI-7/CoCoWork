@@ -144,7 +144,7 @@ class ConversationService:
 
         supervisor = AgentConfig.model_validate(conv.workspace.supervisor)
         if supervisor.models.chat is None:
-            raise AppApiException(code=503, message="管家还没配对话模型，无法生成标题")
+            raise AppApiException(code=503, message="Supervisor 还没配对话模型，无法生成标题")
 
         # 起名单独收窄参数:不继承管家那套 temperature / max_tokens —— 那是给正文
         # 创作用的,起名要短要稳。只借用它的模型 id

@@ -36,10 +36,14 @@ interface WorkspaceCardProps {
 function SupervisorBadge() {
   return (
     <div className="flex min-w-0 items-center gap-2">
-      <AgentAvatar seed={SUPERVISOR_SEED} alt="管家" className="bg-background size-7" />
+      <AgentAvatar
+        seed={SUPERVISOR_SEED}
+        alt="Supervisor"
+        className="bg-background size-7"
+      />
       <span className="text-muted-foreground inline-flex items-center gap-1 text-xs">
         <Crown className="text-brand size-3.5" />
-        管家
+        Supervisor
       </span>
     </div>
   )

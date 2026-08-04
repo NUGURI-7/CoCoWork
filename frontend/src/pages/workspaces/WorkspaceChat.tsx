@@ -209,7 +209,7 @@ function WorkspaceChatBody({
         disabledHint={
           awaitingAnswer
             ? '先回复上面那个问题，或者点「跳过」'
-            : '先在右侧「空间配置」里给管家选一个对话模型'
+            : '先在右侧「空间配置」里给 Supervisor 选一个对话模型'
         }
         mentionItems={mentionItems}
         // 产出物面板的卡片可以拖进来当附件（后端决策 25）。
@@ -223,7 +223,7 @@ function WorkspaceChatBody({
 function EmptyHint() {
   return (
     <div className="text-muted-foreground/70 flex flex-1 items-center justify-center px-4 text-center text-sm">
-      跟管家说点什么，开始这个空间的协作
+      跟 Supervisor 说点什么，开始这个空间的协作
     </div>
   )
 }
