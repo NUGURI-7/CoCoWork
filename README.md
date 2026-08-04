@@ -8,7 +8,7 @@
 
 多个 Agent 在同一会话内协作 —— supervisor 调度 · @ 直连成员 · Agentic RAG · 沙箱产出物 · 跨会话记忆
 
-[核心能力](#核心能力) · [技术栈](#技术栈) · [架构](#架构) · [快速开始](#快速开始) · [项目结构](#项目结构)
+[在线体验](#在线体验) · [核心能力](#核心能力) · [技术栈](#技术栈) · [架构](#架构) · [快速开始](#快速开始) · [项目结构](#项目结构)
 
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![python](https://img.shields.io/badge/Python-3.12+-3776AB)
@@ -18,6 +18,13 @@
 <img src="docs/assets/screenshots/workspace-collab.webp" alt="CoCoWork 工作空间">
 
 </div>
+
+---
+
+## 在线体验
+
+- **应用** — <https://demo.nuguri.org>
+- **产品介绍页** — <https://cocowork.nuguri.org>
 
 ---
 
