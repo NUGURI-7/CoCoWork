@@ -6,7 +6,12 @@ from fastapi import APIRouter, Depends
 from app.core.depends import get_current_admin
 from app.core.http import ResponseModel, success
 from app.models.user import User
-from app.schemas.model import CatalogCreate, CatalogOut
+from app.schemas.model import (
+    BatchCatalogDeleteOut,
+    BatchCatalogIn,
+    CatalogCreate,
+    CatalogOut,
+)
 from app.services.model import CatalogService, get_catalog_service
 
 router = APIRouter(prefix="/catalog", tags=["model-catalog"])
@@ -33,6 +38,19 @@ async def delete_catalog_item(
 ) -> ResponseModel[None]:
     await svc.delete(catalog_id)
     return success(message="删除成功")
+
+
+@router.post("/batch-delete", summary="批量删除目录条目")
+async def batch_delete_catalog_items(
+    data: BatchCatalogIn,
+    _admin: AdminDep,
+    svc: CatalogServiceDep,
+) -> ResponseModel[BatchCatalogDeleteOut]:
+    deleted = await svc.delete_many(data.catalog_ids)
+    return success(
+        data=BatchCatalogDeleteOut(deleted=deleted),
+        message=f"已删除 {deleted} 个条目",
+    )
 
 
 @router.get("", summary="查询目录（按 provider_type 过滤）")

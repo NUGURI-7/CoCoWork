@@ -6,7 +6,12 @@ from app.schemas.model.ai_model_schema import (
     ModelUpdate,
     ParamField,
 )
-from app.schemas.model.catalog_schema import CatalogCreate, CatalogOut
+from app.schemas.model.catalog_schema import (
+    BatchCatalogDeleteOut,
+    BatchCatalogIn,
+    CatalogCreate,
+    CatalogOut,
+)
 from app.schemas.model.provider_schema import (
     ProviderBrief,
     ProviderCreate,
@@ -16,6 +21,8 @@ from app.schemas.model.provider_schema import (
 )
 
 __all__ = [
+    "BatchCatalogDeleteOut",
+    "BatchCatalogIn",
     "CatalogCreate",
     "CatalogOut",
     "ModelCreate",

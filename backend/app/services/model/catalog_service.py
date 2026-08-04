@@ -28,6 +28,14 @@ class CatalogService:
             raise NotFound404("目录条目不存在")
         await item.delete()
 
+    async def delete_many(self, catalog_ids: list[UUID]) -> int:
+        """批量删除，返回实际删除数。
+
+        与单条删除不同，这里**不对缺失的 id 报错**：批量删除的语义是
+        「让这些不再存在」，其中几个已经没了不该让整批失败。
+        """
+        return await ProviderModelCatalog.filter(id__in=catalog_ids).delete()
+
     async def list_by_provider_type(self, provider_type: str) -> list[ProviderModelCatalog]:
         return await ProviderModelCatalog.filter(
             provider_type=provider_type,

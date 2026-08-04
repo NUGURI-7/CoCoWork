@@ -156,3 +156,8 @@ export function createCatalog(payload: CatalogCreatePayload) {
 export function deleteCatalog(id: string) {
   return del<null>(`/catalog/${id}`)
 }
+
+/** 批量删除目录条目（需 admin）。缺失的 id 静默跳过，返回实际删除数。 */
+export function batchDeleteCatalog(ids: string[]) {
+  return post<{ deleted: number }>('/catalog/batch-delete', { catalog_ids: ids })
+}
