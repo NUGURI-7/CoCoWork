@@ -67,7 +67,7 @@ export type {
   WorkspaceMemberOut,
   MemberRecruitPayload,
 } from './workspace'
-export type { ToolSource, Tool } from './tool'
+export type { ToolSource, ToolCategory, Tool } from './tool'
 export type { SkillSource, Skill } from './skill'
 export type { MCPTransport, MCPServer } from './mcp'
 export type {
