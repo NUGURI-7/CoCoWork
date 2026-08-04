@@ -3,3 +3,4 @@
 
 
 from app.agents.templates.builtin import general  # noqa: F401
+from app.agents.templates.builtin import reflection  # noqa: F401

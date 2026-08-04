@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -31,5 +31,23 @@ class AgentOut(BaseModel):
     config: dict[str, Any]
     created_at: datetime
     updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TemplateOut(BaseModel):
+    """内置模板对外输出 —— 注册表里的出厂元数据。
+
+    刻意不含 base_prompt：那是模板出厂的脚手架，属于内部实现，前端不该看见
+    也不该依赖。用户想知道「这个模板怎么干活」看 description。
+
+    from_attributes 是为了直接吃模板类实例 —— 那几个字段都是 ClassVar，
+    按属性取得到。
+    """
+
+    key: str = Field(description="注册表 key，创建 Agent 时原样传回 AgentCreate.template")
+    name: str
+    description: str
+    form: Literal["loop", "graph"] = Field(description="编排形态，前端据此显示徽标")
 
     model_config = ConfigDict(from_attributes=True)

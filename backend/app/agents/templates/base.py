@@ -18,6 +18,21 @@ from langchain_core.tools import BaseTool
 from langgraph.graph.state import CompiledStateGraph
 from langchain.agents.middleware import AgentMiddleware
 
+
+def compose_prompt(base: str, user: str | None) -> str:
+    """把模板出厂的脚手架与用户的实例特化拼成一段 system prompt。
+
+    base 是模板出厂的脚手架（能力描述 / 行为约束 / 工具说明），user 是用户对该
+    实例的角色 / 风格 / 任务特化 —— 二者**叠加而非覆盖**。任一为空则只用另一段；
+    都为空返回空字符串（create_agent 接受）。
+
+    提成函数是为了 graph 模板：它的每个节点各有一段自己的 base_prompt，都要按
+    这同一套规则跟**同一个**用户 system_prompt 拼。规则只此一处。
+    """
+    parts = [p for p in (base, user) if p]
+    return "\n\n".join(parts)
+
+
 class AgentTemplate(ABC):
     """内置模板基类：所有模板共有的出厂元数据 + build() 钩子。"""
 
@@ -70,11 +85,10 @@ class LoopTemplate(AgentTemplate):
     Prompt 合成：模板 base_prompt 在前 + 实例 system_prompt 在后，双换行分隔。
 
     语义：base_prompt 是模板出厂的脚手架（能力描述 / 行为约束 / 工具说明），
-    实例 system_prompt 是用户对该实例的角色 / 风格 / 任务特化 —— 二者叠加
-    而非覆盖。任一为空则只用另一段；都为空则空字符串（create_agent 接受）。
+    实例 system_prompt 是用户对该实例的角色 / 风格 / 任务特化。
+    拼接规则见 compose_prompt。
     """
-        parts = [p for p in (self.base_prompt, system_prompt) if p]
-        prompt = "\n\n".join(parts)
+        prompt = compose_prompt(self.base_prompt, system_prompt)
         return create_agent(
             model=chat_model,
             tools=tools,

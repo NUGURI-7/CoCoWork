@@ -2,10 +2,11 @@ from typing import Annotated
 from uuid import UUID
 from fastapi import APIRouter, Depends
 
+from app.agents.templates import list_templates
 from app.core.depends import get_current_user
 from app.core.http import ResponseModel, success
 from app.models.user import User
-from app.schemas.agent import AgentCreate, AgentOut, AgentUpdate
+from app.schemas.agent import AgentCreate, AgentOut, AgentUpdate, TemplateOut
 from app.services.agent import AgentService, get_agent_service
 
 router = APIRouter(prefix="/agents", tags=["agents"])
@@ -31,6 +32,21 @@ async def list_agents(
 ) -> ResponseModel[list[AgentOut]]:
     agents = await svc.list_own(current_user)
     return success(data=agents)
+
+
+@router.get("/templates", summary="列出内置模板")
+async def list_agent_templates(
+        current_user: CurrentUserDep,
+) -> ResponseModel[list[TemplateOut]]:
+    """模板池 = 进程内注册表，与用户无关；登录态只用来挡未认证访问。
+
+    不经 service：这里没有业务逻辑可装（不查库、不分用户、无权限差异），
+    转一层只会得到一个一行的空壳。
+
+    **必须注册在 /{agent_id} 之前** —— FastAPI 按注册顺序匹配，否则
+    "templates" 会被当成 agent_id 拿去转 UUID，直接 422。
+    """
+    return success(data=[TemplateOut.model_validate(t) for t in list_templates()])
 
 
 @router.get("/{agent_id}", summary="Agent 详情")

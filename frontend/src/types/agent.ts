@@ -5,28 +5,27 @@
  * config 嵌套结构跟后端 AgentConfig Pydantic 1:1。
  */
 
-/** 模板分类——对齐后端 LoopTemplate / GraphTemplate 二分 */
+/** 模板编排形态——对齐后端 LoopTemplate / GraphTemplate 二分 */
 export type TemplateKind = 'loop' | 'graph'
 
 /** 行为模板枚举（mock 兼容，workspace 仍在用） */
 export type BehaviorType = 'single' | 'supervisor' | 'pipeline' | 'react'
 
-/** 模板（平台预置；后端目前未暴露列表端点，前端先用占位） */
+/**
+ * 内置模板 — 对齐后端 `GET /agents/templates`（schemas/agent TemplateOut）。
+ *
+ * 四个字段就是后端返回的全部。没有 id（key 就是标识）、没有 icon（按 form
+ * 取默认图标）、没有 disabled（能返回就是能用）。
+ */
 export interface Template {
   /** 后端 registry key（创建 Agent 时透传到 AgentCreate.template） */
   key: string
-  /** 显示名 */
+  /** 显示名，用 Anthropic 模式术语（General / Evaluator-Optimizer …） */
   name: string
-  /** 模板分类（Loop 引擎 / Graph 编排） */
-  kind: TemplateKind
-  /** 一句话描述 */
+  /** 一句话说明它怎么干活 */
   description: string
-  /** 后端未实装 → 占位展示 disabled */
-  disabled?: boolean
-  /** 可选：mock 数据 id（早期遗留，CreateAgentDialog / RecruitDialog 还在用） */
-  id?: string
-  /** 可选：Lucide 图标名（CreateAgentDialog / TemplateCard 用） */
-  icon?: string
+  /** 编排形态，决定徽标与默认图标 */
+  form: TemplateKind
 }
 
 // ============ AgentConfig（对齐后端 schemas/agent/config_schema.py） ============

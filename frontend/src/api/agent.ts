@@ -5,7 +5,7 @@
  */
 
 import { del, get, post, put } from '@/request'
-import type { Agent, AgentConfig } from '@/types'
+import type { Agent, AgentConfig, Template } from '@/types'
 
 /** 创建 Agent 请求体（对齐后端 `AgentCreate`）。 */
 export interface AgentCreatePayload {
@@ -26,6 +26,21 @@ export interface AgentUpdatePayload {
 /** 列出当前用户的 Agent。 */
 export function listAgents() {
   return get<Agent[]>('/agents')
+}
+
+/**
+ * 内置模板池。整个进程一份常量，所以缓存住首次请求的 Promise —— 多个组件
+ * （列表页 / 创建弹窗 / Agent 卡片 / 配置面板）都要按 key 查模板名，各拉一次
+ * 就是白发几趟请求。它只会随后端发版变，页面生命周期内不会变。
+ */
+let templatesPromise: Promise<Template[]> | null = null
+
+export function listTemplates() {
+  templatesPromise ??= get<Template[]>('/agents/templates').catch((err) => {
+    templatesPromise = null // 失败不留坑，下次进来重试
+    throw err
+  })
+  return templatesPromise
 }
 
 /** 获取单个 Agent 详情。 */

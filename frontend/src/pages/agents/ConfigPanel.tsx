@@ -57,7 +57,7 @@ import type {
   Tool,
 } from '@/types'
 import { KindBadge } from './KindBadge'
-import { mockTemplates } from './mock'
+import { useTemplates, findTemplate } from '@/hooks/use-templates'
 
 interface ConfigPanelProps {
   agent: Agent
@@ -219,9 +219,10 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
     }
   }
 
-  // 模板元数据反查（kind badge 展示）
-  const template = mockTemplates.find((t) => t.key === agent.template)
-  const templateKind = template?.kind ?? 'loop'
+  // 模板元数据反查（形态徽标展示）
+  const { templates } = useTemplates()
+  const template = findTemplate(templates, agent.template)
+  const templateKind = template?.form ?? 'loop'
   const selectedToolIds = form.tool_ids
 
   return (

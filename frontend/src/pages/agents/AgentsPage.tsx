@@ -7,11 +7,11 @@ import { listAgents } from '@/api/agent'
 import { listAllModels } from '@/api/model'
 import { Button } from '@/components/ui/button'
 import { useHorizontalWheelScroll } from '@/hooks/use-horizontal-wheel-scroll'
+import { useTemplates } from '@/hooks/use-templates'
 import type { Agent, Template } from '@/types'
 import { AgentCard } from './AgentCard'
 import { CreateAgentDialog } from './CreateAgentDialog'
 import { TemplateCard } from './TemplateCard'
-import { mockTemplates } from './mock'
 
 ring.register()
 
@@ -27,6 +27,7 @@ export default function AgentsPage() {
     () => new Map(),
   )
   const templateScrollRef = useHorizontalWheelScroll<HTMLDivElement>()
+  const { templates } = useTemplates()
 
   const refetch = useCallback(async () => {
     setLoading(true)
@@ -89,8 +90,8 @@ export default function AgentsPage() {
         </h2>
         <div ref={templateScrollRef} className="-mx-2 -my-2 overflow-x-auto px-2 py-2">
           <div className="flex gap-3">
-            {mockTemplates.map((t) => (
-              <TemplateCard key={t.id} template={t} onClick={handleTemplateClick} />
+            {templates.map((t) => (
+              <TemplateCard key={t.key} template={t} onClick={handleTemplateClick} />
             ))}
           </div>
         </div>

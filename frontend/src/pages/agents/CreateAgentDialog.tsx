@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { AxiosError } from 'axios'
-import { Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { createAgent, type AgentCreatePayload } from '@/api/agent'
+import { useTemplates, findTemplate } from '@/hooks/use-templates'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -18,8 +18,7 @@ import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import type { Agent, Template } from '@/types'
 import { KindBadge } from './KindBadge'
-import { mockTemplates } from './mock'
-import { iconMap } from './TemplateCard'
+import { templateIcon } from './TemplateCard'
 
 interface CreateAgentDialogProps {
   open: boolean
@@ -36,7 +35,8 @@ export function CreateAgentDialog({
   defaultTemplate,
   onCreate,
 }: CreateAgentDialogProps) {
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const { templates } = useTemplates()
+  const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [name, setName] = useState('')
   /** 用户手改过 name 后，再切模板不再覆盖 */
   const [nameTouched, setNameTouched] = useState(false)
@@ -45,28 +45,24 @@ export function CreateAgentDialog({
   // 打开时重置（含预选模板）
   useEffect(() => {
     if (!open) return
-    setSelectedId(defaultTemplate?.id ?? null)
-    setName(defaultTemplate ? `我的${defaultTemplate.name}` : '')
+    setSelectedKey(defaultTemplate?.key ?? null)
+    setName(defaultTemplate ? `我的 ${defaultTemplate.name}` : '')
     setNameTouched(false)
     setSubmitting(false)
   }, [open, defaultTemplate])
 
   // 没动过 name 时，切模板自动填默认名
   useEffect(() => {
-    if (nameTouched || !selectedId) return
-    const t = mockTemplates.find((x) => x.id === selectedId)
-    if (t) setName(`我的${t.name}`)
-  }, [selectedId, nameTouched])
+    if (nameTouched || !selectedKey) return
+    const t = findTemplate(templates, selectedKey)
+    if (t) setName(`我的 ${t.name}`)
+  }, [selectedKey, nameTouched, templates])
 
-  const selectedTemplate = mockTemplates.find((t) => t.id === selectedId) ?? null
-  const canCreate =
-    !!selectedTemplate &&
-    !selectedTemplate.disabled &&
-    name.trim().length > 0 &&
-    !submitting
+  const selectedTemplate = selectedKey ? findTemplate(templates, selectedKey) : null
+  const canCreate = !!selectedTemplate && name.trim().length > 0 && !submitting
 
   async function handleCreate() {
-    if (!selectedTemplate || selectedTemplate.disabled || !name.trim()) return
+    if (!selectedTemplate || !name.trim()) return
     setSubmitting(true)
     const payload: AgentCreatePayload = {
       name: name.trim(),
@@ -103,33 +99,25 @@ export function CreateAgentDialog({
               选择模板
             </Label>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {mockTemplates.map((t) => {
-                const Icon = iconMap[t.icon ?? ''] ?? Sparkles
-                const isSelected = selectedId === t.id
-                const isDisabled = t.disabled === true
+              {templates.map((t) => {
+                const Icon = templateIcon(t.form)
+                const isSelected = selectedKey === t.key
                 return (
                   <button
-                    key={t.id}
+                    key={t.key}
                     type="button"
-                    disabled={isDisabled}
-                    onClick={() => setSelectedId(t.id ?? null)}
+                    title={t.description}
+                    onClick={() => setSelectedKey(t.key)}
                     className={cn(
                       'flex flex-col items-center gap-1.5 rounded-lg border p-3 text-center transition',
-                      isDisabled
-                        ? 'cursor-not-allowed opacity-50'
-                        : isSelected
-                          ? 'border-brand bg-brand-subtle text-brand'
-                          : 'hover:bg-muted text-foreground',
+                      isSelected
+                        ? 'border-brand bg-brand-subtle text-brand'
+                        : 'hover:bg-muted text-foreground',
                     )}
                   >
-                    <Icon
-                      className={cn(
-                        'size-5',
-                        !isSelected && !isDisabled && 'text-brand',
-                      )}
-                    />
+                    <Icon className={cn('size-5', !isSelected && 'text-brand')} />
                     <span className="text-xs font-medium">{t.name}</span>
-                    <KindBadge kind={t.kind} />
+                    <KindBadge kind={t.form} />
                   </button>
                 )
               })}

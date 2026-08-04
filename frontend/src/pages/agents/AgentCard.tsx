@@ -34,7 +34,7 @@ import {
 import { useWorkspaceTabsStore } from '@/stores/tab-store'
 import type { Agent } from '@/types'
 import { KindBadge } from './KindBadge'
-import { mockTemplates } from './mock'
+import { useTemplates, findTemplate } from '@/hooks/use-templates'
 
 interface AgentCardProps {
   agent: Agent
@@ -50,10 +50,11 @@ export function AgentCard({ agent, modelNameMap, onDeleted }: AgentCardProps) {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
-  // 模板元数据反查（mock 模板池里查 key；找不到回退到 key 本身展示）
-  const template = mockTemplates.find((t) => t.key === agent.template)
+  // 模板元数据反查（模板池里查 key；还没拉到 / 模板已下架时回退到 key 本身展示）
+  const { templates } = useTemplates()
+  const template = findTemplate(templates, agent.template)
   const templateName = template?.name ?? agent.template
-  const templateKind = template?.kind ?? 'loop'
+  const templateKind = template?.form ?? 'loop'
   const modelId = agent.config.models?.chat?.id
   const modelName = modelId ? modelNameMap?.get(modelId) : null
   const knowledgeCount = agent.config.knowledge?.length ?? 0
