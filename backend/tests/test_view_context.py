@@ -25,6 +25,7 @@ from app.agents.workspace.view_context_assembler import (
     Viewer,
     split_at_cursor,
 )
+from app.core.identifiers import short_id
 from app.models import Message, MessageRole, SandboxArtifact, SenderKind
 from app.tools.base import MAX_TOOL_OUTPUT_CHARS
 
@@ -124,7 +125,11 @@ async def test_blocks_without_id_get_unique_fallback_ids():
     out = await build(past, SUPERVISOR_VIEW)
 
     assert_paired(out)
-    assert [c["id"] for c in out[0].tool_calls] == ["019fb2af-0", "019fb2af-1"]
+    # 用 short_id 现算而不是写死字面量：短标识的取法改过一次（前 8 位 → 后 8 位，
+    # 见 core.identifiers），写死的断言当时全体过期
+    assert [c["id"] for c in out[0].tool_calls] == [
+        f"{short_id(mid)}-0", f"{short_id(mid)}-1"
+    ]
 
 
 # ============ 视角分叉：同一条历史，两种画法 ============
@@ -151,7 +156,7 @@ async def test_others_message_becomes_one_narrated_human_message():
     out = await build(past, SUPERVISOR_VIEW)
 
     assert len(out) == 1 and isinstance(out[0], HumanMessage)
-    assert '<msg from="小A#019f0d9b">' in out[0].content
+    assert f'<msg from="小A#{short_id(MEMBER_A)}">' in out[0].content
 
 
 async def test_others_tool_result_is_carried_over():
@@ -172,7 +177,10 @@ async def test_another_member_is_not_me():
     out = await build(past, MEMBER_A_VIEW)
 
     assert isinstance(out[0], HumanMessage)
-    assert '<msg from="小B#019f0d9b">' in out[0].content
+    assert f'<msg from="小B#{short_id(MEMBER_B)}">' in out[0].content
+    # 两个成员的 UUID 前 8 位故意相同 —— 短标识若取前缀，这一断言会连同「谁是谁」
+    # 一起失守（f6705ae 修的正是这个）
+    assert short_id(MEMBER_A) != short_id(MEMBER_B)
 
 
 async def test_user_speech_is_labelled():
@@ -299,7 +307,7 @@ async def test_artifacts_of_others_also_go_to_a_system_message():
     past = [msg([{"type": "text", "text": "画好了"}], SenderKind.MEMBER, MEMBER_A, mid=mid)]
     out = await build(past, SUPERVISOR_VIEW, {mid: [art]})
 
-    assert out[0].content == '<msg from="小A#019f0d9b">画好了</msg>'
+    assert out[0].content == f'<msg from="小A#{short_id(MEMBER_A)}">画好了</msg>'
     assert out[1].content == '<msg from="System"><artifacts>chart.svg (2KB)</artifacts></msg>'
 
 
