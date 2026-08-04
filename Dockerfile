@@ -28,6 +28,14 @@ RUN uv sync --frozen --no-dev
 # Copy backend source
 COPY backend/ ./
 
+# 源码进来后再同步一次，这次装的是**项目自身**。
+# 上面那次 sync 跑在 COPY 之前（为了让依赖层能被缓存），那时 app/ 还不存在，
+# 所以 uv 只装了第三方依赖、没装本项目 —— venv 里没有 app 包。
+# uvicorn 察觉不到这点（它会把 cwd 塞进 sys.path，而 WORKDIR 正好是源码根），
+# 但 worker / sandboxd 走的是 .venv/bin 下的控制台脚本，Python 只把脚本所在目录
+# 加进 sys.path、不加 cwd，于是 `from app.cli import worker` 直接 ModuleNotFoundError。
+RUN uv sync --frozen --no-dev
+
 # Copy built frontend from stage 1
 COPY --from=frontend-builder /build/dist /app/frontend/dist
 
