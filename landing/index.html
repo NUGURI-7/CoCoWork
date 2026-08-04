@@ -1,0 +1,707 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CoCoWork — 多 Agent 协作平台</title>
+<meta name="description" content="不是一个聊天框。给它一个需求，它会拆解任务、分派成员、把结果交给你。">
+<link rel="icon" href="img/logo.svg">
+
+<style>
+/* ════════════════════════════════════════════════════
+   字体自托管 —— Google Fonts 在国内不可靠，woff2 一起放进 landing/fonts/。
+   两款都与应用内保持一致：Space Grotesk 作标题、Geist Mono 作编号与代码。
+   ════════════════════════════════════════════════════ */
+@font-face {
+  font-family: 'Space Grotesk'; font-style: normal; font-weight: 300 700; font-display: swap;
+  src: url('fonts/space-grotesk-latin-wght-normal.woff2') format('woff2-variations');
+}
+@font-face {
+  font-family: 'Geist Mono'; font-style: normal; font-weight: 300 600; font-display: swap;
+  src: url('fonts/geist-mono-latin-wght-normal.woff2') format('woff2-variations');
+}
+
+:root {
+  --paper: #fbfaf8;          /* 纸感底，不用纯白 —— 纯白配深绿会发灰发硬 */
+  --surface: #ffffff;
+  --ink: #14171a;
+  --ink-soft: #5c6570;
+  --ink-faint: #949ca6;
+  --line: #e8e6e1;
+  --line-soft: #f0eeea;
+  --brand: #2f6b53;
+  --brand-lift: #3d8768;
+  --brand-wash: #f1f5f2;
+  --brand-line: #d3e2d9;
+  --dot: rgba(20, 23, 26, .07);
+  --shadow-sm: 0 1px 2px rgba(20,23,26,.04), 0 4px 12px -6px rgba(20,23,26,.08);
+  --shadow-lg: 0 24px 60px -28px rgba(20,23,26,.28), 0 2px 8px -4px rgba(20,23,26,.10);
+  --sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+          'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --display: 'Space Grotesk', var(--sans);
+  --mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --ease: cubic-bezier(.22, 1, .36, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #0c0e10;
+    --surface: #131619;
+    --ink: #f0f1f2;
+    --ink-soft: #9aa2ab;
+    --ink-faint: #6b737c;
+    --line: #23272b;
+    --line-soft: #1b1f22;
+    --brand: #6fae90;
+    --brand-lift: #86c4a6;
+    --brand-wash: #131c17;
+    --brand-line: #26382e;
+    --dot: rgba(255,255,255,.055);
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.4), 0 4px 12px -6px rgba(0,0,0,.5);
+    --shadow-lg: 0 24px 60px -28px rgba(0,0,0,.8), 0 2px 8px -4px rgba(0,0,0,.5);
+  }
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  line-height: 1.75;
+  -webkit-font-smoothing: antialiased;
+  /* 极细点阵：给整页一层纸的纹理，避免大面积死白 */
+  background-image: radial-gradient(var(--dot) 1px, transparent 1px);
+  background-size: 24px 24px;
+  overflow-x: clip;
+}
+
+a { color: inherit; text-decoration: none; }
+img { max-width: 100%; display: block; }
+::selection { background: var(--brand); color: #fff; }
+
+.wrap { max-width: 1160px; margin: 0 auto; padding: 0 28px; }
+
+/* ── 顶部滚动进度条 ────────────────────────────────── */
+#bar {
+  position: fixed; top: 0; left: 0; height: 2px; width: 0;
+  background: linear-gradient(90deg, var(--brand), var(--brand-lift));
+  z-index: 100; transition: width .12s linear;
+}
+
+/* ── 导航 ──────────────────────────────────────────── */
+header {
+  position: sticky; top: 0; z-index: 60;
+  border-bottom: 1px solid transparent;
+  transition: .34s var(--ease);
+}
+header.sticky {
+  background: color-mix(in srgb, var(--paper) 82%, transparent);
+  backdrop-filter: saturate(180%) blur(14px);
+  border-bottom-color: var(--line);
+}
+.nav { display: flex; align-items: center; gap: 32px; height: 74px; transition: height .34s var(--ease); }
+header.sticky .nav { height: 62px; }
+.brand { display: flex; align-items: center; gap: 11px; font-family: var(--display); font-size: 19px; font-weight: 600; letter-spacing: -.025em; }
+.brand img { width: 25px; height: 25px; }
+.nav-links { display: flex; gap: 4px; }
+.nav-links a {
+  position: relative; font-size: 14px; color: var(--ink-soft);
+  padding: 6px 12px; border-radius: 8px; transition: .22s var(--ease);
+}
+.nav-links a::after {
+  content: ''; position: absolute; left: 12px; right: 12px; bottom: 2px; height: 1px;
+  background: var(--brand); transform: scaleX(0); transform-origin: left;
+  transition: transform .3s var(--ease);
+}
+.nav-links a:hover { color: var(--ink); }
+.nav-links a:hover::after { transform: scaleX(1); }
+.nav-cta { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+
+.btn {
+  --arrow: 0px;
+  display: inline-flex; align-items: center; gap: 9px;
+  padding: 9px 18px; border-radius: 10px; font-size: 14px; font-weight: 500;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  transition: .26s var(--ease); white-space: nowrap;
+}
+.btn:hover { border-color: var(--ink-faint); transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+.btn .ar { display: inline-block; transition: transform .26s var(--ease); }
+.btn:hover .ar { transform: translateX(3px); }
+.btn-primary {
+  background: var(--brand); color: #fff; border-color: transparent;
+  box-shadow: 0 1px 0 rgba(255,255,255,.16) inset, 0 8px 20px -10px color-mix(in srgb, var(--brand) 80%, transparent);
+}
+.btn-primary:hover { background: var(--brand-lift); border-color: transparent; box-shadow: 0 1px 0 rgba(255,255,255,.2) inset, 0 14px 30px -12px color-mix(in srgb, var(--brand) 85%, transparent); }
+.btn-lg { padding: 13px 26px; font-size: 15px; border-radius: 12px; }
+
+/* ── 进场动画（IntersectionObserver 加 .in）────────── */
+[data-reveal] {
+  opacity: 0; transform: translateY(18px);
+  transition: opacity .7s var(--ease), transform .7s var(--ease);
+  transition-delay: var(--d, 0ms);
+}
+[data-reveal].in { opacity: 1; transform: none; }
+
+/* ── 首屏 ──────────────────────────────────────────── */
+.hero { position: relative; padding: 96px 0 84px; }
+/* 顶部一团柔和绿光：给首屏一个光源，页面立刻有了纵深 */
+.hero::before {
+  content: ''; position: absolute; inset: -20% -10% auto -10%; height: 620px; z-index: -1;
+  background:
+    radial-gradient(52% 60% at 72% 22%, color-mix(in srgb, var(--brand) 15%, transparent), transparent 70%),
+    radial-gradient(40% 50% at 12% 8%, color-mix(in srgb, var(--brand) 9%, transparent), transparent 70%);
+  filter: blur(12px);
+}
+.hero-grid { display: grid; grid-template-columns: 1.02fr 1fr; gap: 64px; align-items: center; }
+
+.eyebrow {
+  display: inline-flex; align-items: center; gap: 9px;
+  font-family: var(--mono); font-size: 12px; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--brand); background: var(--brand-wash);
+  border: 1px solid var(--brand-line); padding: 6px 14px; border-radius: 999px; margin-bottom: 26px;
+}
+.eyebrow i { width: 6px; height: 6px; border-radius: 50%; background: var(--brand); animation: pulse 2.4s ease-in-out infinite; }
+
+h1 {
+  font-family: var(--display);
+  font-size: clamp(40px, 5.6vw, 68px);
+  line-height: 1.02; letter-spacing: -.042em; font-weight: 600;
+}
+h1 .l { display: block; overflow: hidden; }
+h1 .l > span {
+  display: inline-block;
+  animation: rise .95s var(--ease) both;
+  animation-delay: calc(var(--i) * 110ms + 120ms);
+}
+/* 关键词下方一道手绘感的绿线，最后画出来 */
+.mark { position: relative; display: inline-block; }
+.mark svg { position: absolute; left: -2%; bottom: -.14em; width: 104%; height: .3em; overflow: visible; }
+.mark path {
+  fill: none; stroke: var(--brand); stroke-width: 7; stroke-linecap: round;
+  stroke-dasharray: 320; stroke-dashoffset: 320;
+  animation: draw 1s var(--ease) 900ms forwards;
+}
+
+.lead { margin-top: 26px; font-size: 17.5px; color: var(--ink-soft); max-width: 31em; animation: rise .9s var(--ease) 460ms both; }
+.actions { margin-top: 36px; display: flex; gap: 12px; flex-wrap: wrap; animation: rise .9s var(--ease) 580ms both; }
+.hero-note { margin-top: 22px; font-family: var(--mono); font-size: 12.5px; color: var(--ink-faint); animation: rise .9s var(--ease) 680ms both; }
+
+@keyframes rise { from { opacity: 0; transform: translateY(min(1.1em, 26px)); } to { opacity: 1; transform: none; } }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+@keyframes pulse { 0%,100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--brand) 45%, transparent); } 50% { opacity: .55; box-shadow: 0 0 0 5px transparent; } }
+
+/* ── 区块骨架 ──────────────────────────────────────── */
+section { position: relative; padding: 104px 0; }
+.rule { border-top: 1px solid var(--line-soft); }
+.kicker { display: flex; align-items: center; gap: 14px; font-family: var(--mono); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--brand); margin-bottom: 20px; }
+.kicker .ln { flex: 1; max-width: 84px; height: 1px; background: linear-gradient(90deg, var(--brand-line), transparent); }
+.section-head { max-width: 46em; margin-bottom: 52px; }
+.section-head h2 { font-family: var(--display); font-size: clamp(28px, 3.4vw, 40px); letter-spacing: -.035em; font-weight: 600; line-height: 1.14; }
+.section-head p { margin-top: 14px; color: var(--ink-soft); font-size: 16.5px; }
+
+/* ── 能力卡 ────────────────────────────────────────── */
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.card {
+  position: relative; overflow: hidden;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 16px; padding: 30px 26px 28px;
+  transition: transform .38s var(--ease), box-shadow .38s var(--ease), border-color .38s var(--ease);
+}
+/* 顶部一条渐变线，hover 时从左扫到右 */
+.card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, var(--brand), color-mix(in srgb, var(--brand) 20%, transparent));
+  transform: scaleX(0); transform-origin: left; transition: transform .5s var(--ease);
+}
+/* hover 时右上角浮出一层极淡的绿 */
+.card::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0;
+  background: radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--brand) 8%, transparent), transparent 60%);
+  transition: opacity .4s var(--ease);
+}
+.card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); border-color: var(--brand-line); }
+.card:hover::before { transform: scaleX(1); }
+.card:hover::after { opacity: 1; }
+.card .idx { font-family: var(--mono); font-size: 12px; color: var(--ink-faint); letter-spacing: .1em; transition: color .3s var(--ease); }
+.card:hover .idx { color: var(--brand); }
+.card h3 { margin: 14px 0 11px; font-size: 17.5px; font-weight: 600; letter-spacing: -.015em; }
+.card p { font-size: 14.5px; color: var(--ink-soft); line-height: 1.8; }
+
+/* ── 截图 ──────────────────────────────────────────── */
+.shots { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+.shot {
+  border: 1px solid var(--line); border-radius: 16px; overflow: hidden; background: var(--surface);
+  transition: transform .4s var(--ease), box-shadow .4s var(--ease), border-color .4s var(--ease);
+}
+.shot:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); border-color: var(--brand-line); }
+.shot .frame { overflow: hidden; }
+.shot img { width: 100%; transition: transform .7s var(--ease); }
+.shot:hover img { transform: scale(1.022); }
+.shot figcaption {
+  display: flex; align-items: center; gap: 9px;
+  padding: 14px 20px; font-size: 13.5px; color: var(--ink-soft); border-top: 1px solid var(--line-soft);
+}
+.shot figcaption b { width: 5px; height: 5px; border-radius: 50%; background: var(--brand); flex: none; }
+.shot.wide { grid-column: 1 / -1; }
+
+/* ── 如何使用 ──────────────────────────────────────── */
+.steps { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 48px; }
+.step { display: flex; gap: 18px; padding: 24px 4px; border-bottom: 1px solid var(--line-soft); }
+.step .n {
+  flex: none; width: 32px; height: 32px; border-radius: 9px;
+  background: var(--brand-wash); border: 1px solid var(--brand-line); color: var(--brand);
+  font-family: var(--mono); font-size: 13px; display: flex; align-items: center; justify-content: center;
+}
+.step h4 { font-size: 16px; font-weight: 600; margin-bottom: 6px; letter-spacing: -.01em; }
+.step p { font-size: 14.5px; color: var(--ink-soft); }
+code {
+  font-family: var(--mono); font-size: .9em;
+  background: var(--brand-wash); color: var(--brand);
+  border: 1px solid var(--brand-line); padding: 1px 6px; border-radius: 6px;
+}
+
+/* ── 技术栈 ────────────────────────────────────────── */
+.stack { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 56px; }
+.srow {
+  display: flex; gap: 22px; padding: 16px 10px 16px 4px;
+  border-bottom: 1px solid var(--line-soft); border-radius: 8px;
+  transition: background .28s var(--ease), padding-left .28s var(--ease);
+}
+.srow:hover { background: var(--brand-wash); padding-left: 12px; }
+.srow dt { flex: none; width: 88px; font-size: 14px; font-weight: 600; }
+.srow dd { font-size: 14px; color: var(--ink-soft); font-family: var(--mono); }
+
+/* ── 体验说明 ──────────────────────────────────────── */
+.notice {
+  position: relative; overflow: hidden;
+  border: 1px solid var(--brand-line); border-radius: 20px; padding: 40px 42px;
+  background:
+    radial-gradient(90% 130% at 100% 0%, color-mix(in srgb, var(--brand) 10%, transparent), transparent 62%),
+    var(--brand-wash);
+  display: flex; gap: 40px; align-items: center; flex-wrap: wrap;
+}
+.notice h3 { font-family: var(--display); font-size: 22px; font-weight: 600; letter-spacing: -.02em; margin-bottom: 12px; }
+.notice p { font-size: 14.8px; color: var(--ink-soft); max-width: 46em; }
+.cred {
+  font-family: var(--mono); font-size: 13.5px; color: var(--brand);
+  background: var(--surface); border: 1px solid var(--brand-line);
+  padding: 2px 9px; border-radius: 7px;
+}
+.notice .go { margin-left: auto; }
+
+/* ── 页脚 ──────────────────────────────────────────── */
+footer { position: relative; border-top: 1px solid var(--line); padding: 56px 0 40px; overflow: hidden; }
+.mark-bg {
+  position: absolute; left: 50%; bottom: -.34em; transform: translateX(-50%);
+  font-family: var(--display); font-weight: 600; font-size: clamp(80px, 17vw, 220px);
+  letter-spacing: -.05em; color: var(--ink); opacity: .035; pointer-events: none; user-select: none; white-space: nowrap;
+}
+.foot { position: relative; display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; font-size: 13.5px; color: var(--ink-faint); }
+.foot a { transition: color .22s var(--ease); }
+.foot a:hover { color: var(--brand); }
+.foot nav { display: flex; gap: 22px; }
+
+/* ════════════════════════════════════════════════════
+   首屏演示动画 —— 与登录页同一套，纯 CSS。
+   一条 8s 公共时间轴，每个元素在轴上占一个窗口；不用 animation-delay
+   错峰，因为 delay 只推迟第一次播放，infinite 循环从第二轮起会全挤在一起。
+   ════════════════════════════════════════════════════ */
+.demo {
+  border: 1px solid var(--line); border-radius: 18px; overflow: hidden;
+  background: var(--surface); box-shadow: var(--shadow-lg);
+  animation: rise 1s var(--ease) 340ms both;
+}
+.demo-bar { display: flex; align-items: center; gap: 9px; padding: 13px 18px; border-bottom: 1px solid var(--line-soft); background: color-mix(in srgb, var(--paper) 60%, var(--surface)); }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: color-mix(in srgb, var(--ink-faint) 40%, transparent); }
+.demo-tag { margin-left: auto; font-family: var(--mono); font-size: 12px; color: var(--ink-faint); display: flex; align-items: center; gap: 8px; }
+.live { width: 7px; height: 7px; border-radius: 50%; background: var(--brand); animation: pulse 2s ease-in-out infinite; }
+.demo-body { padding: 24px 20px; display: flex; flex-direction: column; gap: 17px; }
+
+.ask { align-self: flex-end; max-width: 84%; background: var(--brand-wash); border: 1px solid var(--brand-line); border-radius: 13px 13px 4px 13px; padding: 11px 15px; font-size: 14.5px; }
+.sup { display: flex; gap: 13px; align-items: flex-start; }
+.av { flex: none; width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 15px; }
+.av.k { background: var(--brand); }
+.av.a { background: #0d80c4; }
+.av.b { background: #cf7a12; }
+.sup .name { font-size: 15px; font-weight: 600; }
+.sup .sub { position: relative; height: 18px; margin-top: 5px; font-size: 13px; color: var(--ink-soft); white-space: nowrap; }
+.sub .a1, .sub .a2 { position: absolute; inset: 0; display: flex; align-items: center; gap: 5px; }
+.tdot { width: 4px; height: 4px; border-radius: 50%; background: var(--ink-faint); }
+
+.branch { position: relative; padding-left: 48px; display: flex; flex-direction: column; gap: 12px; }
+.trunk { position: absolute; left: 21px; top: 2px; bottom: 46px; width: 2px; }
+.trunk::after, .stub::after {
+  content: ''; position: absolute; inset: 0; opacity: .55;
+  background-image: repeating-linear-gradient(to bottom, var(--brand) 0 5px, transparent 5px 10px);
+  background-size: 100% 10px; animation: flowY .9s linear infinite;
+}
+.stub { position: absolute; left: -21px; top: calc(50% - 1px); width: 21px; height: 2px; }
+.stub::after {
+  background-image: repeating-linear-gradient(to right, var(--brand) 0 5px, transparent 5px 10px);
+  background-size: 10px 100%; animation-name: flowX;
+}
+.mem { position: relative; }
+.mem-card { display: flex; align-items: center; gap: 14px; border: 1px solid var(--line); border-radius: 12px; padding: 12px 15px; background: var(--surface); box-shadow: var(--shadow-sm); }
+.mem .t { flex: 1; min-width: 0; }
+.mem .t b { display: block; font-size: 15px; font-weight: 600; }
+.mem .t span { font-family: var(--mono); font-size: 12.5px; color: var(--ink-faint); }
+.state { position: relative; width: 20px; height: 20px; flex: none; }
+.spin, .done { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.spin i { width: 15px; height: 15px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--brand) 22%, transparent); border-top-color: var(--brand); animation: spin .9s linear infinite; }
+.done { background: var(--brand); border-radius: 50%; color: #fff; font-size: 12px; }
+.out { display: flex; align-items: center; gap: 12px; border: 1px dashed var(--brand-line); background: color-mix(in srgb, var(--brand-wash) 70%, transparent); border-radius: 12px; padding: 13px 15px; font-size: 14px; }
+.out .fn { font-family: var(--mono); }
+.out .tail { margin-left: auto; font-size: 13px; color: var(--ink-faint); }
+
+.cyc { animation-duration: 8s; animation-timing-function: ease-out; animation-iteration-count: infinite; animation-fill-mode: both; }
+
+@keyframes cw-a { 0%,3% { opacity:0; transform: translateY(6px);} 8%,94% { opacity:1; transform:none;} 100% { opacity:0; transform: translateY(-4px);} }
+@keyframes cw-b { 0%,13% { opacity:0; transform: translateY(6px);} 18%,94% { opacity:1; transform:none;} 100% { opacity:0; transform: translateY(-4px);} }
+@keyframes cw-c { 0%,24% { opacity:0; transform: translateY(6px) scale(.98);} 29%,94% { opacity:1; transform:none;} 100% { opacity:0; transform: translateY(-4px);} }
+@keyframes cw-d { 0%,33% { opacity:0; transform: translateY(6px) scale(.98);} 38%,94% { opacity:1; transform:none;} 100% { opacity:0; transform: translateY(-4px);} }
+@keyframes cw-e { 0%,70% { opacity:0; transform: translateY(8px) scale(.98);} 76%,94% { opacity:1; transform:none;} 100% { opacity:0; transform: translateY(-4px);} }
+@keyframes cw-busy1 { 0%,28% { opacity:0;} 30%,50% { opacity:1;} 53%,100% { opacity:0;} }
+@keyframes cw-done1 { 0%,52% { opacity:0; transform: scale(.6);} 56%,94% { opacity:1; transform:none;} 100% { opacity:0;} }
+@keyframes cw-busy2 { 0%,37% { opacity:0;} 39%,62% { opacity:1;} 65%,100% { opacity:0;} }
+@keyframes cw-done2 { 0%,64% { opacity:0; transform: scale(.6);} 68%,94% { opacity:1; transform:none;} 100% { opacity:0;} }
+/* 主干靠 clip-path 自上而下揭开 —— 不能用 scaleY，缩放会把虚线的节距一起拉长，
+   看起来是线在变形而不是在生长 */
+@keyframes cw-thread { 0%,18% { opacity:1; clip-path: inset(0 0 100% 0);} 42%,94% { opacity:1; clip-path: inset(0 0 0 0);} 100% { opacity:0; clip-path: inset(0 0 0 0);} }
+@keyframes cw-say1 { 0%,17% { opacity:0;} 19%,36% { opacity:1;} 40%,100% { opacity:0;} }
+@keyframes cw-say2 { 0%,40% { opacity:0;} 44%,94% { opacity:1;} 100% { opacity:0;} }
+@keyframes flowY { to { background-position-y: 10px; } }
+@keyframes flowX { to { background-position-x: 10px; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes type { 0%,60%,100% { opacity:.25; transform: translateY(0);} 30% { opacity:1; transform: translateY(-2px);} }
+
+/* ── 无障碍：系统要求减少动效时，全部停在终态 ────────── */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  [data-reveal] { opacity: 1 !important; transform: none !important; }
+  .mark path { stroke-dashoffset: 0 !important; }
+  .spin, .a1 { display: none !important; }
+}
+
+/* ── 响应式 ────────────────────────────────────────── */
+@media (max-width: 940px) {
+  .hero-grid { grid-template-columns: 1fr; gap: 48px; }
+  .cards, .shots, .steps, .stack { grid-template-columns: 1fr; }
+  .nav-links { display: none; }
+  .hero { padding: 60px 0 48px; }
+  section { padding: 68px 0; }
+  .notice { padding: 30px 26px; gap: 24px; }
+  .notice .go { margin-left: 0; }
+}
+</style>
+</head>
+
+<body>
+<div id="bar"></div>
+
+<header id="hdr">
+  <div class="wrap nav">
+    <a class="brand" href="#top"><img src="img/logo.svg" alt="">CoCoWork</a>
+    <nav class="nav-links">
+      <a href="#features">核心能力</a>
+      <a href="#interface">界面一览</a>
+      <a href="#guide">如何使用</a>
+      <a href="#stack">技术栈</a>
+    </nav>
+    <div class="nav-cta">
+      <a class="btn" href="https://github.com/NUGURI-7/CoCoWork" target="_blank" rel="noopener">GitHub</a>
+      <a class="btn btn-primary" href="https://demo.nuguri.org" target="_blank" rel="noopener">体验 Demo</a>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+
+<!-- ═══ 首屏 ═══════════════════════════════════════ -->
+<div class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <span class="eyebrow"><i></i>多 Agent 协作平台</span>
+      <h1>
+        <span class="l"><span style="--i:0">Not just</span></span>
+        <span class="l"><span style="--i:1">a <span class="mark">chatbox<svg viewBox="0 0 300 12" preserveAspectRatio="none" aria-hidden="true"><path d="M3 8 C 62 2, 128 3, 186 6 S 268 9, 297 5"/></svg></span>.</span></span>
+      </h1>
+      <p class="lead">
+        不是一个聊天框 —— 给它一个需求，它会拆解任务、分派成员、把结果交给你。
+        整个过程在对话中实时呈现：谁在做什么、进行到哪一步、产出了什么，全程可见。
+      </p>
+      <div class="actions">
+        <a class="btn btn-primary btn-lg" href="https://demo.nuguri.org" target="_blank" rel="noopener">体验 Demo <span class="ar">→</span></a>
+        <a class="btn btn-lg" href="https://github.com/NUGURI-7/CoCoWork" target="_blank" rel="noopener">在 GitHub 查看</a>
+      </div>
+      <p class="hero-note">演示账号 test01 / testcocowork · 开箱即用</p>
+    </div>
+
+    <!-- 演示动画：与登录页同一套 -->
+    <div class="demo">
+      <div class="demo-bar">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        <span class="demo-tag"><span class="live"></span>workspace · running</span>
+      </div>
+      <div class="demo-body">
+        <div class="ask cyc" style="animation-name:cw-a">帮我把这季度的数据整理一下，做张图</div>
+
+        <div class="sup cyc" style="animation-name:cw-b">
+          <div class="av k">♛</div>
+          <div>
+            <div class="name">管家</div>
+            <div class="sub">
+              <span class="a1 cyc" style="animation-name:cw-say1">
+                正在分派
+                <i class="tdot" style="animation:type 1.2s ease-in-out infinite"></i>
+                <i class="tdot" style="animation:type 1.2s ease-in-out .16s infinite"></i>
+                <i class="tdot" style="animation:type 1.2s ease-in-out .32s infinite"></i>
+              </span>
+              <span class="a2 cyc" style="animation-name:cw-say2">已分派给 2 名成员</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="branch">
+          <span class="trunk cyc" style="animation-name:cw-thread"></span>
+
+          <div class="mem">
+            <span class="stub cyc" style="animation-name:cw-c"></span>
+            <div class="mem-card cyc" style="animation-name:cw-c">
+              <div class="av a">▤</div>
+              <div class="t"><b>数据分析师</b><span>正在检索知识库</span></div>
+              <div class="state">
+                <span class="spin cyc" style="animation-name:cw-busy1"><i></i></span>
+                <span class="done cyc" style="animation-name:cw-done1">✓</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="mem">
+            <span class="stub cyc" style="animation-name:cw-d"></span>
+            <div class="mem-card cyc" style="animation-name:cw-d">
+              <div class="av b">▶</div>
+              <div class="t"><b>图表专员</b><span>正在生成图表</span></div>
+              <div class="state">
+                <span class="spin cyc" style="animation-name:cw-busy2"><i></i></span>
+                <span class="done cyc" style="animation-name:cw-done2">✓</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="out cyc" style="animation-name:cw-e">
+          <span>▦</span><span class="fn">q3_revenue.png</span><span class="tail">已存入产出物</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 核心能力 ═══════════════════════════════════ -->
+<section id="features" class="rule">
+  <div class="wrap">
+    <div class="section-head" data-reveal>
+      <div class="kicker"><span>01</span><span class="ln"></span><span>核心能力</span></div>
+      <h2>围绕协作构建，而非单个助手的问答</h2>
+      <p>多个 Agent 在同一会话内分工，各自带着自己的知识库与技能。</p>
+    </div>
+    <div class="cards">
+      <div class="card" data-reveal style="--d:0ms">
+        <div class="idx">01</div>
+        <h3>多 Agent 协作</h3>
+        <p>将需求交给管家，由其拆解为若干任务并分派至合适的成员。任务的分派过程与各成员的执行进展在对话中实时呈现，无需预先编排流程或指定执行者。</p>
+      </div>
+      <div class="card" data-reveal style="--d:70ms">
+        <div class="idx">02</div>
+        <h3>指定成员应答</h3>
+        <p>通过 <code>@</code> 可指定某位成员直接应答，跳过管家的调度环节。成员在应答时能够准确识别自身身份、此前的对话脉络以及分派给自己的任务，不会出现张冠李戴。</p>
+      </div>
+      <div class="card" data-reveal style="--d:140ms">
+        <div class="idx">03</div>
+        <h3>知识库检索</h3>
+        <p>将文档导入知识库并关联至 Agent 后，Agent 会在需要时自主检索。检索哪个知识库、是否需要多次检索，均由 Agent 在推理过程中自行判断，无需人工指定。</p>
+      </div>
+      <div class="card" data-reveal style="--d:0ms">
+        <div class="idx">04</div>
+        <h3>任务执行与产出物</h3>
+        <p>涉及计算、绘图或文件生成的任务，Agent 会实际执行并给出结果。生成的文件归集至「产出物」面板，可跨对话取用，亦可回填至输入框交由其他成员继续处理。</p>
+      </div>
+      <div class="card" data-reveal style="--d:70ms">
+        <div class="idx">05</div>
+        <h3>人工确认</h3>
+        <p>执行过程中遇到需要用户决策的环节，Agent 会暂停并给出待确认事项，用户作答后从中断处继续执行。页面关闭后重新打开，待确认事项依然保留。</p>
+      </div>
+      <div class="card" data-reveal style="--d:140ms">
+        <div class="idx">06</div>
+        <h3>长期记忆</h3>
+        <p>用户的使用偏好与既定要求会被持续记录，在新的会话与工作空间中同样生效。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 界面一览 ═══════════════════════════════════ -->
+<section id="interface" class="rule">
+  <div class="wrap">
+    <div class="section-head" data-reveal>
+      <div class="kicker"><span>02</span><span class="ln"></span><span>界面一览</span></div>
+      <h2>实际运行界面</h2>
+    </div>
+    <div class="shots">
+      <figure class="shot wide" data-reveal>
+        <div class="frame"><img src="img/workspace-collab.webp" alt="工作空间协作" loading="lazy"></div>
+        <figcaption><b></b>工作空间 —— 管家分派任务，成员各自执行，过程逐步展开</figcaption>
+      </figure>
+      <figure class="shot" data-reveal style="--d:60ms">
+        <div class="frame"><img src="img/mention-direct.webp" alt="指定成员应答" loading="lazy"></div>
+        <figcaption><b></b>指定成员应答 —— @ 谁，谁答</figcaption>
+      </figure>
+      <figure class="shot" data-reveal style="--d:120ms">
+        <div class="frame"><img src="img/workspace-artifacts.webp" alt="产出物面板" loading="lazy"></div>
+        <figcaption><b></b>产出物 —— 执行生成的文件归集于右侧面板</figcaption>
+      </figure>
+      <figure class="shot" data-reveal style="--d:60ms">
+        <div class="frame"><img src="img/knowledge-retrieval.webp" alt="知识库检索" loading="lazy"></div>
+        <figcaption><b></b>知识库 —— 检索效果可直接测试</figcaption>
+      </figure>
+      <figure class="shot" data-reveal style="--d:120ms">
+        <div class="frame"><img src="img/agents.webp" alt="Agent 配置" loading="lazy"></div>
+        <figcaption><b></b>Agent —— 绑定模型、知识库、工具与技能</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 如何使用 ═══════════════════════════════════ -->
+<section id="guide" class="rule">
+  <div class="wrap">
+    <div class="section-head" data-reveal>
+      <div class="kicker"><span>03</span><span class="ln"></span><span>如何使用</span></div>
+      <h2>协作发生在工作空间中</h2>
+      <p>理解下面几点即可开始。</p>
+    </div>
+    <div class="steps">
+      <div class="step" data-reveal>
+        <div class="n">1</div>
+        <div>
+          <h4>基本概念</h4>
+          <p>工作空间对应一个协作场景；管家为默认存在的调度者；成员是由用户招募的 Agent，各自具备不同能力。</p>
+        </div>
+      </div>
+      <div class="step" data-reveal style="--d:70ms">
+        <div class="n">2</div>
+        <div>
+          <h4>两种交互方式</h4>
+          <p>直接发送消息，由管家判断并安排成员执行；使用 <code>@</code> 指定成员，则由该成员直接应答。</p>
+        </div>
+      </div>
+      <div class="step" data-reveal style="--d:140ms">
+        <div class="n">3</div>
+        <div>
+          <h4>招募成员</h4>
+          <p>于通讯录中招募，成员来源为用户已创建的 Agent。为其关联知识库可获得检索能力，挂载技能可获得执行能力。</p>
+        </div>
+      </div>
+      <div class="step" data-reveal style="--d:210ms">
+        <div class="n">4</div>
+        <div>
+          <h4>执行过程</h4>
+          <p>分派出的任务在对话中逐一展开，成员的执行状态实时更新，完成后标记。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 技术栈 ═════════════════════════════════════ -->
+<section id="stack" class="rule">
+  <div class="wrap">
+    <div class="section-head" data-reveal>
+      <div class="kicker"><span>04</span><span class="ln"></span><span>技术栈</span></div>
+      <h2>构成本平台的技术</h2>
+    </div>
+    <dl class="stack" data-reveal>
+      <div class="srow"><dt>后端</dt><dd>FastAPI · Tortoise ORM · Pydantic</dd></div>
+      <div class="srow"><dt>Agent</dt><dd>LangGraph · LangChain · deepagents</dd></div>
+      <div class="srow"><dt>存储</dt><dd>PostgreSQL + pgvector · Redis · 对象存储</dd></div>
+      <div class="srow"><dt>异步任务</dt><dd>SAQ</dd></div>
+      <div class="srow"><dt>前端</dt><dd>React 19 · TypeScript · Vite · TanStack Router</dd></div>
+      <div class="srow"><dt>UI</dt><dd>Tailwind CSS v4 · shadcn/ui · TipTap</dd></div>
+      <div class="srow"><dt>部署</dt><dd>Docker Compose · Caddy</dd></div>
+      <div class="srow"><dt>工具链</dt><dd>uv · npm</dd></div>
+    </dl>
+  </div>
+</section>
+
+<!-- ═══ 体验说明 ═══════════════════════════════════ -->
+<section class="rule">
+  <div class="wrap">
+    <div class="notice" data-reveal>
+      <div>
+        <h3>关于体验环境</h3>
+        <p>
+          可使用演示账号 <span class="cred">test01</span> / <span class="cred">testcocowork</span> 登录，
+          其中已配置好可直接查看的示例工作空间；亦可自行注册，注册后需先在「模型」中接入模型方可开始使用。
+        </p>
+        <p style="margin-top:12px">
+          本站为演示环境，数据可能随时清空，请勿上传任何敏感或重要资料。
+        </p>
+      </div>
+      <a class="btn btn-primary btn-lg go" href="https://demo.nuguri.org" target="_blank" rel="noopener">前往体验 <span class="ar">→</span></a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <span class="mark-bg" aria-hidden="true">CoCoWork</span>
+  <div class="wrap foot">
+    <span>CoCoWork · MIT License</span>
+    <nav>
+      <a href="https://github.com/NUGURI-7/CoCoWork" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://demo.nuguri.org" target="_blank" rel="noopener">体验 Demo</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+// 顶部进度条 + 导航吸顶态：一个滚动监听搞定两件事，用 rAF 节流避免抖动
+(function () {
+  var hdr = document.getElementById('hdr');
+  var bar = document.getElementById('bar');
+  var ticking = false;
+
+  function onScroll() {
+    var y = window.scrollY;
+    var h = document.documentElement.scrollHeight - window.innerHeight;
+    bar.style.width = (h > 0 ? (y / h) * 100 : 0) + '%';
+    hdr.classList.toggle('sticky', y > 12);
+    ticking = false;
+  }
+  addEventListener('scroll', function () {
+    if (!ticking) { ticking = true; requestAnimationFrame(onScroll); }
+  }, { passive: true });
+  onScroll();
+
+  // 滚动进场：进入视口一次即触发，随后取消观察 —— 不做「滚出去再隐藏」，
+  // 那种来回闪的效果在长页面上很廉价
+  var els = document.querySelectorAll('[data-reveal]');
+  if (!('IntersectionObserver' in window)) {
+    els.forEach(function (el) { el.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+    });
+  }, { rootMargin: '0px 0px -12% 0px', threshold: .08 });
+  els.forEach(function (el) { io.observe(el); });
+})();
+</script>
+
+</body>
+</html>
