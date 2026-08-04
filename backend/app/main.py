@@ -18,6 +18,7 @@ from app.core.redis import RedisClient
 from app.db.checkpointer import init_checkpointer, shutdown_checkpointer
 from app.db.postgresql import TORTOISE_CONFIG
 from app.scripts.seed_admin import seed_admin
+from app.scripts.seed_catalog import seed_catalog
 from app.services.skill.builtin import load_builtin_skills
 from app.tasks.queue import queue as task_queue
 from app.core.observability import init_langfuse, shutdown_langfuse
@@ -32,6 +33,7 @@ async def lifespan(app: FastAPI):
         await redis_conn.connect()
         app.state.redis = redis_conn
         await seed_admin()
+        await seed_catalog()
         load_builtin_skills()  # 同步函数，扫盘 + 校验，不合规直接抛
         await init_checkpointer()  # 连不上库直接抛，不让应用带病启动
         langfuse_on = init_langfuse()
