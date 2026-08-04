@@ -47,3 +47,13 @@ class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserOut
+
+
+class UserStatusIn(BaseModel):
+    """管理员启用 / 停用某个账户。
+
+    只有 `is_active` 一个字段 —— 改角色（`is_admin`）不走这个接口。两件事轻重
+    完全不同，合进同一个 PATCH，前端一次多传就可能连带升权。
+    """
+
+    is_active: bool

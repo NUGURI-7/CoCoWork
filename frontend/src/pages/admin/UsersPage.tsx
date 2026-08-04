@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react'
-import { Plus, Search, Trash2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Plus, Search } from 'lucide-react'
+import { ring } from 'ldrs'
 import { toast } from 'sonner'
 
+import { listUsers, setUserStatus } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import {
   AlertDialog,
@@ -40,7 +42,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import type { User } from '@/types'
-import { mockUsers } from './users-mock'
+
+ring.register()
 
 type RoleFilter = 'all' | 'admin' | 'user'
 
@@ -59,13 +62,31 @@ function initials(u: User): string {
   return src.slice(0, 1).toUpperCase()
 }
 
-/** /admin/users — 用户管理（mock，待后端 user 管理接口） */
+/** /admin/users — 用户管理（列表 + 启用/停用，接后端 /users 两个管理员端点） */
 export default function UsersPage() {
   const currentUser = useAuthStore((s) => s.user)
-  const [users, setUsers] = useState<User[]>(mockUsers)
+  const [users, setUsers] = useState<User[]>([])
+  const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all')
+  // 待确认停用的人。只有「停用」需要二次确认 —— 重新启用是无害操作，点了就生效
   const [confirmUser, setConfirmUser] = useState<User | null>(null)
+  // 正在提交的行，用来禁掉那一行的开关，避免连点打出两个相反的请求
+  const [pendingId, setPendingId] = useState<string | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    listUsers()
+      .then((list) => {
+        if (alive) setUsers(list)
+      })
+      .finally(() => {
+        if (alive) setLoading(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -81,17 +102,36 @@ export default function UsersPage() {
     })
   }, [users, query, roleFilter])
 
-  function toggleActive(id: string, value: boolean) {
-    setUsers((prev) =>
-      prev.map((u) => (u.id === id ? { ...u, is_active: value } : u)),
-    )
+  /** 真正发请求那一步。成功后拿后端返回的那份覆盖本地，不自己拼状态 */
+  async function applyStatus(user: User, value: boolean) {
+    setPendingId(user.id)
+    try {
+      const updated = await setUserStatus(user.id, value)
+      setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)))
+      toast.success(
+        value
+          ? `已启用「${updated.nick_name || updated.username}」`
+          : `已停用「${updated.nick_name || updated.username}」`,
+      )
+    } finally {
+      setPendingId(null)
+    }
   }
 
-  function handleDelete() {
+  function handleToggle(user: User, value: boolean) {
+    // 停用要确认（对方会立刻被踢出登录态），启用直接生效
+    if (!value) {
+      setConfirmUser(user)
+      return
+    }
+    void applyStatus(user, true)
+  }
+
+  function confirmDisable() {
     if (!confirmUser) return
-    setUsers((prev) => prev.filter((u) => u.id !== confirmUser.id))
-    toast.success(`已删除用户「${confirmUser.username}」`)
+    const target = confirmUser
     setConfirmUser(null)
+    void applyStatus(target, false)
   }
 
   return (
@@ -114,7 +154,7 @@ export default function UsersPage() {
                 </Button>
               </span>
             </TooltipTrigger>
-            <TooltipContent>等后端用户管理接口</TooltipContent>
+            <TooltipContent>用户自行注册，后台不代建</TooltipContent>
           </Tooltip>
         </div>
 
@@ -145,7 +185,11 @@ export default function UsersPage() {
         </div>
 
         {/* ③ 表格 */}
-        {filtered.length === 0 ? (
+        {loading ? (
+          <div className="flex items-center justify-center py-24">
+            <l-ring size="28" stroke="3" speed="2" color="#2f6b53" />
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="border-border/60 text-muted-foreground flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-sm">
             <p>没有匹配的用户</p>
             <p className="mt-1 text-xs">调整搜索条件试试</p>
@@ -158,9 +202,8 @@ export default function UsersPage() {
                   <TableHead>用户</TableHead>
                   <TableHead>邮箱</TableHead>
                   <TableHead className="w-28">角色</TableHead>
-                  <TableHead className="w-24">状态</TableHead>
+                  <TableHead className="w-24 text-right">启用</TableHead>
                   <TableHead className="w-32">创建时间</TableHead>
-                  <TableHead className="w-16 text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -202,7 +245,7 @@ export default function UsersPage() {
                           <Badge variant="secondary">普通</Badge>
                         )}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="text-right">
                         {isSelf ? (
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -210,45 +253,18 @@ export default function UsersPage() {
                                 <Switch checked={u.is_active} disabled />
                               </span>
                             </TooltipTrigger>
-                            <TooltipContent>不能禁用自己</TooltipContent>
+                            <TooltipContent>不能停用自己</TooltipContent>
                           </Tooltip>
                         ) : (
                           <Switch
                             checked={u.is_active}
-                            onCheckedChange={(v) => toggleActive(u.id, v)}
+                            disabled={pendingId === u.id}
+                            onCheckedChange={(v) => handleToggle(u, v)}
                           />
                         )}
                       </TableCell>
                       <TableCell className="text-muted-foreground text-xs">
                         {formatDate(u.created_at)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {isSelf ? (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span tabIndex={0} className="inline-flex">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="text-muted-foreground size-7"
-                                  disabled
-                                >
-                                  <Trash2 className="size-4" />
-                                </Button>
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent>不能删除自己</TooltipContent>
-                          </Tooltip>
-                        ) : (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="text-muted-foreground hover:text-destructive size-7"
-                            onClick={() => setConfirmUser(u)}
-                          >
-                            <Trash2 className="size-4" />
-                          </Button>
-                        )}
                       </TableCell>
                     </TableRow>
                   )
@@ -264,10 +280,11 @@ export default function UsersPage() {
         >
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>删除用户？</AlertDialogTitle>
+              <AlertDialogTitle>停用这个账户？</AlertDialogTitle>
               <AlertDialogDescription>
-                将删除「{confirmUser?.nick_name || confirmUser?.username}」（
-                {confirmUser?.email}）及其所有数据，此操作不可恢复。
+                「{confirmUser?.nick_name || confirmUser?.username}」（
+                {confirmUser?.email}）将立刻无法登录，已经登录的会话也会在下一次
+                操作时被踢出。数据全部保留，随时可以再启用。
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -275,11 +292,11 @@ export default function UsersPage() {
               <AlertDialogAction
                 onClick={(e) => {
                   e.preventDefault()
-                  handleDelete()
+                  confirmDisable()
                 }}
                 variant="destructive"
               >
-                确认删除
+                确认停用
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

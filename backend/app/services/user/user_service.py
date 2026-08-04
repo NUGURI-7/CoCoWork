@@ -1,8 +1,13 @@
 from uuid import UUID
 
 from tortoise.exceptions import IntegrityError
+from tortoise.expressions import Q
 
-from app.core.exceptions.types import AppAuthenticationFailed, ValidationException
+from app.core.exceptions.types import (
+    AppAuthenticationFailed,
+    NotFound404,
+    ValidationException,
+)
 from app.core.security import create_access_token, get_password_hash, verify_password
 from app.models.user import User
 from app.schemas.user import UserLogin, UserRegister
@@ -58,6 +63,46 @@ class UserService:
     async def get_user_by_id(self, user_id: UUID) -> User | None:
         """按 id 查 User，不存在返回 None（不抛异常 —— 调用方决定怎么处理）。"""
         return await User.filter(id=user_id).first()
+
+    async def list_all(self, *, keyword: str = "", only_admin: bool | None = None) -> list[User]:
+        """全量列出用户，供管理员后台用。
+
+        **不分页**：真实产品的用户列表一定分页，这里没做，因为本项目用户数是个位数。
+        要加的时候照 `routes/workspace/artifact.py` 那套 limit/offset 补即可。
+
+        keyword 同时匹配用户名 / 邮箱 / 昵称 —— 管理员记得住哪个就用哪个搜，
+        没必要让他先想清楚自己记的是哪一栏。
+        """
+        qs = User.all()
+        if keyword:
+            qs = qs.filter(
+                Q(username__icontains=keyword)
+                | Q(email__icontains=keyword)
+                | Q(nick_name__icontains=keyword)
+            )
+        if only_admin is not None:
+            qs = qs.filter(is_admin=only_admin)
+        return await qs.order_by("-created_at")
+
+    async def set_active(self, target_id: UUID, *, is_active: bool, operator: User) -> User:
+        """管理员启用 / 停用某个账户。
+
+        **禁止操作自己**，这不是防手滑的体贴：停用之后连登录都进不来
+        （`authenticate` 里 `is_active` 为假直接拒），如果他是最后一个管理员，
+        就再没有人能把它改回来了。前端那行虽然已置灰，但改个 URL 就绕过去了 ——
+        真正算数的拦截只能在这里。
+        """
+        if target_id == operator.id:
+            raise ValidationException("不能停用自己的账户")
+
+        target = await User.filter(id=target_id).first()
+        if target is None:
+            raise NotFound404("用户不存在")
+
+        if target.is_active != is_active:
+            target.is_active = is_active
+            await target.save(update_fields=["is_active", "updated_at"])
+        return target
 
 
 async def get_user_service() -> UserService:

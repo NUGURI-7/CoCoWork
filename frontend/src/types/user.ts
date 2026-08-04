@@ -37,6 +37,11 @@ export interface UserLoginPayload {
   password: string
 }
 
+/** 管理员改某个账户的启用状态（PATCH /users/{id}/status 的请求体） */
+export interface UserStatusPayload {
+  is_active: boolean
+}
+
 /** 登录成功响应：token + 当前用户信息 */
 export interface TokenPayload {
   access_token: string

@@ -14,7 +14,13 @@ export type {
   Agent,
   Message,
 } from './agent'
-export type { User, UserRegisterPayload, UserLoginPayload, TokenPayload } from './user'
+export type {
+  User,
+  UserRegisterPayload,
+  UserLoginPayload,
+  UserStatusPayload,
+  TokenPayload,
+} from './user'
 export type {
   ProviderType,
   ModelType,
