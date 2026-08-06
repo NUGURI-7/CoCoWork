@@ -18,7 +18,7 @@ import pytest
 from app.core.config import settings
 from app.services.sandbox.layout import (
     container_paths,
-    pack_skill_dirs,
+    pack_skills,
     prepare_workspace_dir,
 )
 
@@ -42,15 +42,15 @@ def _make_skill(base: Path, name: str) -> Path:
     return d
 
 
-# ---------- pack_skill_dirs：打给容器的那包 ----------
+# ---------- pack_skills：打给容器的那包 ----------
 
-def test_pack_skill_dirs_uses_dir_name_as_prefix(tmp_path: Path):
+def test_pack_skills_uses_dir_name_as_prefix(tmp_path: Path):
     """成员名以 skill 目录名开头，解在 /skills 上就落成 /skills/<name>/…
 
     这条钉死的是「本地布局与容器布局逐字一致」——SKILL.md 里写的相对路径
     两边都不用改，正是靠它。
     """
-    tar_bytes = pack_skill_dirs([_make_skill(tmp_path, "svg-chart")])
+    tar_bytes = pack_skills([_make_skill(tmp_path, "svg-chart")])
 
     with tarfile.open(fileobj=io.BytesIO(tar_bytes)) as tar:
         names = tar.getnames()
@@ -59,9 +59,9 @@ def test_pack_skill_dirs_uses_dir_name_as_prefix(tmp_path: Path):
     assert "svg-chart/scripts/bar.py" in names
 
 
-def test_pack_skill_dirs_drops_pycache(tmp_path: Path):
+def test_pack_skills_drops_pycache(tmp_path: Path):
     """__pycache__ / *.pyc 一个都不许进去 —— 宿主机与容器架构未必一样。"""
-    tar_bytes = pack_skill_dirs([_make_skill(tmp_path, "svg-chart")])
+    tar_bytes = pack_skills([_make_skill(tmp_path, "svg-chart")])
 
     with tarfile.open(fileobj=io.BytesIO(tar_bytes)) as tar:
         names = tar.getnames()
@@ -69,10 +69,10 @@ def test_pack_skill_dirs_drops_pycache(tmp_path: Path):
     assert not [n for n in names if "__pycache__" in n or n.endswith(".pyc")]
 
 
-def test_pack_skill_dirs_packs_all_of_them(tmp_path: Path):
+def test_pack_skills_packs_all_of_them(tmp_path: Path):
     """多个 skill 打一包 —— 一轮回复里全场参与者共用一个工作区（决策 12）。"""
     dirs = [_make_skill(tmp_path, "svg-chart"), _make_skill(tmp_path, "pdf-fill")]
-    tar_bytes = pack_skill_dirs(dirs)
+    tar_bytes = pack_skills(dirs)
 
     with tarfile.open(fileobj=io.BytesIO(tar_bytes)) as tar:
         names = tar.getnames()

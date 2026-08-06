@@ -54,6 +54,7 @@ from app.core.exceptions import ValidationException
 from app.models import Message, KnowledgeBase, MCPServer, SandboxArtifact
 from app.models import SenderKind
 from app.models import User, Workspace, WorkspaceMember
+from app.models.skill import Skill
 from app.schemas.agent.chat_schema import ChatStreamRequest
 from app.schemas.agent.config_schema import AgentConfig
 from app.services.memory import MemoryService, MemorySnapshot
@@ -362,9 +363,14 @@ async def build_capability_profile(cfg: AgentConfig, user: User) -> str:
     if builtin:
         tags.append(f"内置[{','.join(builtin)}]")
 
-    skills = resolve_builtin_skills(cfg.builtin_skills)
-    if skills:
-        tags.append(f"Skill[{','.join(s.name for s in skills)}]")
+    # 画像里不分来源：supervisor 只关心「这成员会不会画图」，
+    # 不关心这项技能是随代码分发的还是用户自己传的
+    skill_names = [s.name for s in resolve_builtin_skills(cfg.builtin_skills)]
+    if cfg.skills:
+        rows = await Skill.filter(id__in=cfg.skills, created_by=user)
+        skill_names.extend(row.name for row in rows)
+    if skill_names:
+        tags.append(f"Skill[{','.join(skill_names)}]")
 
     if cfg.knowledge:
         kbs = await KnowledgeBase.filter(id__in=cfg.knowledge, created_by=user)

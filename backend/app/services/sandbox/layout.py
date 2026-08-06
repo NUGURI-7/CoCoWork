@@ -22,6 +22,7 @@ from pathlib import Path
 from uuid import UUID
 
 from app.core.config import settings
+from app.services.skill.package import rewrite_into_tar
 
 
 def _drop_pycache(info: tarfile.TarInfo) -> tarfile.TarInfo | None:
@@ -35,13 +36,20 @@ def _drop_pycache(info: tarfile.TarInfo) -> tarfile.TarInfo | None:
     return info
 
 
-def pack_skill_dirs(skill_dirs: Sequence[Path]) -> bytes:
-    """把 skill 源目录打成一个 tar，供 docker driver 灌进容器的 /skills。
+def pack_skills(
+        skill_dirs: Sequence[Path],
+        skill_zips: Sequence[tuple[str, bytes]] = (),
+) -> bytes:
+    """把本轮的 skill 物料打成一个 tar，供 docker driver 灌进容器的 /skills。
 
     这是 prepare_workspace_dir 里那句 copytree 的对应物：同样是「把物料摆进去」，
     只是本地摆的是宿主机目录，容器摆的是一包字节（决策 21a / C.3）。
 
-    成员名以 skill 目录名开头（`svg-chart/SKILL.md`），解在 /skills 上就落成
+    两种来源写进同一个 tar：内置的从磁盘目录读，用户上传的从 zip 字节转写
+    （rewrite_into_tar，全程在内存里、不落文件系统）。容器那头只看到一包 tar，
+    分不出也不需要分。
+
+    成员名以 skill 名开头（`svg-chart/SKILL.md`），解在 /skills 上就落成
     `/skills/svg-chart/SKILL.md` —— 与本地布局逐字一致，SKILL.md 里的相对路径
     两边都不用改。
     """
@@ -51,6 +59,8 @@ def pack_skill_dirs(skill_dirs: Sequence[Path]) -> bytes:
             # 目标目录名 = 源目录名，与本地那份同一条规矩：源目录已是校验过的
             # 规范形态，照搬即可，别拿 frontmatter 的 name 另起一个
             tar.add(src, arcname=src.name, filter=_drop_pycache)
+        for name, archive in skill_zips:
+            rewrite_into_tar(tar, archive, name)
     return buf.getvalue()
 
 

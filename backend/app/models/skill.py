@@ -7,9 +7,10 @@ name/description 进 system prompt，正文与脚本在沙箱里由通用文件/
 存储沿用 Document 的形态：本表只存元数据与对象存储的 key，zip 本体走 storage 抽象。
 理由（Dify agent_drive_files 同构）：表是索引，不是文件柜。
 
-内置 skill 与用户上传的 skill 共用同一条入库路径 —— 前者只是启动时 seed 进来的
-种子数据，同样 per-user、同样可删改。刻意不做「共享的内置行」：那会让权限判断
-分叉，且共享行挂不上 per-user 的凭据。
+**本表只存用户上传的 skill。** 内置 skill 的本体随代码分发（app/skills/builtin/），
+启动时扫进内存注册表（services/skill/builtin.py），永远不进本表 —— 它没有任何
+per-user 的东西需要落库。列表接口把「注册表 + 本表」两份拼起来出参，
+前端按 source_type 区分，两边共用 SkillOut 结构。
 """
 
 from enum import StrEnum
@@ -22,8 +23,8 @@ from app.models.base import TimestampMixin, UUIDBaseModel
 class SkillSource(StrEnum):
     """Skill 来源溯源。"""
 
-    BUILTIN = "builtin"  # 随代码分发的预置包，启动时 seed 入库
-    USER = "user"  # 用户上传
+    BUILTIN = "builtin"  # 随代码分发的预置包；只在内存注册表里，本表不会有这类行
+    USER = "user"  # 用户上传，本表当前唯一可能的取值
 
 
 class Skill(UUIDBaseModel, TimestampMixin):
@@ -44,7 +45,7 @@ class Skill(UUIDBaseModel, TimestampMixin):
         SkillSource,
         max_length=16,
         default=SkillSource.USER,
-        description="来源溯源：builtin 为预置包（seed 入库）/ user 为上传。仅用于 UI 区分与 seed 幂等判断，不是权限位——两者都可删改",
+        description="来源溯源。本表当前恒为 user；builtin 这个取值是留给列表接口出参复用的（内置那份从注册表构造），不落本表",
     )
     storage_key = fields.CharField(
         max_length=512,
@@ -63,3 +64,4 @@ class Skill(UUIDBaseModel, TimestampMixin):
 
     class Meta:
         table = "skills"
+        unique_together = (("created_by", "name"),)

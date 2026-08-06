@@ -83,6 +83,15 @@ interface FormState {
   params: ModelParamsValue
 }
 
+/**
+ * 选择器里的复合键 —— 两种 skill 共用一个下拉框，但存进 config 的是两个字段
+ * （内置按 name 存 `builtin_skills`，上传的按 id 存 `skills`），故键里带上来源，
+ * onChange 时按前缀拆回两个数组。
+ */
+function skillKey(s: Skill): string {
+  return s.source_type === 'user' ? `user:${s.id}` : `builtin:${s.name}`
+}
+
 function agentToForm(agent: Agent): FormState {
   const c = agent.config
   const chat = c.models?.chat
@@ -364,12 +373,25 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
               <Field label="Skill">
                 <MultiSelectPopover
                   items={skills.map((s) => ({
-                    id: s.name,
+                    id: skillKey(s),
                     name: s.name,
-                    meta: s.required_env.length > 0 ? '需要 key' : undefined,
+                    meta: s.source_type === 'user' ? '上传' : undefined,
                   }))}
-                  value={form.builtin_skill_names}
-                  onChange={(names) => patch('builtin_skill_names', names)}
+                  value={[
+                    ...form.builtin_skill_names.map((n) => `builtin:${n}`),
+                    ...form.skill_ids.map((id) => `user:${id}`),
+                  ]}
+                  onChange={(keys) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      builtin_skill_names: keys
+                        .filter((k) => k.startsWith('builtin:'))
+                        .map((k) => k.slice('builtin:'.length)),
+                      skill_ids: keys
+                        .filter((k) => k.startsWith('user:'))
+                        .map((k) => k.slice('user:'.length)),
+                    }))
+                  }
                   placeholder="搜索 skill..."
                   emptyLabel="未挂载任何 skill"
                 />

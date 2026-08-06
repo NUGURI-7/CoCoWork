@@ -9,6 +9,7 @@
 """
 
 import asyncio
+import logging
 import os
 import sys
 from dataclasses import dataclass
@@ -22,13 +23,17 @@ from deepagents.backends.protocol import SandboxBackendProtocol
 from langchain_core.tools import BaseTool
 
 from app.core.config import settings
+from app.core.storage import storage
 from app.models import User
+from app.models.skill import Skill
 from app.schemas.agent import AgentConfig
 from app.services.sandbox.docker_sandbox import DockerSandbox
-from app.services.sandbox.layout import SandboxPaths, prepare_workspace_dir, container_paths, pack_skill_dirs
+from app.services.sandbox.layout import SandboxPaths, prepare_workspace_dir, container_paths, pack_skills
 from app.services.skill.builtin import resolve_builtin_skills, fetch_builtin_credentials, BuiltinSkill
-from app.services.skill.prompt import build_skills_prompt
+from app.services.skill.prompt import build_skills_prompt, SkillListing
 from app.tools.artifact_fetch import ArtifactFetchTool
+
+logger = logging.getLogger(__name__)
 
 # 单条命令的默认超时与硬上限（秒）。LLM 可为单条命令调高，但不得超过上限 ——
 # deepagents 的 max_execute_timeout 默认 3600，一个 skill 脚本跑一小时是失控
@@ -47,6 +52,7 @@ class SkillMount:
     paths: SandboxPaths  # 工作区路径，供日志与排查用
     backend: SandboxBackendProtocol  # 收尾要用：docker driver 得把容器销毁掉
     artifact_tools: list[BaseTool]  # 取回历史产物（决策 24）；Playground 无对话实体，为空
+    uploaded: dict[UUID, Skill]  # 本轮解出的上传 skill，按 id 索引；prompt_for 据各自 cfg 再筛
 
     async def close(self) -> None:
         """一轮回复的收尾。docker driver 销毁容器，local driver 无事可做。
@@ -60,13 +66,18 @@ class SkillMount:
         if isinstance(self.backend, DockerSandbox):
             await asyncio.to_thread(self.backend.close)
 
+    def _skills_of(self, cfg: AgentConfig) -> list[SkillListing]:
+        """这个参与者自己挂的 skill，两种来源合成一份（内置在前）。"""
+        mine = [self.uploaded[sid] for sid in cfg.skills if sid in self.uploaded]
+        return [*resolve_builtin_skills(cfg.builtin_skills), *mine]
+
     def has_skills(self, cfg: AgentConfig) -> bool:
         """这个 agent 自己挂了 skill 吗 —— 决定给不给它那 7 个文件工具（决策 19）。
 
         判「真解出了东西」而不是「字段非空」：配置里可能留着已下架的 skill 名，
         那种情况字段有值、实际无货，不该给工具。
         """
-        return bool(resolve_builtin_skills(cfg.builtin_skills))
+        return bool(self._skills_of(cfg))
 
     def prompt_for(self, cfg: AgentConfig) -> str:
         """某个参与者的 skill 清单片段 —— 只列它自己挂的，不列同伴的。
@@ -75,23 +86,42 @@ class SkillMount:
         没授予这个成员的技能不该出现在它眼前，否则配置形同虚设。
         """
         return build_skills_prompt(
-            resolve_builtin_skills(cfg.builtin_skills),
+            self._skills_of(cfg),
             self.paths,
             # artifact_tools 空不空，正是「这条路上有没有取回工具」的唯一真值 ——
             # 不另传标志位，免得两处判断跑偏
             can_fetch=bool(self.artifact_tools),
         )
 
-def _union_skills(cfgs: Sequence[AgentConfig]) -> list[BuiltinSkill]:
+async def _union_skills(
+        cfgs: Sequence[AgentConfig], user: User
+) -> tuple[list[BuiltinSkill], list[Skill]]:
     """本轮所有参与者挂的 skill 并集，按首次出现排序。
 
-    按 name 去重：两个成员挂了同一个 skill，源目录本来就是同一个，铺一份即可。
+    去重：两个成员挂了同一个 skill，物料本来就是同一份，铺一份即可 ——
+    内置按 name（源目录同一个），上传的按 id（表行同一条）。
+
+    两种来源**分开返回**：内置的下游要的是目录、打成 tar，上传的下游要的是
+    zip 字节、直接送进容器解，两条路不同，合成一个列表只会在下游再分一次。
+
+    上传那批的归属校验就是 `created_by=user` 这个查询条件 —— 别人的 id 塞进
+    配置也查不出来；查不到的 id 静默跳过，对齐 resolve_builtin_skills 与
+    assemble_tools 里知识库那段的容错口径（残留配置不该让整个 agent 起不来）。
     """
-    merged: dict[str, BuiltinSkill] = {}
+    builtin: dict[str, BuiltinSkill] = {}
     for cfg in cfgs:
         for skill in resolve_builtin_skills(cfg.builtin_skills):
-            merged.setdefault(skill.name, skill)
-    return list(merged.values())
+            builtin.setdefault(skill.name, skill)
+
+    # dict.fromkeys 去重且保序 —— 顺序决定它们在 prompt 里的排列，应当与用户配的一致
+    wanted = list(dict.fromkeys(sid for cfg in cfgs for sid in cfg.skills))
+    uploaded: list[Skill] = []
+    if wanted:
+        rows = await Skill.filter(id__in=wanted, created_by=user)
+        by_id = {row.id: row for row in rows}
+        uploaded = [by_id[sid] for sid in wanted if sid in by_id]
+
+    return list(builtin.values()), uploaded
 
 async def build_skill_mount(
         cfgs: Sequence[AgentConfig],
@@ -125,16 +155,19 @@ async def build_skill_mount(
             那个条件够不着。**同样刻意不给默认值**，漏传只会让用户拖进来的文件
             下一轮取不回来，而这事不报错。
     """
-    mounted = _union_skills(cfgs)
-    if not mounted:
+    mounted, uploaded = await _union_skills(cfgs, user)
+    if not mounted and not uploaded:
         return None
 
     credentials = await fetch_builtin_credentials(user, [s.name for s in mounted])
     skill_dirs = [s.directory for s in mounted]
 
     if settings.SANDBOX_DRIVER == "docker":
-        paths, backend = _docker_backend(skill_dirs, credentials, message_id)
+        skill_zips = await _fetch_skill_archives(uploaded)
+        paths, backend = _docker_backend(skill_dirs, skill_zips, credentials, message_id)
     elif settings.SANDBOX_DRIVER == "local":
+        if uploaded:
+            logger.warning("local driver 不支持用户上传的 skill，本轮跳过 %d 个", len(uploaded))
         paths, backend = _local_backend(skill_dirs, credentials, scope_id, message_id)
     else:
         # 配错了就当场炸，不要悄悄退回某一档 —— 「以为在跑容器、其实在宿主机上裸跑」
@@ -166,11 +199,37 @@ async def build_skill_mount(
         paths=paths,
         backend=backend,
         artifact_tools=artifact_tools,
+        uploaded={s.id: s for s in uploaded},
     )
 
 
+async def _fetch_skill_archives(skills: Sequence[Skill]) -> list[tuple[str, bytes]]:
+    """并发把上传的 skill 包从对象存储读回来。
+
+    单个读失败只跳过它 —— 一个包丢了不该让整轮回复挂掉，对齐 assemble_tools
+    里「MCP 单 server 失败跳过」的口径。
+    """
+    if not skills:
+        return []
+
+    results = await asyncio.gather(
+        *(storage.read(s.storage_key) for s in skills), return_exceptions=True
+    )
+
+    archives: list[tuple[str, bytes]] = []
+    for skill, result in zip(skills, results):
+        if isinstance(result, BaseException):
+            logger.warning("skill %s 的包读不出来，本轮跳过：%s", skill.name, result)
+            continue
+        archives.append((skill.name, result))
+    return archives
+
+
 def _docker_backend(
-        skill_dirs: list[Path], credentials: dict[str, str], message_id: UUID
+        skill_dirs: list[Path],
+        skill_zips: list[tuple[str, bytes]],
+        credentials: dict[str, str],
+        message_id: UUID,
 ) -> tuple[SandboxPaths, DockerSandbox]:
     """生产 driver：一次性容器，起容器的动作推迟到第一次真用到（决策 22a）。
 
@@ -180,7 +239,7 @@ def _docker_backend(
     paths = container_paths(message_id)
     backend = DockerSandbox(
         paths=paths,
-        skill_tar=pack_skill_dirs(skill_dirs),
+        skill_tar=pack_skills(skill_dirs, skill_zips),
         env=credentials,  # 容器的 PATH / HOME 由镜像给，不需要 _sandbox_env 那套
         timeout=EXECUTE_TIMEOUT,
         max_timeout=EXECUTE_TIMEOUT_CEILING,

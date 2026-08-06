@@ -6,6 +6,8 @@
 存进 dataclass 是冗余）。
 """
 
+from uuid import UUID
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -14,7 +16,8 @@ class SkillOut(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+    id: UUID | None = None  # 用户上传的才有（DB 行主键，删除按它定位）；内置的没有行，恒为 None
     name: str               # 规范里的 name，前端当 value、勾选后写进 config.builtin_skills
     description: str        # SKILL.md 的 description，同时也是进 system prompt 的那份
     source_type: str        # builtin / user —— 前端按这个分组
-    required_env: list[str] # 该 skill 声明需要的环境变量名；空 = 不需要配 key
+    required_env: list[str] = []  # 内置那份从包的 metadata 读；上传的不解析，恒空

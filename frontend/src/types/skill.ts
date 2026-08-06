@@ -9,6 +9,8 @@
 export type SkillSource = 'builtin' | 'user'
 
 export interface Skill {
+  /** 用户上传的才有（DB 行主键，删除与挂载都按它定位）；内置的没有行，为 null */
+  id: string | null
   /** 规范里的 name（小写字母/数字/连字符），勾选后写进 config.builtin_skills */
   name: string
   /** SKILL.md 的 description，也是进 system prompt 供模型判断的那份 */

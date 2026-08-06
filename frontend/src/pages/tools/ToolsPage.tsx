@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { AxiosError } from 'axios'
 import { ring } from 'ldrs'
-import { BookOpen, Plug, Plus, Wrench } from 'lucide-react'
+import { BookOpen, Plug, Plus, Upload, Wrench } from 'lucide-react'
+import { toast } from 'sonner'
 
 import { listMCPServers } from '@/api/mcp'
-import { listSkills } from '@/api/skill'
+import { listSkills, uploadSkill } from '@/api/skill'
 import { listTools } from '@/api/tool'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ApiBusinessError } from '@/request'
 import type { MCPServer, Skill, Tool } from '@/types'
 
 import { CreateMcpServerDialog } from './CreateMcpServerDialog'
@@ -46,7 +49,13 @@ function ToolGrid({ tools }: { tools: Tool[] }) {
   )
 }
 
-function SkillGrid({ skills }: { skills: Skill[] }) {
+function SkillGrid({
+  skills,
+  onChanged,
+}: {
+  skills: Skill[]
+  onChanged: () => void
+}) {
   if (skills.length === 0) {
     return (
       <div className="text-muted-foreground flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed py-16 text-sm">
@@ -61,19 +70,31 @@ function SkillGrid({ skills }: { skills: Skill[] }) {
       style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))' }}
     >
       {skills.map((s) => (
-        <SkillCard key={s.name} skill={s} />
+        <SkillCard key={s.id ?? s.name} skill={s} onDeleted={onChanged} />
       ))}
     </div>
   )
 }
 
-/** /tools — 工具与来源管理：内置工具 / Skill（均只读）+ MCP server（可增删改） */
+/** 后端的业务错误（409 撞名、400 包不合规）都带人话消息，尽量透出来 */
+function errorMessage(err: unknown, fallback: string): string {
+  if (err instanceof ApiBusinessError) return err.message
+  if (err instanceof AxiosError) {
+    const msg = err.response?.data?.message
+    if (typeof msg === 'string') return msg
+  }
+  return fallback
+}
+
+/** /tools — 工具与来源管理：内置工具（只读）/ Skill（可传可删）/ MCP server（可增删改） */
 export default function ToolsPage() {
   const [tools, setTools] = useState<Tool[] | null>(null)
   const [skills, setSkills] = useState<Skill[] | null>(null)
   const [servers, setServers] = useState<MCPServer[] | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<MCPServer | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -84,17 +105,37 @@ export default function ToolsPage() {
       .catch(() => {
         if (!cancelled) setTools([])
       })
-    listSkills()
-      .then((d) => {
-        if (!cancelled) setSkills(d)
-      })
-      .catch(() => {
-        if (!cancelled) setSkills([])
-      })
     return () => {
       cancelled = true
     }
   }, [])
+
+  const loadSkills = useCallback(() => {
+    listSkills()
+      .then(setSkills)
+      .catch(() => setSkills([]))
+  }, [])
+
+  useEffect(() => {
+    loadSkills()
+  }, [loadSkills])
+
+  async function handleFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // 清空才能连续选同一个文件（否则第二次不触发 change）
+    if (!file) return
+
+    setUploading(true)
+    try {
+      const created = await uploadSkill(file)
+      toast.success(`已上传 ${created.name}`)
+      loadSkills()
+    } catch (err) {
+      toast.error(errorMessage(err, '上传失败'))
+    } finally {
+      setUploading(false)
+    }
+  }
 
   const loadServers = useCallback(() => {
     listMCPServers()
@@ -140,7 +181,7 @@ export default function ToolsPage() {
         <Stat label="MCP server" value={servers.length} />
       </div>
 
-      {/* ③ Tab：内置工具 / Skill（均只读）/ MCP（server 管理） */}
+      {/* ③ Tab：内置工具（只读）/ Skill（可传可删）/ MCP（server 管理） */}
       <Tabs defaultValue="builtin">
         <TabsList>
           <TabsTrigger value="builtin">内置工具</TabsTrigger>
@@ -153,7 +194,21 @@ export default function ToolsPage() {
         </TabsContent>
 
         <TabsContent value="skill" className="mt-4">
-          <SkillGrid skills={skills} />
+          <div className="space-y-4">
+            <div className="flex items-center justify-end gap-3">
+              <span className="text-muted-foreground text-xs">
+                zip 包，内含 SKILL.md
+              </span>
+              <Button
+                disabled={uploading}
+                onClick={() => fileRef.current?.click()}
+              >
+                <Upload />
+                {uploading ? '上传中...' : '上传 skill'}
+              </Button>
+            </div>
+            <SkillGrid skills={skills} onChanged={loadSkills} />
+          </div>
         </TabsContent>
 
         <TabsContent value="mcp" className="mt-4">
@@ -194,6 +249,15 @@ export default function ToolsPage() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* 真正的文件选择器藏起来，由上面那个按钮代触发 —— 原生 input 样式不可控 */}
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".zip,application/zip"
+        className="hidden"
+        onChange={(e) => void handleFilePicked(e)}
+      />
 
       <CreateMcpServerDialog
         open={dialogOpen}

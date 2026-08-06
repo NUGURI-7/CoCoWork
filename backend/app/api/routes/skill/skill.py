@@ -1,40 +1,47 @@
-"""Skill 列表端点 —— 列出当前可挂载的 skill。
+"""Skill 端点：列出 / 上传 / 删除。
 
-GET /skills  →  内置 skill（从内存注册表读，不查 DB）。
+GET    /skills            →  内置（内存注册表）+ 用户上传（DB），合并成一份
+POST   /skills            →  传一个 zip 包
+DELETE /skills/{skill_id} →  删自己传的那份（内置没有 id，删不了）
 
-内置 skill 的本体随代码分发、不进 skills 表（设计稿决策 3），所以直接读注册表、
-不走 service。用户上传的那批落 DB，将来在此合并（注册表 + 表查询），出参结构不变。
+三个都薄，合并与校验住在 services/skill/crud.py。
 """
 
 from typing import Annotated
+from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, UploadFile
 
 from app.core.depends import get_current_user
 from app.core.http import ResponseModel, success
 from app.models.user import User
 from app.schemas.skill import SkillOut
-from app.services.skill.builtin import list_builtin_skills
+from app.services.skill.crud import create_skill, delete_skill, list_skills
+from app.services.skill.package import MAX_ARCHIVE_BYTES
 
 
 router = APIRouter(prefix="/skills", tags=["skills"])
 
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
 
+
 @router.get("", summary="列出可挂载的 skill")
-async def list_available_skills(
-        _user: CurrentUserDep,
-) -> ResponseModel[list[SkillOut]]:
-    # 内置显式构造：BuiltinSkill 上没有 source_type 这个属性（它恒为 builtin，
-    # 存进 dataclass 是冗余）。用户上传的那批是 DB 行、自带该字段，
-    # 到时候走 SkillOut.model_validate(row) —— schema 的 from_attributes 是为它留的。
-    skills = [
-        SkillOut(
-            name=s.name,
-            description=s.description,
-            source_type="builtin",
-            required_env=list(s.required_env),
-        )
-        for s in list_builtin_skills()
-    ]
-    return success(data=skills)
+async def list_available_skills(user: CurrentUserDep) -> ResponseModel[list[SkillOut]]:
+    return success(data=await list_skills(user))
+
+
+@router.post("", summary="上传 skill 包")
+async def upload_skill(
+        user: CurrentUserDep,
+        file: Annotated[UploadFile, File(description="skill zip 包")],
+) -> ResponseModel[SkillOut]:
+    # 多读 1 字节：读满就说明超限，交给 precheck_archive 报错，
+    # 不必把一个几百兆的包整个吞进内存才发现不该收
+    raw = await file.read(MAX_ARCHIVE_BYTES + 1)
+    return success(data=SkillOut.model_validate(await create_skill(user, raw)))
+
+
+@router.delete("/{skill_id}", summary="删除上传的 skill")
+async def remove_skill(user: CurrentUserDep, skill_id: UUID) -> ResponseModel[None]:
+    await delete_skill(user, skill_id)
+    return success()

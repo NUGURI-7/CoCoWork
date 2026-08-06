@@ -7,6 +7,8 @@ skills_ref 的 API 吃「目录路径」，我们手里是 zip 字节，中间�
 
 import posixpath
 import io
+import stat
+import tarfile
 import zipfile
 import tempfile
 from pathlib import Path
@@ -21,6 +23,44 @@ _SKILL_MD_NAMES = ("SKILL.md", "skill.md")
 # SKILL.md 正文上限。规范建议正文控制在 5000 tokens（约 20 KiB）以内，
 # 1 MiB 是宽松兜底，不是目标值。Dify 取的同一个数。
 _MAX_SKILL_MD_BYTES = 1024 * 1024
+
+# 上传包的规模上限。三个数都在「不解全包」的前提下拿到 —— 本体是手里的
+# 字节数，另两个读 zip 中央目录里每个成员声明的 file_size（决策 21a）。
+# 声明值可以撒谎，故这里只挡「一眼就过分」的包，真解压那步还要再数一次。
+MAX_ARCHIVE_BYTES = 5 * 1024 * 1024
+_MAX_UNPACKED_BYTES = 20 * 1024 * 1024
+_MAX_MEMBER_COUNT = 200
+
+
+def precheck_archive(archive: bytes) -> None:
+    """上传入口的第一道闸：只看规模，不看内容。
+
+    Raises:
+        ValidationException: 本体过大 / 成员过多 / 解压后过大。
+    """
+    if len(archive) > MAX_ARCHIVE_BYTES:
+        raise ValidationException(
+            f"skill 包超过 {MAX_ARCHIVE_BYTES // 1024 // 1024} MB —— "
+            "一个 skill 是一份说明书加几个脚本，不该这么大"
+        )
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(archive)) as zf:
+            members = [info for info in zf.infolist() if not info.is_dir()]
+    except zipfile.BadZipFile as exc:
+        raise ValidationException("这不是一个有效的 zip 文件") from exc
+
+    if len(members) > _MAX_MEMBER_COUNT:
+        raise ValidationException(
+            f"skill 包里有 {len(members)} 个文件，上限 {_MAX_MEMBER_COUNT} 个"
+        )
+
+    unpacked = sum(info.file_size for info in members)
+    if unpacked > _MAX_UNPACKED_BYTES:
+        raise ValidationException(
+            f"解压后约 {unpacked // 1024 // 1024} MB，"
+            f"超过 {_MAX_UNPACKED_BYTES // 1024 // 1024} MB 上限"
+        )
 
 
 def load_skill_manifest(archive: bytes) -> SkillProperties:
@@ -147,3 +187,58 @@ def _locate_skill_md(member_names: list[str]) -> tuple[str, str | None]:
     member = top[0]
     parent = posixpath.dirname(member)
     return member, posixpath.basename(parent) or None
+
+
+def rewrite_into_tar(tar: tarfile.TarFile, archive: bytes, arc_root: str) -> None:
+    """把一个 skill zip 的内容转写进已打开的 tar，全部落到 arc_root/ 下。
+
+    全程在内存里读写，**不往文件系统落任何东西** —— 路径穿越与符号链接这两类
+    解压攻击都以「真的创建文件」为前提，这里不创建，故只需防解压炸弹。
+
+    Raises:
+        ValidationException: 解压后总量超限（zip 头声明值撒谎时在这里兜住）。
+    """
+    budget = _MAX_UNPACKED_BYTES
+
+    with zipfile.ZipFile(io.BytesIO(archive)) as zf:
+        member, _ = _locate_skill_md(zf.namelist())
+        prefix = posixpath.dirname(member)
+
+        for info in zf.infolist():
+            if info.is_dir() or stat.S_ISLNK(info.external_attr >> 16):
+                continue
+
+            rel = _member_relpath(info.filename, prefix)
+            if rel is None:
+                continue
+
+            with zf.open(info) as fp:
+                data = fp.read(budget + 1)
+            if len(data) > budget:
+                raise ValidationException(
+                    f"skill 包解压后超过 {_MAX_UNPACKED_BYTES // 1024 // 1024} MB 上限"
+                )
+            budget -= len(data)
+
+            entry = tarfile.TarInfo(f"{arc_root}/{rel}")
+            entry.size = len(data)
+            # 只保留「能不能执行」这一位，其余权限位一律不沿用用户包里的
+            entry.mode = 0o755 if info.external_attr >> 16 & 0o111 else 0o644
+            tar.addfile(entry, io.BytesIO(data))
+
+
+def _member_relpath(name: str, prefix: str) -> str | None:
+    """zip 成员名 → 相对包根的路径；不在包根下、或路径可疑的返回 None（跳过）。"""
+    if name.startswith("__MACOSX/"):
+        return None
+
+    if prefix:
+        if not name.startswith(f"{prefix}/"):
+            return None  # GitHub 外壳里同级的其他目录，不属于这个 skill
+        rel = name[len(prefix) + 1:]
+    else:
+        rel = name
+
+    if not rel or rel.startswith("/") or "\\" in rel or ".." in rel.split("/"):
+        return None
+    return rel
