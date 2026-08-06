@@ -68,8 +68,11 @@ async def list_skills(user: User) -> list[SkillOut]:
     return builtin + [SkillOut.model_validate(row) for row in rows]
 
 
-async def delete_skill(user: User, skill_id: UUID) -> None:
-    """删掉一个自己上传的 skill。
+async def get_own_skill(user: User, skill_id: UUID) -> Skill:
+    """按 id 取一个这个用户自己上传的 skill。
+
+    内置 skill 不在 skills 表里、也没有 id，故一律落进 404 —— 归属校验和
+    「内置不给下载」是同一条判断，不必分开写。
 
     Raises:
         NotFound404: 不存在，或不属于这个用户。
@@ -77,6 +80,11 @@ async def delete_skill(user: User, skill_id: UUID) -> None:
     skill = await Skill.get_or_none(id=skill_id, created_by=user)
     if skill is None:
         raise NotFound404("skill 不存在")
+    return skill
 
+
+async def delete_skill(user: User, skill_id: UUID) -> None:
+    """删掉一个自己上传的 skill。"""
+    skill = await get_own_skill(user, skill_id)
     await storage.delete(skill.storage_key)
     await skill.delete()

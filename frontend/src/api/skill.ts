@@ -27,3 +27,15 @@ export function uploadSkill(file: File) {
 export function deleteSkill(id: string) {
   return del<null>(`/skills/${id}`)
 }
+
+/**
+ * 取一个自己上传的 skill 包的下载 URL（内置的没有包，后端一律 404）。
+ *
+ * 后端两种存储后端返的形态不同，本函数统一成「拿到就能用」：
+ * - R2 → 绝对 URL（对象存储直链，1 小时有效），原样返回
+ * - Local → 相对路径 `/skills/{id}/raw`，这里补上 API 前缀
+ */
+export async function getSkillDownloadUrl(id: string): Promise<string> {
+  const { url } = await get<{ url: string }>(`/skills/${id}/download-url`)
+  return url.startsWith('http') ? url : `/api/v1${url}`
+}

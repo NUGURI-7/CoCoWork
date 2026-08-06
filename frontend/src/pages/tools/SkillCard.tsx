@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { BookOpen, KeyRound, Package, Trash2 } from 'lucide-react'
+import { BookOpen, Download, KeyRound, Package, Trash2 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { deleteSkill } from '@/api/skill'
+import { deleteSkill, getSkillDownloadUrl } from '@/api/skill'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { triggerDownload } from '@/lib/download'
 import type { Skill, SkillSource } from '@/types'
 
 /** 来源 → 图标 + 标签（后端不下发图标，前端按来源统一给） */
@@ -34,7 +35,8 @@ const SOURCE_META: Record<SkillSource, { label: string; icon: LucideIcon }> = {
  * - 没有「有副作用」标记，改为「需要 key」—— skill 的危险来自它跑的脚本，那由沙箱兜；
  *   用户在这一层真正需要知道的是「用之前得先配凭据」。
  *
- * 删除只对上传的那批开放：内置 skill 随代码分发、表里根本没有行，没有可删之物。
+ * 下载与删除都只对上传的那批开放：内置 skill 随代码分发、表里根本没有行，
+ * 既没有可删之物，也没有原始包可导出。
  */
 export function SkillCard({
   skill,
@@ -48,6 +50,20 @@ export function SkillCard({
   const needsKey = skill.required_env.length > 0
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+
+  /** URL 不预先持有，点了才向后端换 —— 每次点击都过一遍归属校验，链接也不长期有效。 */
+  async function handleDownload() {
+    if (!skill.id || downloading) return
+    setDownloading(true)
+    try {
+      triggerDownload(await getSkillDownloadUrl(skill.id), `${skill.name}.zip`)
+    } catch {
+      // 拦截器已 toast
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   async function handleDelete() {
     if (!skill.id) return
@@ -95,15 +111,28 @@ export function SkillCard({
         </div>
 
         {skill.id && (
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="删除"
-            className="text-muted-foreground hover:text-destructive ml-auto size-8 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
-            onClick={() => setConfirmOpen(true)}
-          >
-            <Trash2 className="size-4" />
-          </Button>
+          <div className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="下载"
+              title="下载原始包"
+              disabled={downloading}
+              className="text-muted-foreground hover:text-foreground size-8"
+              onClick={() => void handleDownload()}
+            >
+              <Download className="size-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="删除"
+              className="text-muted-foreground hover:text-destructive size-8"
+              onClick={() => setConfirmOpen(true)}
+            >
+              <Trash2 className="size-4" />
+            </Button>
+          </div>
         )}
       </div>
 

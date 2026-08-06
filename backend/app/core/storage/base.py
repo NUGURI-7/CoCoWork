@@ -76,14 +76,3 @@ class Storage(ABC):
             仅在 `filename` 给定时生效（两者写在同一个头里）。
         """
         raise NotImplementedError(f"{type(self).__name__} 不支持预签名下载")
-
-    async def generate_download_url(
-            self, key: str, expires: int = 3600, filename: str | None = None,
-    ) -> str:
-        """生成预签名下载 URL（前端直接 GET，绕开后端出站流量）。
-
-        默认抛 `NotImplementedError`；仅对象存储后端（`supports_presigned=True`）重写。
-
-        `filename`: 给定时，浏览器跨域下载会以此名保存（写进 Content-Disposition: attachment）。
-        """
-        raise NotImplementedError(f"{type(self).__name__} 不支持预签名下载")
