@@ -35,6 +35,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { triggerDownload } from '@/lib/download'
 import { cn } from '@/lib/utils'
 import { PARSE_BACKEND_LABELS, type Document } from '@/types'
 import { DocumentPreviewSheet } from './DocumentPreviewSheet'
@@ -275,8 +276,7 @@ function DocumentRow({
     if (downloading) return
     setDownloading(true)
     try {
-      const { url } = await getDocumentDownloadUrl(kbId, doc.id)
-      triggerDownload(url, doc.name)
+      triggerDownload(await getDocumentDownloadUrl(kbId, doc.id), doc.name)
     } catch {
       // 拦截器已 toast
     } finally {
@@ -465,14 +465,4 @@ function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
   return `${(n / 1024 / 1024).toFixed(1)} MB`
-}
-
-/** 创建临时 `<a download>` 程序触发下载（GitHub/Drive 同款做法） */
-function triggerDownload(url: string, filename: string) {
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
 }

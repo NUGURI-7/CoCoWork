@@ -50,8 +50,7 @@ export function DocumentPreviewSheet({
 
     ;(async () => {
       try {
-        const { url } = await getDocumentDownloadUrl(kbId, doc.id)
-        const res = await fetch(url)
+        const res = await fetch(await getDocumentDownloadUrl(kbId, doc.id))
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const text = await res.text()
         if (cancelled) return

@@ -79,11 +79,21 @@ export function deleteDocument(kbId: string, docId: string) {
   return del<null>(`/knowledge-bases/${kbId}/documents/${docId}`)
 }
 
-/** 获取下载 URL（R2 返预签名 GET URL，Local 返后端 /raw 路径）。 */
-export function getDocumentDownloadUrl(kbId: string, docId: string) {
-  return get<{ url: string }>(
+/**
+ * 获取文档下载 URL。
+ *
+ * 后端两种存储后端返的形态不同，本函数统一成「拿到就能用」：
+ * - R2 → 绝对 URL（对象存储直链），原样返回
+ * - Local → 相对路径 `/knowledge-bases/.../raw`，这里补上 API 前缀
+ */
+export async function getDocumentDownloadUrl(
+  kbId: string,
+  docId: string,
+): Promise<string> {
+  const { url } = await get<{ url: string }>(
     `/knowledge-bases/${kbId}/documents/${docId}/download-url`,
   )
+  return url.startsWith('http') ? url : `/api/v1${url}`
 }
 
 // ============================================================================
