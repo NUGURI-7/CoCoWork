@@ -5,7 +5,7 @@ import { ring } from 'ldrs'
 import { listProviders } from '@/api/model'
 import { Button } from '@/components/ui/button'
 import type { Provider } from '@/types'
-import { CreateProviderDialog } from './CreateProviderDialog'
+import { ProviderFormDialog } from './ProviderFormDialog'
 import { ProviderCard } from './ProviderCard'
 
 ring.register()
@@ -67,10 +67,10 @@ export default function ModelsPage() {
         </div>
       )}
 
-      <CreateProviderDialog
+      <ProviderFormDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
-        onCreated={refetch}
+        onSaved={refetch}
       />
     </div>
   )

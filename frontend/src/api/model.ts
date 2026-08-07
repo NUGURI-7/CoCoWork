@@ -4,7 +4,7 @@
  * 路径前缀 `/providers` / `/models`，加上 axios baseURL `/api/v1`。
  */
 
-import { del, get, post } from '@/request'
+import { del, get, post, put } from '@/request'
 import type {
   AIModel,
   CatalogItem,
@@ -50,6 +50,25 @@ export function getCredentialDefinitions() {
  */
 export function createProvider(payload: ProviderCreatePayload) {
   return post<Provider>('/providers', payload, { silent: true })
+}
+
+/** 更新 Provider 请求体：字段全可选，只发改动的那几个。 */
+export interface ProviderUpdatePayload {
+  name?: string
+  provider_type?: ProviderType
+  base_url?: string
+  /** 整包替换凭证；**不传 = 保持原样**（后端不回传密文，所以表单留空就别发这个字段） */
+  credentials?: Record<string, string>
+  description?: string
+}
+
+/**
+ * 更新 Provider。
+ *
+ * 与创建同理，后端会重新做一次连通性验证，失败则不落库；走 silent 由表单层 toast。
+ */
+export function updateProvider(id: string, payload: ProviderUpdatePayload) {
+  return put<Provider>(`/providers/${id}`, payload, { silent: true })
 }
 
 /** 删除 Provider。 */

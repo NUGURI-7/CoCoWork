@@ -2,7 +2,12 @@ import { useEffect, useState } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { createProvider, getCredentialDefinitions } from '@/api/model'
+import {
+  createProvider,
+  getCredentialDefinitions,
+  updateProvider,
+  type ProviderUpdatePayload,
+} from '@/api/model'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -22,7 +27,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import type { CredentialField, ProviderType } from '@/types'
+import type { CredentialField, Provider, ProviderType } from '@/types'
 
 const providerTypes: { value: ProviderType; label: string }[] = [
   { value: 'openai', label: 'OpenAI' },
@@ -47,17 +52,28 @@ const FALLBACK_FIELDS: CredentialField[] = [
   { key: 'api_key', label: 'API Key', secret: true, required: false },
 ]
 
-interface CreateProviderDialogProps {
+interface ProviderFormDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onCreated?: () => void
+  /** 给了就是编辑模式，不给就是新建 */
+  provider?: Provider
+  /** 新建成功 / 编辑保存成功都走它 —— 调用方只需要「刷新列表」这一个动作 */
+  onSaved?: () => void
 }
 
-export function CreateProviderDialog({
+/**
+ * Provider 新建 / 编辑对话框（同一份表单两用）。
+ *
+ * **凭证在编辑模式下是空的**：后端只存密文、从不回传，所以这里没法预填。
+ * 留空 = 不动原凭证（payload 里干脆不带 credentials 字段），填了才整包替换。
+ */
+export function ProviderFormDialog({
   open,
   onOpenChange,
-  onCreated,
-}: CreateProviderDialogProps) {
+  provider,
+  onSaved,
+}: ProviderFormDialogProps) {
+  const isEdit = !!provider
   const [name, setName] = useState('')
   const [providerType, setProviderType] = useState<ProviderType | ''>('')
   const [baseUrl, setBaseUrl] = useState('')
@@ -75,14 +91,30 @@ export function CreateProviderDialog({
       .catch(() => toast.error('凭证字段定义加载失败，表单按默认单 Key 渲染'))
   }, [open, definitions])
 
+  // 编辑模式：每次打开都按当前 provider 重铺一遍表单，避免上一次的残留
+  useEffect(() => {
+    if (!open || !provider) return
+    setName(provider.name)
+    setProviderType(provider.provider_type)
+    setBaseUrl(provider.base_url)
+    setDescription(provider.description ?? '')
+    setCredentials({})
+    setRevealed({})
+  }, [open, provider])
+
   const fields = providerType
     ? (definitions[providerType] ?? FALLBACK_FIELDS)
     : FALLBACK_FIELDS
 
-  // 必填凭证缺一个就不放行——不等后端 400 再告诉用户
-  const credentialsFilled = fields.every(
-    (f) => !f.required || credentials[f.key]?.trim(),
-  )
+  // 编辑时换了供应商类型 —— 原凭证是按旧类型的字段存的，形状对不上，必须重填
+  const typeChanged = !!provider && providerType !== provider.provider_type
+
+  // 必填凭证缺一个就不放行——不等后端 400 再告诉用户。
+  // 编辑且没换类型时豁免：留空 = 沿用原凭证，不是没填。
+  // 换了类型则按新类型的字段定义重新把关（该类型不要求 key，就一个都不用填）。
+  const credentialsFilled =
+    (isEdit && !typeChanged) ||
+    fields.every((f) => !f.required || credentials[f.key]?.trim())
   const canSubmit =
     name.trim() && providerType && baseUrl.trim() && credentialsFilled
 
@@ -111,22 +143,39 @@ export function CreateProviderDialog({
     setSubmitting(true)
     try {
       // 只提交这家认识的字段，且逐个 trim——多余字段后端会直接拒
-      const payload = Object.fromEntries(
+      const creds = Object.fromEntries(
         fields.map((f) => [f.key, credentials[f.key]?.trim() ?? '']),
       )
-      await createProvider({
-        name: name.trim(),
-        provider_type: providerType,
-        base_url: baseUrl.trim(),
-        credentials: payload,
-        description: description.trim(),
-      })
-      toast.success('供应商创建成功')
+      if (provider) {
+        const payload: ProviderUpdatePayload = {
+          name: name.trim(),
+          provider_type: providerType,
+          base_url: baseUrl.trim(),
+          description: description.trim(),
+        }
+        // 换了类型 → 无条件整包替换（哪怕全空）：旧类型的凭证字段形状对不上新类型，
+        //   留着就是一份读不懂的脏数据；本来就不需要 key 的供应商，空包正是它该有的样子。
+        // 没换类型 → 一个都没填代表沿用原凭证，此时绝不能带这个字段（带了 = 拿空串洗掉密文）。
+        if (typeChanged || Object.values(creds).some((v) => v)) {
+          payload.credentials = creds
+        }
+        await updateProvider(provider.id, payload)
+        toast.success('供应商已更新')
+      } else {
+        await createProvider({
+          name: name.trim(),
+          provider_type: providerType,
+          base_url: baseUrl.trim(),
+          credentials: creds,
+          description: description.trim(),
+        })
+        toast.success('供应商创建成功')
+      }
       resetForm()
       onOpenChange(false)
-      onCreated?.()
+      onSaved?.()
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '创建失败'
+      const msg = err instanceof Error ? err.message : isEdit ? '保存失败' : '创建失败'
       toast.error(msg)
     } finally {
       setSubmitting(false)
@@ -143,9 +192,11 @@ export function CreateProviderDialog({
     >
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>添加供应商</DialogTitle>
+          <DialogTitle>{isEdit ? '编辑供应商' : '添加供应商'}</DialogTitle>
           <DialogDescription>
-            配置模型供应商的连接信息，凭证将加密存储
+            {isEdit
+              ? '凭证留空则沿用原来的，填了才整包替换'
+              : '配置模型供应商的连接信息，凭证将加密存储'}
           </DialogDescription>
         </DialogHeader>
 
@@ -211,7 +262,15 @@ export function CreateProviderDialog({
                 <Input
                   id={`provider-cred-${field.key}`}
                   type={field.secret && !revealed[field.key] ? 'password' : 'text'}
-                  placeholder={field.key === 'api_key' ? 'sk-...' : ''}
+                  placeholder={
+                    typeChanged
+                      ? '换了类型，按新类型填（不需要就留空）'
+                      : isEdit
+                        ? '留空则不修改'
+                        : field.key === 'api_key'
+                          ? 'sk-...'
+                          : ''
+                  }
                   className={field.secret ? 'pr-10' : undefined}
                   value={credentials[field.key] ?? ''}
                   onChange={(e) =>
@@ -245,6 +304,12 @@ export function CreateProviderDialog({
             </div>
           ))}
 
+          {typeChanged && (
+            <p className="text-warning text-xs">
+              已切换供应商类型，原凭证不再适用，保存时将按上面填的内容整包替换（不填即清空）。
+            </p>
+          )}
+
           {/* 描述 */}
           <div className="grid gap-2">
             <Label htmlFor="provider-desc">描述</Label>
@@ -271,7 +336,13 @@ export function CreateProviderDialog({
             onClick={handleSubmit}
             disabled={!canSubmit || submitting}
           >
-            {submitting ? '创建中...' : '创建'}
+            {submitting
+              ? isEdit
+                ? '保存中...'
+                : '创建中...'
+              : isEdit
+                ? '保存'
+                : '创建'}
           </Button>
         </DialogFooter>
       </DialogContent>

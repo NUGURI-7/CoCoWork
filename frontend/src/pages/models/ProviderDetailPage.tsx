@@ -70,6 +70,17 @@ export default function ProviderDetailPage() {
     [],
   )
 
+  /** 编辑保存后重拉：名字 / base_url 会变，类型变了可用模型目录也跟着换 */
+  const refetchProvider = useCallback(async () => {
+    try {
+      const p = await get<Provider>(`/providers/${providerId}`)
+      setProvider(p)
+      await refetchCatalog(p.provider_type)
+    } catch {
+      // 拦截器已 toast
+    }
+  }, [providerId, refetchCatalog])
+
   useEffect(() => {
     let cancelled = false
     async function loadAll() {
@@ -132,7 +143,7 @@ export default function ProviderDetailPage() {
     <div className="space-y-6">
       {/* 上栏：左 Provider 信息 / 右 可用模型 */}
       <div className="grid grid-cols-2 gap-6">
-        <ProviderInfoCard provider={provider} />
+        <ProviderInfoCard provider={provider} onUpdated={refetchProvider} />
         <AvailableModelsCard
           groups={availableGroups}
           loading={catalogLoading}
