@@ -29,6 +29,7 @@ export function useConversationActions() {
   const conversations = useWorkspaceSession((s) => s.conversations)
   const createConversation = useWorkspaceSession((s) => s.createConversation)
   const deleteConversation = useWorkspaceSession((s) => s.deleteConversation)
+  const renameConversation = useWorkspaceSession((s) => s.renameConversation)
   const currentConvId = useCurrentConversationId()
 
   /** 选中某会话 = 跳到它的对话路由（前进后退能在会话间走）。 */
@@ -86,5 +87,15 @@ export function useConversationActions() {
     [activeWorkspaceId, currentConvId, conversations, deleteConversation, navigate],
   )
 
-  return { currentConvId, select, createAndOpen, remove }
+  /** 重命名。空标题按「取消」处理 —— 不用空串把自动起的名字洗掉。 */
+  const rename = useCallback(
+    async (conversationId: string, title: string) => {
+      const next = title.trim()
+      if (!activeWorkspaceId || !next) return
+      await renameConversation(activeWorkspaceId, conversationId, next)
+    },
+    [activeWorkspaceId, renameConversation],
+  )
+
+  return { currentConvId, select, createAndOpen, remove, rename }
 }

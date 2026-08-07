@@ -1,5 +1,6 @@
+import { useEffect, useRef, useState } from 'react'
 import dayjs from 'dayjs'
-import { Check, Trash2 } from 'lucide-react'
+import { Check, Pencil, Trash2 } from 'lucide-react'
 
 import {
   AlertDialog,
@@ -38,6 +39,8 @@ interface ConversationListProps {
   onSelect: (id: string) => void
   /** 删除只发起请求，确认弹窗归各容器持有（须挂 Popover 外避免 hover 收起连带卸载）。 */
   onRequestDelete: (id: string) => void
+  /** 重命名。不给则不渲染改名入口（列表本身仍是纯展示，改不改名由容器决定）。 */
+  onRename?: (id: string, title: string) => void
 }
 
 /**
@@ -51,9 +54,12 @@ export function ConversationList({
   currentId,
   onSelect,
   onRequestDelete,
+  onRename,
 }: ConversationListProps) {
   const statuses = useStreamStatusStore((s) => s.statuses)
   const titleOf = useConversationTitle()
+  // 正在改名的那一行（null = 没有）。同时只允许一行处于编辑态
+  const [editingId, setEditingId] = useState<string | null>(null)
   // 按更新时间倒序
   const sorted = [...conversations].sort(
     (a, b) => +new Date(b.updated_at) - +new Date(a.updated_at),
@@ -71,6 +77,22 @@ export function ConversationList({
     <>
       {sorted.map((c) => {
         const isActive = c.id === currentId
+
+        // 编辑态：整行让位给输入框，其余控件（状态点 / 删除）先撤下，别抢点击
+        if (editingId === c.id && onRename) {
+          return (
+            <RenameRow
+              key={c.id}
+              initial={titleOf(c)}
+              onCommit={(title) => {
+                setEditingId(null)
+                if (title.trim() && title !== titleOf(c)) onRename(c.id, title)
+              }}
+              onCancel={() => setEditingId(null)}
+            />
+          )
+        }
+
         return (
           <div
             key={c.id}
@@ -101,6 +123,16 @@ export function ConversationList({
               <StatusDot status={statuses[c.id] ?? 'idle'} />
               {isActive && <Check className="text-brand size-3.5 shrink-0" />}
             </button>
+            {onRename && (
+              <button
+                type="button"
+                aria-label="重命名对话"
+                onClick={() => setEditingId(c.id)}
+                className="text-muted-foreground hover:text-foreground hover:bg-muted shrink-0 rounded p-1 opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100"
+              >
+                <Pencil className="size-3.5" />
+              </button>
+            )}
             <button
               type="button"
               aria-label="删除对话"
@@ -113,6 +145,57 @@ export function ConversationList({
         )
       })}
     </>
+  )
+}
+
+/**
+ * 改名行 —— 一个占满整行的输入框。
+ *
+ * 提交时机三条：回车、失焦（点到别处即保存，跟 ChatGPT / VS Code 侧栏一致）、
+ * Esc 取消。挂载即全选，用户直接打字就是覆盖，不用先清空。
+ */
+function RenameRow({
+  initial,
+  onCommit,
+  onCancel,
+}: {
+  initial: string
+  onCommit: (title: string) => void
+  onCancel: () => void
+}) {
+  const [value, setValue] = useState(initial)
+  const ref = useRef<HTMLInputElement>(null)
+  // Esc 会先撤焦点、blur 跟着触发，若不设闸就会被当成「失焦保存」把取消吃掉
+  const abandoned = useRef(false)
+
+  useEffect(() => {
+    ref.current?.select()
+  }, [])
+
+  return (
+    <div className="px-1 py-0.5">
+      <input
+        ref={ref}
+        autoFocus
+        value={value}
+        maxLength={200}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={() => {
+          if (!abandoned.current) onCommit(value)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            abandoned.current = true // 提交走这条，别让随后的 blur 再提交一次
+            onCommit(value)
+          }
+          if (e.key === 'Escape') {
+            abandoned.current = true
+            onCancel()
+          }
+        }}
+        className="border-brand/40 focus-visible:ring-brand/30 w-full rounded-md border bg-transparent px-2 py-1.5 text-sm outline-none focus-visible:ring-2"
+      />
+    </div>
   )
 }
 

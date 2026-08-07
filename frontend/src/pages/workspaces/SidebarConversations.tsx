@@ -43,7 +43,8 @@ export function SidebarConversations() {
   const loadWorkspaces = useWorkspaceSession((s) => s.loadWorkspaces)
   const setActiveWorkspace = useWorkspaceSession((s) => s.setActiveWorkspace)
 
-  const { currentConvId, select, createAndOpen, remove } = useConversationActions()
+  const { currentConvId, select, createAndOpen, remove, rename } =
+    useConversationActions()
 
   // 待确认删除的会话 id（null = 关闭弹窗）。放 DropdownMenu/列表之外，避免被连带卸载。
   const [confirmId, setConfirmId] = useState<string | null>(null)
@@ -125,6 +126,7 @@ export function SidebarConversations() {
             currentId={currentConvId}
             onSelect={select}
             onRequestDelete={setConfirmId}
+            onRename={(id, title) => void rename(id, title)}
           />
         </div>
       </SidebarGroup>

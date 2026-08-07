@@ -6,12 +6,14 @@
  * 默认还原上次的空间。会话流的实时状态仍在 stream-status / chat-registry，本 store
  * 只管列表数据与归属。
  */
+import { toast } from 'sonner'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
 import {
   createConversation as apiCreateConversation,
   deleteConversation as apiDeleteConversation,
+  updateConversation as apiUpdateConversation,
   generateConversationTitle,
   listConversations,
   listWorkspaces,
@@ -67,6 +69,12 @@ interface WorkspaceSessionState {
   ) => Promise<void>
   /** 新建会话：建成后头插当前列表，返回新会话（失败返 null；导航交调用方） */
   createConversation: (workspaceId: string) => Promise<Conversation | null>
+  /** 重命名会话：写库成功才改本地（失败不动，列表仍显示原名） */
+  renameConversation: (
+    workspaceId: string,
+    conversationId: string,
+    title: string,
+  ) => Promise<void>
   /** 删除会话：连带回收 chat 桶 + 从列表移除（导航交调用方） */
   deleteConversation: (workspaceId: string, conversationId: string) => Promise<void>
   /** 创建空间后头插列表（WorkspacesPage 调，保持侧栏选择器同步） */
@@ -192,6 +200,25 @@ export const useWorkspaceSession = create<WorkspaceSessionState>()(
           set((s) => ({ conversations: [created, ...s.conversations] }))
         }
         return created
+      },
+
+      renameConversation: async (workspaceId, conversationId, title) => {
+        try {
+          await apiUpdateConversation(workspaceId, conversationId, { title })
+        } catch {
+          toast.error('重命名失败')
+          return // 写库失败就不动本地，界面仍是原名
+        }
+        if (get().activeWorkspaceId !== workspaceId) return
+        set((s) => ({
+          conversations: s.conversations.map((c) =>
+            c.id === conversationId ? { ...c, title } : c,
+          ),
+          // 撤掉「起名中」占位：用户已经自己定了名字，占位再显示就是盖住它
+          titlePlaceholders: Object.fromEntries(
+            Object.entries(s.titlePlaceholders).filter(([id]) => id !== conversationId),
+          ),
+        }))
       },
 
       deleteConversation: async (workspaceId, conversationId) => {
