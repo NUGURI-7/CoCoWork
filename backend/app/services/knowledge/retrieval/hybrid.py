@@ -46,9 +46,9 @@ class _FusedEntry:
 class HybridRetriever(Retriever):
     """混合检索：并发跑 vector + keyword 两路，RRF 按名次融合。
 
-    - similarity_threshold 下发给两条子路各自生效（各卡各的量纲：vector
-      卡余弦、keyword 卡归一化 ts_rank），融合层不再卡分——RRF 融合分与
-      0~1 阈值不同量纲，硬卡等于发明假语义；被一路筛掉的段仍可从另一路进场。
+    - similarity_threshold 只对 vector 腿生效（余弦是有直觉的校准量纲）；
+      keyword 腿置 0、融合层也不卡分——ts_rank 未校准、RRF 分与 0~1 阈值
+      不同量纲，硬卡等于发明假语义。全链路只有可解释的分才有资格设卡。
     - score = RRF 和 ÷ 理论最大值（双榜都第 1 = 1.0），得 0~1「共识分」，
       确定性公式、跨查询可比；原始 RRF 和最大仅 2/(RRF_K+1)≈0.033，
       直接渲染会像 bug。
@@ -69,10 +69,14 @@ class HybridRetriever(Retriever):
         # 1. 两路并发进货（model_copy 刻意绕过 top_k le=50 的 API 校验——
         #    那是对外约束，内部放大是本 mode 的机制，深度另有 CAP 兜底）
         leg_top_k = min(params.top_k * HYBRID_LEG_FACTOR, HYBRID_LEG_CAP)
-        leg_params = params.model_copy(update={"top_k": leg_top_k})
+        vector_params = params.model_copy(update={"top_k": leg_top_k})
+        # keyword 腿阈值置 0：ts_rank 未校准（无 IDF、量级远低于余弦），同一个
+        # 阈值对两腿严厉度不同——调高时 keyword 腿先全军覆没、hybrid 静默退化
+        # 成纯向量。与 rerank 管线「过滤权归校准分」同一原则：不可信的分只排序。
+        keyword_params = vector_params.model_copy(update={"similarity_threshold": 0.0})
         vector_result, keyword_result = await asyncio.gather(
-            self._vector.retrieve(kb, leg_params),
-            self._keyword.retrieve(kb, leg_params),
+            self._vector.retrieve(kb, vector_params),
+            self._keyword.retrieve(kb, keyword_params),
         )
         # 2. RRF 融合 + top_k 交货
         t0 = time.perf_counter()
