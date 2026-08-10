@@ -13,6 +13,7 @@ from app.schemas.knowledge.knowledge_base_schema import (
     KnowledgeBaseOut,
     KnowledgeBaseUpdate,
 )
+from app.schemas.knowledge.paragraph_schema import ParagraphOut
 
 from app.schemas.knowledge.retrieval_schema import (
     RetrievalHit,
@@ -26,6 +27,7 @@ __all__ = [
     "KnowledgeBaseCreate",
     "KnowledgeBaseOut",
     "KnowledgeBaseUpdate",
+    "ParagraphOut",
     "RetrievalHit",
     "UploadInitIn",
     "UploadInitOut",

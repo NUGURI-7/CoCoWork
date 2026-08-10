@@ -1,6 +1,17 @@
 import { useState } from 'react'
+import { Link } from '@tanstack/react-router'
 import dayjs from 'dayjs'
-import { Download, Eye, FileText, Inbox, MoreHorizontal, Sparkles, Trash2, X } from 'lucide-react'
+import {
+  Download,
+  Eye,
+  FileText,
+  Inbox,
+  LayoutList,
+  MoreHorizontal,
+  Sparkles,
+  Trash2,
+  X,
+} from 'lucide-react'
 import { toast } from 'sonner'
 
 import {
@@ -348,6 +359,29 @@ function DocumentRow({
 
         {/* 快捷按钮组：hover/focus 时显示 */}
         <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+          {/* 分段：只有向量化完成的文档才有段可看 */}
+          {display === 'completed' && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-muted-foreground hover:text-foreground size-7"
+                  asChild
+                >
+                  <Link
+                    to="/knowledge/$kbId/documents/$docId"
+                    params={{ kbId, docId: doc.id }}
+                    aria-label="查看分段"
+                  >
+                    <LayoutList className="size-4" />
+                  </Link>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>查看分段</TooltipContent>
+            </Tooltip>
+          )}
+
           {canPreview && (
             <Tooltip>
               <TooltipTrigger asChild>

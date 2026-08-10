@@ -52,6 +52,7 @@ export type {
   DocumentStage,
   UploadStrategy,
   UploadInitOut,
+  Paragraph,
   RetrievalHit,
   RetrievalTestResult,
   BatchProcessResult,

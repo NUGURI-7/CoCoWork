@@ -12,6 +12,7 @@ import type {
   KnowledgeBaseCreatePayload,
   KnowledgeBaseUpdatePayload,
   PageData,
+  Paragraph,
   ParseBackend,
   RetrievalMode,
   RetrievalTestResult,
@@ -72,6 +73,11 @@ export function listDocumentsPaginated(
   params: { page?: number; page_size?: number } = {},
 ) {
   return get<PageData<Document>>(`/knowledge-bases/${kbId}/documents/page`, params)
+}
+
+/** 获取单个文档详情（分段页的 header 用）。 */
+export function getDocument(kbId: string, docId: string) {
+  return get<Document>(`/knowledge-bases/${kbId}/documents/${docId}`)
 }
 
 /** 删除文档（后端联动清 storage 对象 + ORM 级联清段/向量）。 */
@@ -208,6 +214,26 @@ export function uploadDocumentToR2(
     xhr.onerror = () => reject(new Error('网络错误，R2 上传中断'))
     xhr.send(file)
   })
+}
+
+// ============================================================================
+// Paragraph — 文档分段（只读）
+// ============================================================================
+
+/**
+ * 分页列出某文档切出的段（按 position 升序）。
+ *
+ * 段是处理管线的产物，只有已向量化的文档才有；没跑过的文档返回空页。
+ */
+export function listParagraphsPaginated(
+  kbId: string,
+  docId: string,
+  params: { page?: number; page_size?: number } = {},
+) {
+  return get<PageData<Paragraph>>(
+    `/knowledge-bases/${kbId}/documents/${docId}/paragraphs/page`,
+    params,
+  )
 }
 
 // ============================================================================
