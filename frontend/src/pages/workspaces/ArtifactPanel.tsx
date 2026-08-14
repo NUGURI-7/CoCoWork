@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Download, FileText, RefreshCw, X } from 'lucide-react'
+import { Download, ExternalLink, FileText, RefreshCw, X } from 'lucide-react'
 
 import { ARTIFACT_PAGE_SIZE, listWorkspaceArtifacts } from '@/api/artifact'
+import { ArtifactPreviewDialog } from '@/components/chat/ArtifactPreviewDialog'
 import {
   formatArtifactTime,
   formatKind,
   formatSize,
   iconFor,
+  previewKindOf,
   useArtifactActions,
 } from '@/components/chat/artifact-actions'
 import { setArtifactDragData } from '@/components/chat/artifact-drag'
@@ -55,9 +57,18 @@ function groupByConversation(items: WorkspaceArtifact[]) {
  * 面板本来就把整个工作空间的产出摊在这儿，拖哪条都行。拖走后卡片仍在
  * （effectAllowed=copy，传的是引用不是搬运）。
  */
-function ArtifactRow({ artifact }: { artifact: WorkspaceArtifact }) {
+function ArtifactRow({
+  artifact,
+  onPreview,
+}: {
+  artifact: WorkspaceArtifact
+  onPreview: (artifact: WorkspaceArtifact) => void
+}) {
   const { busy, open, download } = useArtifactActions(artifact.id)
   const Icon = iconFor(artifact.content_type)
+
+  const canPreview = !!previewKindOf(artifact.filename, artifact.content_type)
+  const activate = () => (canPreview ? onPreview(artifact) : open())
 
   return (
     <div
@@ -65,11 +76,11 @@ function ArtifactRow({ artifact }: { artifact: WorkspaceArtifact }) {
       tabIndex={0}
       draggable
       onDragStart={(e) => setArtifactDragData(e, artifact)}
-      onClick={open}
+      onClick={activate}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') open()
+        if (e.key === 'Enter' || e.key === ' ') activate()
       }}
-      title={`${artifact.filename} —— 点击打开，或拖进输入框交给 agent`}
+      title={`${artifact.filename} —— 点击${canPreview ? '预览' : '打开'}，或拖进输入框交给 agent`}
       className={cn(
         'group/row border-border bg-background flex items-center gap-3 rounded-lg border',
         'hover:border-foreground/20 hover:bg-muted/40 cursor-pointer px-3 py-2.5 transition-colors',
@@ -91,6 +102,21 @@ function ArtifactRow({ artifact }: { artifact: WorkspaceArtifact }) {
       </span>
 
       {/* 常驻可见：面板本来就是「来拿文件」的地方，藏起来等 hover 是给自己找麻烦 */}
+      <button
+        type="button"
+        aria-label="在新标签页打开"
+        onClick={(e) => {
+          e.stopPropagation() // 别顺带触发外层的「预览」
+          open()
+        }}
+        className={cn(
+          'text-muted-foreground/60 hover:text-foreground hover:bg-muted',
+          'flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors',
+        )}
+      >
+        <ExternalLink size={15} />
+      </button>
+
       <button
         type="button"
         aria-label="下载"
@@ -123,6 +149,8 @@ export function ArtifactPanel({
   const [items, setItems] = useState<WorkspaceArtifact[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
+  // 预览浮层持在面板这一层而不是每行一个：同时只可能看一个文件
+  const [previewing, setPreviewing] = useState<WorkspaceArtifact | null>(null)
   // 上一页拉满 = 后面大概率还有。少于一页就到底了，不必多发一次空请求
   const [hasMore, setHasMore] = useState(false)
 
@@ -214,7 +242,7 @@ export function ArtifactPanel({
               </h4>
               <div className="space-y-2">
                 {g.items.map((a) => (
-                  <ArtifactRow key={a.id} artifact={a} />
+                  <ArtifactRow key={a.id} artifact={a} onPreview={setPreviewing} />
                 ))}
               </div>
             </section>
@@ -235,6 +263,11 @@ export function ArtifactPanel({
           )}
         </div>
       )}
+
+      <ArtifactPreviewDialog
+        artifact={previewing}
+        onClose={() => setPreviewing(null)}
+      />
     </div>
   )
 }
