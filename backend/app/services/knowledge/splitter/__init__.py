@@ -5,9 +5,9 @@
 """
 
 from app.services.knowledge.splitter.base import Splitter
-from app.services.knowledge.splitter.langchain_impl import LangChainSplitter
+from app.services.knowledge.splitter.sentence_impl import SentenceSplitter
 
 # 模块级单例。装配硬编码（splitter 不是部署变量，不入 env）
-splitter: Splitter = LangChainSplitter()
+splitter: Splitter = SentenceSplitter()
 
 __all__ = ["Splitter", "splitter"]

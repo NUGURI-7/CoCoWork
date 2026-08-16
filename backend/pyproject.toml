@@ -39,6 +39,7 @@ dependencies = [
     "pdfplumber>=0.11.10",
     "docker[ssh]>=7.1.0",
     "ddgs>=9.14.4",
+    "tiktoken>=0.13.0",
 ]
 
 # 进程入口：uv sync 时据此在 .venv/bin/ 生成同名可执行文件，

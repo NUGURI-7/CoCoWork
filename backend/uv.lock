@@ -514,6 +514,7 @@ dependencies = [
     { name = "saq" },
     { name = "skills-ref" },
     { name = "tavily-python" },
+    { name = "tiktoken" },
     { name = "tortoise-orm", extra = ["asyncpg"] },
     { name = "uuid-utils" },
 ]
@@ -560,6 +561,7 @@ requires-dist = [
     { name = "saq", specifier = ">=0.26.4" },
     { name = "skills-ref", specifier = ">=0.1.1" },
     { name = "tavily-python", specifier = ">=0.7.23" },
+    { name = "tiktoken", specifier = ">=0.13.0" },
     { name = "tortoise-orm", extras = ["asyncpg"], specifier = ">=1.1.7" },
     { name = "uuid-utils", specifier = ">=0.14.0" },
 ]

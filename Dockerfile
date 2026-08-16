@@ -17,6 +17,7 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1 \
+    TIKTOKEN_CACHE_DIR=/opt/tiktoken \
     PATH="/app/backend/.venv/bin:$PATH"
 
 WORKDIR /app/backend
@@ -24,6 +25,12 @@ WORKDIR /app/backend
 # Install Python deps (cached layer)
 COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --frozen --no-dev
+
+# 把 tiktoken 的编码表烤进镜像（切块按 token 计数要用，见 splitter/sentence_impl.py）。
+# 首次 get_encoding 会去 openaipublic（Azure 存储）下这个文件；不预下的话，容器每次
+# 重建后的第一次切块都得联网，网络不通就是一次静默的文档处理失败。
+# 夹在依赖层与源码 COPY 之间：改后端代码不会让这层失效，重新构建不会重下。
+RUN python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')"
 
 # Copy backend source
 COPY backend/ ./
