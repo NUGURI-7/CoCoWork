@@ -163,6 +163,10 @@ class Paragraph(UUIDBaseModel, TimestampMixin):
     title = fields.CharField(max_length=256, default="", description="段 / 章节标题")
     position = fields.IntField(default=0, description="段在文档中的顺序")
     char_length = fields.IntField(default=0, description="字符数")
+    # 建在段上、不在子块上 —— **这是偏离**：RAGFlow / MaxKB 都建在子块级，
+    # 标准做法也是索引单元与检索单元一致。段级缺长度归一化
+    # （`ts_rank_cd(..., 32)` 只把分数压到 0~1、不管文档长度），会偏向长段落；
+    # 影响有限，但迁移代价与触发条件见 issues/013-keyword-index-granularity.md。
     search_vector = TSVectorField(
         null=True, description="全文检索词料（jieba 分词 → tsvector，建 GIN 索引）",
     )

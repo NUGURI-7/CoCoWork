@@ -1,0 +1,45 @@
+{
+  "ran_at": "2026-08-15T23:46:15",
+  "note": "",
+  "env": {
+    "kb_name": "医疗检索基准",
+    "kb_id": "019f6557-07f6-7562-8f89-79662490b257",
+    "paragraphs": 10000,
+    "chunks": 10798,
+    "embedding_dim": 1024,
+    "chunk_config": {
+      "overlap": 50,
+      "strategy": "recursive",
+      "chunk_size": 256
+    },
+    "indexes": [
+      "CREATE INDEX idx_paragraphs_search_vector ON public.paragraphs USING gin (search_vector)",
+      "CREATE INDEX embeddings_hnsw_medical ON public.embeddings USING hnsw (((embedding)::vector(1024)) vector_cosine_ops) WHERE (knowledge_base_id = '019f6557-07f6-7562-8f89-79662490b257'::uuid)",
+      "CREATE INDEX embeddings_hnsw_ecom ON public.embeddings USING hnsw (((embedding)::vector(1024)) vector_cosine_ops) WHERE (knowledge_base_id = '019f7abd-5e60-7102-bc50-91de371a3311'::uuid)"
+    ],
+    "tokenizer": {
+      "stopwords": 682
+    }
+  },
+  "params": {
+    "mode": "vector",
+    "top_k": 10,
+    "workers": 4,
+    "vector_weight": 0.5,
+    "rerank_model": null,
+    "rerank_window": null,
+    "queries_evaluated": 1000,
+    "queries_failed": 0,
+    "query_prefix": ""
+  },
+  "scores": {
+    "recall@10": 0.799,
+    "mrr@10": 0.6778
+  },
+  "latency_ms": {
+    "search": "未采（workers=4 并发跑，以 search_server 为准）",
+    "embed": "未采（workers=4 并发跑）",
+    "rerank": "未采（workers=4 并发跑）",
+    "search_server": "未采样（--explain N 开启）"
+  }
+}
