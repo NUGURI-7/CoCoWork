@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -7,11 +6,23 @@ from app.models.knowledge import ParseBackend, RetrievalMode
 
 
 class ChunkConfig(BaseModel):
-    """库级切块配置（一套，作用于库内所有文档）。"""
+    """库级切块配置（一套，作用于库内所有文档）。
 
-    chunk_size: int = Field(default=512, ge=128, le=2048, description="子块大小（约 token 数）")
-    overlap: int = Field(default=50, ge=0, le=512, description="相邻子块重叠")
-    strategy: Literal["recursive"] = Field(default="recursive", description="切块策略")
+    `chunk_size` / `overlap` 的单位是 **token**（cl100k_base 口径，见
+    `splitter.sentence_impl`）——不是字符。中文一字约 1.1~1.2 token，
+    故 256 折合 210~230 个汉字。
+
+    **默认值曾下调到 128，实测判退**（2026-08-15，医疗基准 1000 题）：
+    recall@10 0.799 → 0.769、mrr@10 0.678 → 0.649。原因是该语料段落中位数
+    仅 160 token 上下，本身就是完整的检索单元，切碎反而劈开语义。
+    256 是与改造前（256 字符）大致等长的档位，只是口径统一到了 token。
+    """
+
+    chunk_size: int = Field(default=256, ge=64, le=2048, description="子块大小（token）")
+    overlap: int = Field(
+        default=20, ge=0, le=512,
+        description="相邻子块重叠（token）；实际向上取整到完整句子，且不超过半块",
+    )
     prepend_title: bool = Field(
         default=True,
         description="算向量前是否给子块前置段的标题链；只影响送去 embedding 的文本，不影响落库的子块原文",

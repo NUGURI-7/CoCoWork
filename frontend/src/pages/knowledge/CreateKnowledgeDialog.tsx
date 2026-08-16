@@ -38,9 +38,10 @@ import {
   type ParseBackend,
 } from '@/types'
 
-/** 切块默认值（见 docs/design/knowledge-rag-v1.md §5；中文 RAG 甜区） */
+/** 切块默认值。单位是 token（cl100k_base 口径），中文一字约 1.14 token，
+ *  故 256 折合约 225 个汉字。与后端 ChunkConfig 的默认值保持一致 */
 const DEFAULT_CHUNK_SIZE = '256'
-const DEFAULT_OVERLAP = '50'
+const DEFAULT_OVERLAP = '20'
 /** 与后端 ChunkConfig.prepend_title 的默认值保持一致 */
 const DEFAULT_PREPEND_TITLE = true
 
@@ -111,9 +112,8 @@ export function CreateKnowledgeDialog({
         description: description.trim() || undefined,
         embedding_model_id: modelId,
         chunk_config: {
-          chunk_size: Number(chunkSize) || 256,
-          overlap: Number(overlap) || 50,
-          strategy: 'recursive',
+          chunk_size: Number(chunkSize) || Number(DEFAULT_CHUNK_SIZE),
+          overlap: Number(overlap) || Number(DEFAULT_OVERLAP),
           prepend_title: prependTitle,
         },
         parse_backend: parseBackend,

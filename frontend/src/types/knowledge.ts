@@ -33,9 +33,10 @@ export const PARSE_BACKEND_HINTS: Record<ParseBackend, string> = {
 
 /** 库级切块配置（一套，作用于库内所有文档） */
 export interface ChunkConfig {
+  /** 单位 token（cl100k_base 口径），不是字符 */
   chunk_size: number
+  /** 单位 token；实际向上取整到完整句子，且不超过半块 */
   overlap: number
-  strategy: 'recursive'
   /**
    * 算向量前是否给子块前置段的标题链。
    * 只影响送去 embedding 的文本，不影响落库的子块原文；改了要重新处理文档才生效。
