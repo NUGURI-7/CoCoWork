@@ -42,7 +42,7 @@
 
 # CoCoWork — Claude Code 指南
 
-> **AI Agent 管理平台**（暂定方向，随开发推进持续演化）：基于 LangGraph + FastAPI + PostgreSQL（pgvector）+ Redis 构建后端，React 19 + shadcn/ui 构建前端。核心能力包括：多 Agent 编排与调度、RAG 混合检索（向量 + 全文检索 + 重排序）、Prompt 版本管理、Skill 技能市场、知识库管理；支持语音交互（ASR/TTS）与视觉理解多模态输入输出；提供多层 RBAC 权限管控与资源隔离。定位为可管理、可编排、可扩展的一站式 Agent 平台。
+> **AI Agent 管理平台**（暂定方向，随开发推进持续演化）：基于 LangGraph + FastAPI + PostgreSQL（pgvector）+ Redis 构建后端，React 19 + shadcn/ui 构建前端。核心能力包括：多 Agent 编排与调度、RAG 混合检索（向量 + 全文检索 + 重排序）、Skill 技能市场、知识库管理；支持语音交互（ASR/TTS）与视觉理解多模态输入输出；提供多层 RBAC 权限管控与资源隔离。定位为可管理、可编排、可扩展的一站式 Agent 平台。
 
 ## 项目结构
 
