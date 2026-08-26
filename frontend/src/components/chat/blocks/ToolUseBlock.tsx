@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import { ChevronDown, Wrench, XCircle } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
@@ -63,7 +63,9 @@ function shortenSandboxPaths(text: string): string {
  * 折叠：local state + initial = block.collapsed；status 从运行态变终态时
  * 自动折叠（执行完成默认收起、用户已经看到参数 / 结果浮现过）。
  */
-export function ToolUseBlock({ block }: ToolUseBlockProps) {
+export const ToolUseBlock = memo(function ToolUseBlock({
+  block,
+}: ToolUseBlockProps) {
   const [collapsed, setCollapsed] = useState(block.collapsed)
 
   useEffect(() => {
@@ -177,4 +179,4 @@ export function ToolUseBlock({ block }: ToolUseBlockProps) {
       )}
     </div>
   )
-}
+})

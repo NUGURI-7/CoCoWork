@@ -36,6 +36,7 @@
     "katex": "^0.17.0",
     "ldrs": "^1.1.9",
     "lucide-react": "^0.469.0",
+    "marked": "^18.0.11",
     "mermaid": "^11.15.0",
     "nprogress": "^0.2.0",
     "radix-ui": "^1.5.0",

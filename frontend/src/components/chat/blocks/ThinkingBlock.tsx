@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { Brain, ChevronDown } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
@@ -19,7 +19,9 @@ interface ThinkingBlockProps {
  * 折叠状态走 local state，store 的 block.collapsed 当初始默认值。
  * useEffect 监听 status 变 'done' 时自动折叠（思考完成默认收起、节省视觉空间）。
  */
-export function ThinkingBlock({ block }: ThinkingBlockProps) {
+export const ThinkingBlock = memo(function ThinkingBlock({
+  block,
+}: ThinkingBlockProps) {
   const [collapsed, setCollapsed] = useState(block.collapsed)
   const isActive = block.status === 'active'
 
@@ -58,4 +60,4 @@ export function ThinkingBlock({ block }: ThinkingBlockProps) {
       )}
     </div>
   )
-}
+})

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { ChevronDown, User } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
@@ -23,7 +23,9 @@ interface DelegateBlockProps {
  * （管家会在主流接着总结结果，过程默认收起、可手动展开回看）。
  */
 
-export function DelegateBlock({ block }: DelegateBlockProps) {
+export const DelegateBlock = memo(function DelegateBlock({
+  block,
+}: DelegateBlockProps) {
   const info = useSubagentInfo(block.subagentName)
   const label = info?.name || block.subagentName || '成员'
   const palette = softPalette(block.subagentName || label)
@@ -95,4 +97,4 @@ export function DelegateBlock({ block }: DelegateBlockProps) {
       )}
     </div>
   )
-}
+})

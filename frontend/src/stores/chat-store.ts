@@ -174,6 +174,23 @@ export interface ChatState {
  */
 export type ChatStore = StoreApi<ChatState>
 
+/**
+ * 文本增量攒批的窗口。
+ *
+ * 每个 token 单独 set 一次会把重渲染频率顶到模型的吐字速率（25~40 次/秒）。
+ * 单次渲染耗时随内容增长，一旦超过 token 到达间隔就再也追不上：队列越积越长、
+ * 每轮要处理的更多，正反馈直到主线程 100% 占满、页面完全不响应，只能等流结束
+ * 才排空。攒 80ms 合并成一次，把频率钉死在 12 次/秒，与模型多快无关。
+ */
+const DELTA_FLUSH_MS = 80
+
+interface PendingDelta {
+  index: number
+  delegateId: string | undefined
+  kind: 'text_delta' | 'thinking_delta'
+  text: string
+}
+
 // ============ 工厂 ============
 
 export function createChatStore({
@@ -196,9 +213,89 @@ export function createChatStore({
 
   return createStore<ChatState>()(
     immer((set, get) => {
+      // ===== 文本增量攒批（见 DELTA_FLUSH_MS）=====
+
+      /** key = `${delegateId ?? ''}#${index}`，同一个块的增量按到达顺序拼接 */
+      const pendingDeltas = new Map<string, PendingDelta>()
+      let flushTimer: number | null = null
+
+      /** 把攒着的增量一次性写进 store。清空缓冲 + 撤掉待触发的定时器。 */
+      function flushDeltas() {
+        if (flushTimer !== null) {
+          clearTimeout(flushTimer)
+          flushTimer = null
+        }
+        if (pendingDeltas.size === 0) return
+        const batch = [...pendingDeltas.values()]
+        pendingDeltas.clear()
+        set((s) => {
+          const m = s.messages[s.messages.length - 1]
+          if (m?.role !== 'assistant') return
+          for (const item of batch) {
+            const b = containerFor(m.blocks, item.delegateId).find(
+              (x) => x.index === item.index,
+            )
+            if (!b) continue
+            if (b.type === 'text' && item.kind === 'text_delta') {
+              b.content += item.text
+            } else if (b.type === 'thinking' && item.kind === 'thinking_delta') {
+              b.content += item.text
+            }
+          }
+        })
+      }
+
+      function scheduleFlush() {
+        if (flushTimer !== null) return
+        flushTimer = window.setTimeout(() => {
+          flushTimer = null
+          flushDeltas()
+        }, DELTA_FLUSH_MS)
+      }
+
+      /** 丢弃攒着的增量（清空时用）—— 消息都不留了，缓冲里的字没有归宿。 */
+      function discardDeltas() {
+        if (flushTimer !== null) {
+          clearTimeout(flushTimer)
+          flushTimer = null
+        }
+        pendingDeltas.clear()
+      }
+
       // ===== SSE event 分发（11 case + default warn）=====
       // 包成 closure，set/get 直接从外层闭包拿，避免传 helper 的类型签名地狱
       function dispatch(event: string, payload: unknown) {
+        // 文本增量不立刻落库，先攒着 —— 见 DELTA_FLUSH_MS 处的说明
+        if (event === 'content_block_delta') {
+          const p = payload as ContentBlockDeltaPayload
+          const text =
+            p.type === 'text_delta'
+              ? p.text
+              : p.type === 'thinking_delta'
+                ? p.thinking
+                : undefined
+          if (!text) return
+          const key = `${p.delegate_id ?? ''}#${p.index}`
+          const existing = pendingDeltas.get(key)
+          if (existing) {
+            existing.text += text
+          } else {
+            pendingDeltas.set(key, {
+              index: p.index,
+              delegateId: p.delegate_id,
+              kind: p.type,
+              text,
+            })
+          }
+          scheduleFlush()
+          return
+        }
+
+        // 其余事件都可能依赖「前面的字已经写进去了」（block_stop 收尾、
+        // tool_result 落状态、message_stop 结算）—— 先把攒的刷掉再处理，
+        // 否则顺序会错乱：块都停了，字还在缓冲里
+        flushDeltas()
+
         switch (event) {
           case 'message_start': {
             const p = payload as MessageStartPayload
@@ -247,27 +344,6 @@ export function createChatStore({
                       content: '',
                     }
               containerFor(m.blocks, p.delegate_id).push(block)
-            })
-            return
-          }
-          case 'content_block_delta': {
-            const p = payload as ContentBlockDeltaPayload
-            set((s) => {
-              const m = s.messages[s.messages.length - 1]
-              if (m?.role !== 'assistant') return
-              const b = containerFor(m.blocks, p.delegate_id).find(
-                (x) => x.index === p.index,
-              )
-              if (!b) return
-              if (b.type === 'text' && p.type === 'text_delta' && p.text) {
-                b.content += p.text
-              } else if (
-                b.type === 'thinking' &&
-                p.type === 'thinking_delta' &&
-                p.thinking
-              ) {
-                b.content += p.thinking
-              }
             })
             return
           }
@@ -589,6 +665,9 @@ export function createChatStore({
           } catch (err) {
             handleStreamError(err)
           } finally {
+            // 流没走到 message_stop 就断了（中断 / 网络错）时，缓冲里可能还压着
+            // 最后一批字 —— 补一次 flush，不然那几个字永远显示不出来
+            flushDeltas()
             set((s) => {
               s.isLoading = false
             })
@@ -641,6 +720,8 @@ export function createChatStore({
           } catch (err) {
             handleStreamError(err)
           } finally {
+            // 同 send：续跑的流也可能没走到 message_stop 就断，补一次 flush
+            flushDeltas()
             markSubmitting(false)
             set((s) => {
               s.isLoading = false
@@ -652,6 +733,9 @@ export function createChatStore({
         stop() {
           // 立即 UI 反馈 + 真正 abort（全链路真停、见 runner / adapter cancel 设计）
           if (abortCtrl) abortCtrl.abort()
+          // 缓冲里压着的是「已经生成出来的字」—— 中断只停后续生成，不该把
+          // 这不到 80ms 的内容吞掉；先落库再标中断态，顺序才对
+          flushDeltas()
           set((s) => {
             const last = s.messages[s.messages.length - 1] as
               | AssistantMessage
@@ -667,6 +751,7 @@ export function createChatStore({
         reset() {
           if (abortCtrl) abortCtrl.abort()
           abortCtrl = null
+          discardDeltas()
           set((s) => {
             s.messages = []
             s.isLoading = false

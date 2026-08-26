@@ -1,4 +1,5 @@
-import { isValidElement } from 'react'
+import { isValidElement, memo, useMemo } from 'react'
+import { marked } from 'marked'
 import ReactMarkdown from 'react-markdown'
 import rehypeKatex from 'rehype-katex'
 import remarkGfm from 'remark-gfm'
@@ -63,9 +64,80 @@ function normalizeLatexDelimiters(content: string): string {
   return out.join('')
 }
 
+/**
+ * 把 markdown 源码切成「顶层块」的原始文本 —— 流式渲染的性能地基。
+ *
+ * 不切的话，每来一个 token 都要把**整篇**重新走一遍 remark/rehype 管线，
+ * 单次耗时随内容线性增长；一旦超过 token 到达间隔就会积压成雪崩（实测
+ * 26000 字符时单次约 90ms，40ms 一个 token 的流会把主线程彻底占死）。
+ * 切开之后，写完的块各自被 memo 挡住，只有正在写的最后一块需要重新解析。
+ *
+ * 用 marked 的 lexer 而不是按空行切：列表、表格、fenced code 的块边界它认得准，
+ * 自己按 `\n\n` 切会把松散列表和代码块里的空行切错。lexer 只做词法分析、
+ * 不生成 DOM，比整条渲染管线便宜一个数量级。
+ */
+function splitTopLevelBlocks(source: string): string[] {
+  if (!source) return []
+  try {
+    return marked
+      .lexer(source)
+      .filter((token) => token.type !== 'space')
+      .map((token) => token.raw)
+      .filter((raw) => raw.trim().length > 0)
+  } catch {
+    // lexer 对半截 markdown 极少抛错；真抛了就退回整篇渲染，不能让内容消失
+    return [source]
+  }
+}
+
+interface MarkdownChunkProps {
+  chunk: string
+  /** 只有正在写的最后一块会拿到 true —— 已完成的块 props 恒定，memo 才拦得住 */
+  isStreaming?: boolean
+}
+
+/**
+ * 单个顶层块的渲染单元。memo 的浅比较看的就是 chunk 字符串：
+ * 内容没变就整块跳过，remark/rehype/hljs 一次都不跑。
+ */
+const MarkdownChunk = memo(function MarkdownChunk({
+  chunk,
+  isStreaming,
+}: MarkdownChunkProps) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[rehypeKatex]}
+      components={{
+        pre({ children }) {
+          // react-markdown 给 pre 的 children 总是单个 <code> 元素
+          // （markdown spec：fenced code 一定是 pre > code 结构）
+          if (
+            isValidElement<{ className?: string; children?: React.ReactNode }>(children) &&
+            children.type === 'code'
+          ) {
+            const { className, children: codeChildren } = children.props
+            const match = /language-(\w+)/.exec(className ?? '')
+            const lang = match?.[1] ?? ''
+            const source = String(codeChildren ?? '').replace(/\n$/, '')
+            if (lang === 'mermaid') {
+              return <MermaidBlock source={source} isStreaming={isStreaming} />
+            }
+            return <CodeBlock lang={lang} source={source} />
+          }
+          // 兜底（极少触发）：原样吐出
+          return <pre>{children}</pre>
+        },
+      }}
+    >
+      {chunk}
+    </ReactMarkdown>
+  )
+})
+
 interface MarkdownRenderProps {
   content: string
-  /** 流式期标识 —— P0 未消费、保留口子（未来 Mermaid / 高昂渲染按需禁用） */
+  /** 流式期标识 —— 只透传给最后一块（未完成的 Mermaid 靠它显示占位） */
   isStreaming?: boolean
   /** true = user 消息（自动换行触发 break-words，避免长链接撑爆气泡） */
   isUser?: boolean
@@ -78,6 +150,11 @@ export function MarkdownRender({
   isUser,
   className,
 }: MarkdownRenderProps) {
+  const chunks = useMemo(
+    () => splitTopLevelBlocks(normalizeLatexDelimiters(content)),
+    [content],
+  )
+
   return (
     <div
       className={cn(
@@ -90,33 +167,14 @@ export function MarkdownRender({
         className,
       )}
     >
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeKatex]}
-        components={{
-          pre({ children }) {
-            // react-markdown 给 pre 的 children 总是单个 <code> 元素
-            // （markdown spec：fenced code 一定是 pre > code 结构）
-            if (
-              isValidElement<{ className?: string; children?: React.ReactNode }>(children) &&
-              children.type === 'code'
-            ) {
-              const { className, children: codeChildren } = children.props
-              const match = /language-(\w+)/.exec(className ?? '')
-              const lang = match?.[1] ?? ''
-              const source = String(codeChildren ?? '').replace(/\n$/, '')
-              if (lang === 'mermaid') {
-                return <MermaidBlock source={source} isStreaming={isStreaming} />
-              }
-              return <CodeBlock lang={lang} source={source} />
-            }
-            // 兜底（极少触发）：原样吐出
-            return <pre>{children}</pre>
-          },
-        }}
-      >
-        {normalizeLatexDelimiters(content)}
-      </ReactMarkdown>
+      {chunks.map((chunk, i) => (
+        <MarkdownChunk
+          key={i}
+          chunk={chunk}
+          // 只有最后一块可能还没写完；给前面的块传 undefined，props 才是恒定的
+          isStreaming={isStreaming && i === chunks.length - 1}
+        />
+      ))}
     </div>
   )
 }
