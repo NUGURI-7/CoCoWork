@@ -305,6 +305,41 @@ export interface ToolUseBlock {
 }
 
 /**
+ * 一次文件操作 —— 与 ToolUseBlock 是同一批 SSE 事件，只是不单独占块。
+ *
+ * 字段是 ToolUseBlock 去掉「自己怎么展示」那部分（type / displayName / collapsed）：
+ * 展开与否由所属的 FileOpsBlock 整组决定，中文名由工具名查表得到（这几个工具
+ * 不走本项目 CoCoTool 基类，后端不下发 display_name）。
+ */
+export interface FileOp {
+  /** 全局块编号 —— 事件仍按它回填，只是块被收进了组里 */
+  index: number
+  status: 'building' | 'calling' | 'success' | 'error'
+  id: string
+  name: string
+  partialInputJson: string
+  resultSummary: string | null
+  resultData: unknown
+}
+
+/**
+ * 文件操作组 —— 连续的 ls / read_file / write_file / edit_file / glob / grep
+ * 合并成一条活动行（见 blocks/tool-format.ts 的分类说明）。
+ *
+ * 「连续」不靠额外状态维护：建块时只看容器最后一个块是不是本类型，中间插了
+ * 正文、execute 或派活就自然断开，下一批开新的一组。
+ *
+ * index = 组内第一个操作的块编号 —— 组在主流里的排序位置由它决定，与别的块
+ * 共用同一套全局编号，不需要另发一套 id。
+ */
+export interface FileOpsBlock {
+  type: 'file_ops'
+  index: number
+  ops: FileOp[]
+  collapsed: boolean
+}
+
+/**
  * 派活块 —— 管家调 `task` 工具把活分给某成员（子 agent）时建。
  *
  * 它在主流 blocks 里占位（管家「我让老二算」的位置），自己内部嵌一个 `blocks`
@@ -351,6 +386,7 @@ export type RenderBlock =
   | TextBlock
   | ThinkingBlock
   | ToolUseBlock
+  | FileOpsBlock
   | DelegateBlock
   | AskBlock
 

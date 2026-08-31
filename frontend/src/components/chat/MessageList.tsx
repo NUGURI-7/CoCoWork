@@ -21,6 +21,7 @@ import { AskBlock } from './blocks/AskBlock'
 import { DelegateBlock } from './blocks/DelegateBlock'
 import { TextBlock } from './blocks/TextBlock'
 import { ThinkingBlock } from './blocks/ThinkingBlock'
+import { FileOpsBlock } from './blocks/FileOpsBlock'
 import { ToolUseBlock } from './blocks/ToolUseBlock'
 import { useChat } from './ChatProvider'
 import { useSubagentInfo } from './SubagentDirectory'
@@ -275,6 +276,9 @@ const AssistantMessageRow = memo(function AssistantMessageRow({
         }
         if (block.type === 'delegate') {
           return <DelegateBlock key={block.index} block={block} />
+        }
+        if (block.type === 'file_ops') {
+          return <FileOpsBlock key={block.index} block={block} />
         }
         if (block.type === 'ask') {
           return (

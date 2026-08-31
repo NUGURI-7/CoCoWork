@@ -31,6 +31,7 @@ import { toast } from 'sonner'
 import { v4 as uuidv4 } from 'uuid'
 
 import { ChatStreamHttpError, streamChat } from '@/api/chat-stream'
+import { isFileOpTool } from '@/components/chat/blocks/tool-format'
 import type {
   ApiContentBlock,
   ApiHistoryMessage,
@@ -45,6 +46,8 @@ import type {
   ContentBlockStopPayload,
   DelegateBlock,
   ErrorPayload,
+  FileOp,
+  FileOpsBlock,
   MessageDeltaPayload,
   MessageStopPayload,
   MessageStartPayload,
@@ -117,6 +120,28 @@ function containerFor(
     }
   }
   return blocks
+}
+
+/**
+ * 按块编号找到那个块 —— 顶层找不到就钻进文件操作组里找它的某个 op。
+ *
+ * tool_use_delta / tool_use_stop / tool_result 三个事件都只带 index，而文件操作
+ * 被收进了组里、不在容器顶层。组本身用组内第一个 op 的编号，所以顶层那次 find
+ * 会命中组、而不是要找的那个 op —— 因此**先钻组、后认顶层**，顺序不能反。
+ *
+ * 返回 RenderBlock | FileOp，调用方按 'type' in b 区分（FileOp 没有 type 字段）。
+ */
+function findBlockByIndex(
+  blocks: RenderBlock[],
+  index: number,
+): RenderBlock | FileOp | undefined {
+  for (const b of blocks) {
+    if (b.type === 'file_ops') {
+      const op = b.ops.find((o) => o.index === index)
+      if (op) return op
+    }
+  }
+  return blocks.find((b) => b.index === index)
 }
 
 // ============ State / Actions 类型 ============
@@ -385,6 +410,35 @@ export function createChatStore({
                 m.blocks.push(delegate)
                 return
               }
+              const container = containerFor(m.blocks, p.delegate_id)
+
+              // 文件操作不单独占块，追加进当前这一组（末尾那个 file_ops）。
+              // 末尾不是 file_ops 说明中间插了别的东西 —— 那一组已经断了，开新的
+              if (isFileOpTool(p.name)) {
+                const op: FileOp = {
+                  index: p.index,
+                  status: 'building',
+                  id: p.id,
+                  name: p.name,
+                  partialInputJson: '',
+                  resultSummary: null,
+                  resultData: null,
+                }
+                const last = container[container.length - 1]
+                if (last?.type === 'file_ops') {
+                  last.ops.push(op)
+                  return
+                }
+                const group: FileOpsBlock = {
+                  type: 'file_ops',
+                  index: p.index,
+                  ops: [op],
+                  collapsed: true,
+                }
+                container.push(group)
+                return
+              }
+
               const block: ToolUseBlock = {
                 type: 'tool_use',
                 index: p.index,
@@ -398,7 +452,7 @@ export function createChatStore({
                 resultData: null,
                 collapsed: false,
               }
-              containerFor(m.blocks, p.delegate_id).push(block)
+              container.push(block)
             })
             return
           }
@@ -407,11 +461,14 @@ export function createChatStore({
             set((s) => {
               const m = s.messages[s.messages.length - 1]
               if (m?.role !== 'assistant') return
-              const b = containerFor(m.blocks, p.delegate_id).find(
-                (x) => x.index === p.index,
+              const b = findBlockByIndex(
+                containerFor(m.blocks, p.delegate_id),
+                p.index,
               )
-              if (b?.type === 'delegate') b.argsJson += p.partial_json
-              else if (b?.type === 'tool_use')
+              if (!b) return
+              if (!('type' in b)) b.partialInputJson += p.partial_json
+              else if (b.type === 'delegate') b.argsJson += p.partial_json
+              else if (b.type === 'tool_use')
                 b.partialInputJson += p.partial_json
             })
             return
@@ -421,10 +478,15 @@ export function createChatStore({
             set((s) => {
               const m = s.messages[s.messages.length - 1]
               if (m?.role !== 'assistant') return
-              const b = containerFor(m.blocks, p.delegate_id).find(
-                (x) => x.index === p.index,
+              const b = findBlockByIndex(
+                containerFor(m.blocks, p.delegate_id),
+                p.index,
               )
-              if (b?.type === 'delegate') {
+              if (!b) return
+              if (!('type' in b)) {
+                // 文件操作：参数收齐即进入等待执行；摘要渲染时现算，不落状态
+                b.status = 'calling'
+              } else if (b.type === 'delegate') {
                 // task args 收齐 → 解析派给谁（subagent_type）+ 派的活（description）
                 try {
                   const args = JSON.parse(b.argsJson) as {
@@ -451,12 +513,18 @@ export function createChatStore({
             set((s) => {
               const m = s.messages[s.messages.length - 1]
               if (m?.role !== 'assistant') return
-              const b = containerFor(m.blocks, p.delegate_id).find(
-                (x) => x.index === p.index,
+              const b = findBlockByIndex(
+                containerFor(m.blocks, p.delegate_id),
+                p.index,
               )
-              if (b?.type === 'delegate') {
+              if (!b) return
+              if (!('type' in b)) {
+                b.status = p.status
+                b.resultSummary = p.result_summary
+                b.resultData = p.result_data
+              } else if (b.type === 'delegate') {
                 b.status = p.status === 'error' ? 'error' : 'done'
-              } else if (b?.type === 'tool_use') {
+              } else if (b.type === 'tool_use') {
                 b.status = p.status
                 b.resultSummary = p.result_summary
                 b.resultData = p.result_data

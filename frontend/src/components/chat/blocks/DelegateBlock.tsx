@@ -7,6 +7,7 @@ import type { DelegateBlock as DelegateBlockType } from '@/types'
 import { useSubagentInfo } from '../SubagentDirectory'
 import { TextBlock } from './TextBlock'
 import { ThinkingBlock } from './ThinkingBlock'
+import { FileOpsBlock } from './FileOpsBlock'
 import { ToolUseBlock } from './ToolUseBlock'
 
 interface DelegateBlockProps {
@@ -89,6 +90,8 @@ export const DelegateBlock = memo(function DelegateBlock({
               return <TextBlock key={b.index} block={b} />
             if (b.type === 'thinking')
               return <ThinkingBlock key={b.index} block={b} />
+            if (b.type === 'file_ops')
+              return <FileOpsBlock key={b.index} block={b} />
             if (b.type === 'tool_use')
               return <ToolUseBlock key={b.index} block={b} />
             return null

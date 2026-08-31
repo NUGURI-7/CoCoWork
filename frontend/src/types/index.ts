@@ -114,6 +114,8 @@ export type {
   TextBlock,
   ThinkingBlock,
   ToolUseBlock,
+  FileOp,
+  FileOpsBlock,
   DelegateBlock,
   AskBlock,
   RenderBlock,
