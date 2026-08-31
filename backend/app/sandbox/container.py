@@ -32,6 +32,36 @@ _TMPFS = {
 }
 
 
+# paramiko 通道的心跳间隔（秒）。远端 daemon 那条 ssh 连接闲置久了会被中间设备
+# 静默掐断，心跳让它一直有动静，从源头减少被掐。
+_SSH_KEEPALIVE = 30
+
+
+def _enable_ssh_keepalive(client: docker.DockerClient) -> None:
+    """给 ssh:// 那条路的 paramiko 通道开心跳。
+
+    **为什么不能写在 ~/.ssh/config 里**：docker 走的是 paramiko 而不是系统 ssh
+    命令，而它只从 ssh config 读 proxycommand / hostname / port / user /
+    identityfile 五项 —— `ServerAliveInterval`、`ControlMaster` 这些是 OpenSSH
+    客户端自己的功能，paramiko 根本不实现，写在那儿对这条连接毫无作用。
+
+    **为什么值得设**：docker-py 的 ssh 适配器只在初始化时建一次 paramiko 通道，
+    之后所有请求复用它；它那段重连代码在连接池已缓存时走不到，所以这条通道一旦
+    被掐，整个进程就再也连不上 daemon，只能重启。心跳不根治（真断网还是会断），
+    但能把「闲置十分钟就断」压到基本不断。
+
+    拿不到 transport 就安静跳过：这只是加固，不该让它挡住启动。走本机
+    docker.sock 时压根没有 ssh 适配器，也从这里直接返回。
+    """
+    adapter = getattr(client.api, "_custom_adapter", None)
+    ssh_client = getattr(adapter, "ssh_client", None)
+    if ssh_client is None:
+        return
+    transport = ssh_client.get_transport()
+    if transport is not None:
+        transport.set_keepalive(_SSH_KEEPALIVE)
+
+
 @lru_cache(maxsize=1)
 def get_client() -> docker.DockerClient:
     """连 docker daemon，进程内单例。
@@ -45,10 +75,12 @@ def get_client() -> docker.DockerClient:
     hostname / user / identityfile，主机别名照常生效。
     """
     if settings.SANDBOX_DOCKER_HOST:
-        return docker.DockerClient(
+        client = docker.DockerClient(
             base_url=settings.SANDBOX_DOCKER_HOST,
             version="auto",
         )
+        _enable_ssh_keepalive(client)
+        return client
     return docker.from_env(version="auto")
 
 

@@ -9,6 +9,18 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+# 连接保活参数 —— 远端 Redis 专用。
+#
+# 连接闲置久了会被中间的网络设备（NAT / 防火墙 / 本机代理的 TUN）静默掐断：
+# 不发 FIN，两边都不知道线已经没了，直到下次复用池里那条死连接才报错。
+#
+# - health_check_interval：连接闲置超过这个秒数时，交出去之前先 ping 一次，
+#   ping 不通就重连。这是 redis-py 为「连接被中间设备静默掐断」提供的开关。
+# - socket_keepalive：TCP 层心跳，让中间设备一直看得到动静、不把映射条目丢掉。
+#
+# 两个是互补的：keepalive 减少被掐的次数，health check 兜住已经被掐的那次。
+REDIS_HEALTH_CHECK_INTERVAL = 30
+
 
 class RedisClient:
     """Redis 异步客户端封装。
@@ -27,6 +39,8 @@ class RedisClient:
             settings.redis_url,
             max_connections=settings.REDIS_MAX_CONNECTIONS,
             decode_responses=True,
+            health_check_interval=REDIS_HEALTH_CHECK_INTERVAL,
+            socket_keepalive=True,
         )
         self._client = aioredis.Redis(connection_pool=self._pool)
         try:
