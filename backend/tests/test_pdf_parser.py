@@ -21,10 +21,13 @@ from pathlib import Path
 import pytest
 
 from app.services.knowledge.assembler import assemble_paragraphs
+from app.services.knowledge.parser import figure_marker, strip_figure_markers
 from app.services.knowledge.parser.base import BlockType
 from app.services.knowledge.parser.pdf_impl import (
     PdfParser,
     _body_size,
+    _build_blocks,
+    _is_page_background,
     _cover_pages,
     _group_lines,
     _heading_levels,
@@ -521,3 +524,154 @@ def test_journal_two_column_does_not_crash():
 async def test_public_parse_matches_sync(synthetic_blocks):
     """公开入口只是把同步实现丢进线程池（勿阻塞事件循环），结果必须一致。"""
     assert await PdfParser().parse(SYNTHETIC.read_bytes()) == synthetic_blocks
+
+
+# --- 抽图（位图插图）---
+
+
+def _pdf_with_partial_image() -> bytes:
+    """手搓一份最小 PDF：400x300 的页，一行文字在上、一行在下，中间 (150,120)-(250,180)
+    夹一张 100x60 的红色位图。确定性、零外部依赖，故此测试永远跑（不像真语料会跳过）。
+
+    用手搓而非 Pillow：Pillow 存 PDF 会把整页糊成一张图（`page.images` 只返回整页），
+    造不出「图夹在正文里的局部位图」这个唯一要测的形状。
+    """
+    import zlib
+
+    w, h, iw, ih = 400, 300, 100, 60
+    comp = zlib.compress(bytes([255, 0, 0]) * (iw * ih))  # 纯红 RGB 像素流
+    objs = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %d %d] /Resources << "
+        b"/XObject << /Im0 5 0 R >> /Font << /F0 6 0 R >> >> /Contents 4 0 R >>" % (w, h),
+        None,
+        None,
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    content = (
+        b"BT /F0 12 Tf 60 250 Td (Research method shown below) Tj ET\n"
+        b"BT /F0 12 Tf 60 60 Td (As seen in the figure) Tj ET\n"
+        b"q 100 0 0 60 150 120 cm /Im0 Do Q"
+    )
+    objs[3] = b"<< /Length %d >>\nstream\n%s\nendstream" % (len(content), content)
+    objs[4] = (
+        b"<< /Type /XObject /Subtype /Image /Width %d /Height %d /ColorSpace "
+        b"/DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length %d >>\n"
+        b"stream\n%s\nendstream" % (iw, ih, len(comp), comp)
+    )
+    pdf = b"%PDF-1.4\n"
+    offsets = []
+    for i, body in enumerate(objs, 1):
+        offsets.append(len(pdf))
+        pdf += b"%d 0 obj\n%s\nendobj\n" % (i, body)
+    xref = len(pdf)
+    pdf += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1)
+    for off in offsets:
+        pdf += b"%010d 00000 n \n" % off
+    pdf += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF" % (
+        len(objs) + 1, xref,
+    )
+    return pdf
+
+
+@pytest.mark.parametrize(
+    "bbox,expected",
+    [
+        ((0.0, 0.0, 400.0, 300.0), True),      # 整页 → 背景
+        ((0.0, 0.0, 380.0, 290.0), True),      # 近整页（留边距）→ 仍算背景
+        ((150.0, 120.0, 250.0, 180.0), False), # 小块插图 → 不是背景
+        ((0.0, 0.0, 0.0, 0.0), False),         # 退化空框 → 不是背景
+    ],
+)
+def test_is_page_background(bbox, expected):
+    """整页底图（扫描件）判背景、局部插图判非背景；阈值 0.9 的两侧各验一例。"""
+    assert _is_page_background(bbox, 400.0, 300.0) is expected
+
+
+def test_is_page_background_zero_page():
+    """页面尺寸为 0（畸形 PDF）不除零、不误判，返回 False。"""
+    assert _is_page_background((0.0, 0.0, 10.0, 10.0), 0.0, 0.0) is False
+
+
+def test_build_blocks_emits_figure_block():
+    """手编一张图喂给 `_build_blocks`：产一个 FIGURE 块，记号/编号/字节/框都对。"""
+    figures = [(1, 100.0, b"PNGBYTES", (10.0, 20.0, 30.0, 40.0))]
+    blocks = _build_blocks(
+        lines=[], tables=[], figures=figures, running=set(),
+        body_size=12.0, levels={}, cover_pages=set(),
+    )
+    assert len(blocks) == 1
+    fig = blocks[0]
+    assert fig.block_type is BlockType.FIGURE
+    assert fig.text == "[[figure:1]]"
+    assert fig.page == 1
+    assert fig.meta == {"image_bytes": b"PNGBYTES", "index": 1, "bbox": (10.0, 20.0, 30.0, 40.0)}
+
+
+def test_build_blocks_figure_sits_between_paragraphs():
+    """图按 top 排回原位：上方正文、图、下方正文，顺序不乱；多图编号自增。"""
+    lines = [line(text="上段", top=50.0, page=1), line(text="下段", top=300.0, page=1)]
+    figures = [
+        (1, 100.0, b"A", (10.0, 100.0, 90.0, 180.0)),
+        (1, 200.0, b"B", (10.0, 200.0, 90.0, 280.0)),
+    ]
+    blocks = _build_blocks(
+        lines=lines, tables=[], figures=figures, running=set(),
+        body_size=12.0, levels={}, cover_pages=set(),
+    )
+    kinds = [(b.block_type, b.text) for b in blocks]
+    assert kinds == [
+        (BlockType.PARAGRAPH, "上段"),
+        (BlockType.FIGURE, "[[figure:1]]"),
+        (BlockType.FIGURE, "[[figure:2]]"),
+        (BlockType.PARAGRAPH, "下段"),
+    ]
+
+
+def test_parse_extracts_bitmap_figure():
+    """整条解析：带文字的 PDF 里一张局部位图 → 1 个 FIGURE 块，PNG 合法、框准确。"""
+    blocks = PdfParser._parse_sync(_pdf_with_partial_image())
+    figs = [b for b in blocks if b.block_type is BlockType.FIGURE]
+    assert len(figs) == 1
+    fig = figs[0]
+    assert fig.text == "[[figure:1]]"
+    assert fig.meta["index"] == 1
+    assert fig.meta["image_bytes"][:8] == b"\x89PNG\r\n\x1a\n"  # PNG 魔数
+    x0, top, x1, bottom = fig.meta["bbox"]
+    assert abs(x0 - 150) < 1 and abs(x1 - 250) < 1  # 框与手搓坐标吻合
+
+
+def test_parse_figure_marker_lands_inline_in_content():
+    """记号当块文本 → 组装时自动落进正文原位（证明「位置白捡」这个设计）。"""
+    blocks = PdfParser._parse_sync(_pdf_with_partial_image())
+    drafts = assemble_paragraphs(blocks)
+    assert any("[[figure:1]]" in d.content for d in drafts)
+
+
+# --- 图记号：生产与抠除（格式唯一真相在 base.py）---
+
+
+def test_figure_marker_format():
+    assert figure_marker(1) == "[[figure:1]]"
+    assert figure_marker(42) == "[[figure:42]]"
+
+
+def test_strip_single_marker_collapses_blank_lines():
+    """记号夹在两段之间，抠掉后不留三连空行。"""
+    text = "上段\n\n" + figure_marker(1) + "\n\n下段"
+    assert strip_figure_markers(text) == "上段\n\n下段"
+
+
+def test_strip_multiple_markers():
+    text = f"{figure_marker(1)}\n\n正文\n\n{figure_marker(2)}"
+    assert strip_figure_markers(text) == "正文"
+
+
+def test_strip_no_marker_only_trims():
+    """没有记号时只做首尾 trim，正文内容一字不改。"""
+    assert strip_figure_markers("  纯正文，无图  ") == "纯正文，无图"
+
+
+def test_strip_is_inverse_of_marker():
+    assert strip_figure_markers(figure_marker(7)) == ""

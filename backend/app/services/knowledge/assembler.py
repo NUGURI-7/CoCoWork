@@ -40,6 +40,9 @@ class ParagraphDraft:
     content: str
     title: str
     page: int | None = None
+    # 本段内的位图插图：[{"index": N, "key": 对象存储 key}]。空则无图。
+    # index 与正文记号 [[figure:N]] 的 N 同值，渲染方据此把图摆回记号位置。
+    figures: tuple[dict[str, object], ...] = ()
 
 
 def _heading_text(text: str) -> str:
@@ -81,6 +84,7 @@ def assemble_paragraphs(
     drafts: list[ParagraphDraft] = []
     stack: dict[int, str] = {}  # 标题层级 → 标题文字
     buf: list[str] = []  # 当前段攒的块文本
+    figs: list[dict[str, object]] = []  # 当前段攒的图（index + key）
     buf_len = 0  # 当前段已攒字符数
     title = ""  # 当前段的标题链
     page: int | None = None  # 当前段的起始页
@@ -106,12 +110,17 @@ def assemble_paragraphs(
         挪到赋值之后 8 条测试变红）。
         """
 
-        nonlocal buf, buf_len, has_body, page
+        nonlocal buf, figs, buf_len, has_body, page
         if buf:
             drafts.append(
-                ParagraphDraft(content="\n\n".join(buf), title=title, page=page)
+                ParagraphDraft(
+                    content="\n\n".join(buf),
+                    title=title,
+                    page=page,
+                    figures=tuple(figs),
+                )
             )
-        buf, buf_len, has_body, page = [], 0, False, None
+        buf, figs, buf_len, has_body, page = [], [], 0, False, None
 
     for block in blocks:
         if block.block_type is not BlockType.HEADING:
@@ -120,6 +129,13 @@ def assemble_paragraphs(
             if has_body and (not title or buf_len + len(block.text) > max_chars):
                 flush()
             add(block)
+            # 图块：记号已随 add 进正文，再把它的 key 收进本段的图清单。
+            # 用 .get：key 由管线在组装前写好（见 document_processor._persist_figures），
+            # 缺 key 的块（未经 persist，仅测试直喂解析产物）只留正文记号、不进清单。
+            if block.block_type is BlockType.FIGURE and block.meta.get("figure_key"):
+                figs.append(
+                    {"index": block.meta["index"], "key": block.meta["figure_key"]}
+                )
             has_body = True
             continue
 

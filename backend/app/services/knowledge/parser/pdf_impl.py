@@ -18,7 +18,9 @@ from io import BytesIO
 
 import pdfplumber
 
-from app.services.knowledge.parser.base import BlockType, DocumentBlock, Parser
+from app.services.knowledge.parser.base import (
+    BlockType, DocumentBlock, Parser, figure_marker,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +72,13 @@ _COVER_SIZE_RATIO = 1.5
 # 大标题 19.7pt 是正文的 1.97 倍、且整页无正文字号行，前两个条件全中，
 # 只有「51 行」这条拦得住它。封面不会有那么多行
 _COVER_MAX_LINES = 20
+
+# 抽图渲染分辨率（DPI）。150 比默认 72 清楚、又不至于让单图体积失控
+_FIGURE_RESOLUTION = 150
+
+# 图框铺满整页多大比例就判为「背景/扫描页」而非插图——扫描件一页就是一张
+# 整页图，不剔掉会把整页当插图抽出来。0.9 给排版留了页边距余量
+_FIGURE_PAGE_COVERAGE = 0.9
 
 
 @dataclass(frozen=True, slots=True)
@@ -374,7 +383,57 @@ def _in_any_box(char: dict, boxes: list[tuple[float, float, float, float]]) -> b
     return any(x0 <= x <= x1 and top <= y <= bottom for x0, top, x1, bottom in boxes)
 
 
-def _page_content(page, page_no: int) -> tuple[list[_Line], list[tuple[float, str]]]:
+def _is_page_background(
+        bbox: tuple[float, float, float, float], page_width: float, page_height: float,
+) -> bool:
+    """图框是否铺满整页——扫描件/整页底图，不是插图，剔掉。
+
+    扫描页没有文本层、整页就是一张图；不拦它会把整张扫描页当插图抽出来。
+    判据是面积占比超过 `_FIGURE_PAGE_COVERAGE`，而非尺寸严格相等——排版常留页边距。
+    """
+    x0, top, x1, bottom = bbox
+    area = max(0.0, x1 - x0) * max(0.0, bottom - top)
+    page_area = page_width * page_height
+    if page_area <= 0:
+        return False
+    return area / page_area >= _FIGURE_PAGE_COVERAGE
+
+
+def _render_region(page, bbox: tuple[float, float, float, float]) -> bytes:
+    """把页面上 bbox 这块区域渲染成 PNG 字节。
+
+    **渲染区域而非抽原始图流**：原始图流有各种颜色空间 / 掩膜 / 变换，直接取出
+    要自己处理一堆编码；裁页面再渲染，pdfplumber（底层 pypdfium2）把这些都算好，
+    拿到的恒是一张规整 RGB 位图。分辨率按 `_FIGURE_RESOLUTION`。
+    """
+    cropped = page.crop(bbox)
+    out = BytesIO()
+    cropped.to_image(resolution=_FIGURE_RESOLUTION).save(out, format="PNG")
+    return out.getvalue()
+
+
+def _page_figures(page, page_no: int) -> list[tuple[float, bytes, tuple[float, float, float, float]]]:
+    """抽一页里的位图插图，返回 `[(顶部坐标, PNG字节, bbox)]`。
+
+    只认 `page.images`（PDF 里真正的嵌入位图），精确 bbox 由 PDF 自己标好，
+    不靠任何几何启发式。矢量插图（线条画成的流程图）本地路不做——那要版面模型，
+    是云端路的活。整页背景图按 `_is_page_background` 剔除。
+
+    顶部坐标记下来，和正文行 / 表格一起按阅读顺序排回原位（见 `_build_blocks`）。
+    """
+    figures = []
+    for im in page.images:
+        bbox = (im["x0"], im["top"], im["x1"], im["bottom"])
+        if _is_page_background(bbox, page.width, page.height):
+            logger.info("第 %d 页一张图铺满整页，判为背景跳过", page_no)
+            continue
+        figures.append((im["top"], _render_region(page, bbox), bbox))
+    return figures
+
+
+def _page_content(
+        page, page_no: int,
+) -> tuple[list[_Line], list[tuple[float, str]], list[tuple[float, bytes, tuple[float, float, float, float]]]]:
     """拆一页：返回 `(正文行, [(表格顶部坐标, markdown)])`。
 
     **表格区域的字符必须先剔掉**——它们同时存在于 `page.chars` 和
@@ -392,7 +451,7 @@ def _page_content(page, page_no: int) -> tuple[list[_Line], list[tuple[float, st
     # 抽出来，单元格文字还是倒着的（`能力描述` 读成 `述描力能`），433 字垃圾进库。
     chars = page.chars
     if chars and not any(c.get("upright", True) for c in chars):
-        return [], []
+        return [], [], []
 
     tables = page.find_tables()
     boxes = [t.bbox for t in tables]
@@ -405,12 +464,13 @@ def _page_content(page, page_no: int) -> tuple[list[_Line], list[tuple[float, st
     markdowns = [
         (t.bbox[1], md) for t in tables if (md := _table_to_markdown(t.extract()))
     ]
-    return lines, markdowns
+    return lines, markdowns, _page_figures(page, page_no)
 
 
 def _build_blocks(
         lines: list[_Line],
         tables: list[tuple[int, float, str]],
+        figures: list[tuple[int, float, bytes, tuple[float, float, float, float]]],
         running: set[tuple[float, str]],
         body_size: float,
         levels: dict[tuple[float, bool], int],
@@ -454,10 +514,14 @@ def _build_blocks(
             )
         buf.clear()
 
+    figure_index = 0  # 文档内自增编号：记号 [[figure:N]] 与存储文件名共用同一个 N
+
     items: list[tuple[int, float, str, object]] = [
         (ln.page, ln.top, "line", ln) for ln in lines if ln.page not in cover_pages
     ]
     items += [(page, top, "table", md) for page, top, md in tables]
+    # 图与表同理：带页码+顶部坐标，按阅读顺序插回正文中间。payload 是 (PNG字节, bbox)
+    items += [(page, top, "figure", (png, bbox)) for page, top, png, bbox in figures]
     # 封面整页拼成**一块**，不逐行进正文流程：封面是一个整体（校名 + 题目 +
     # 作者 + 日期），逐行走的话每行都被判成新段（行居中、x0 各不相同 →
     # `_merge_paragraphs` 的缩进信号全中），论文题目本身还会被折行切成两段，
@@ -469,6 +533,20 @@ def _build_blocks(
     items.sort(key=lambda item: (item[0], item[1]))
 
     for page, _top, kind, payload in items:
+        if kind == "figure":
+            flush()
+            figure_index += 1
+            png, bbox = payload  # type: ignore[misc]
+            blocks.append(
+                DocumentBlock(
+                    text=figure_marker(figure_index),
+                    block_type=BlockType.FIGURE,
+                    page=page,
+                    meta={"image_bytes": png, "index": figure_index, "bbox": bbox},
+                )
+            )
+            continue
+
         if kind == "table":
             flush()
             blocks.append(
@@ -528,13 +606,14 @@ class PdfParser(Parser):
         """真正干活的同步实现，在线程池里跑。"""
         lines: list[_Line] = []
         tables: list[tuple[int, float, str]] = []
+        figures: list[tuple[int, float, bytes, tuple[float, float, float, float]]] = []
         empty_pages: list[int] = []  # 没有文本层的页
         toc_pages: list[int] = []  # 判定为目录、整页丢弃的页
 
         with pdfplumber.open(BytesIO(raw)) as pdf:
             total_pages = len(pdf.pages)
             for page_no, page in enumerate(pdf.pages, 1):
-                page_lines, page_tables = _page_content(page, page_no)
+                page_lines, page_tables, page_figures = _page_content(page, page_no)
                 if not page_lines and not page_tables:
                     empty_pages.append(page_no)
                 # 目录页在这里就拦掉，不能等到组装时再滤：晚一步的话目录的
@@ -544,6 +623,9 @@ class PdfParser(Parser):
                     continue
                 lines.extend(page_lines)
                 tables.extend((page_no, top, md) for top, md in page_tables)
+                figures.extend(
+                    (page_no, top, png, bbox) for top, png, bbox in page_figures
+                )
 
         if not lines and not tables:
             # 整份都没文本层 = 纯扫描件，本地路无能为力
@@ -592,4 +674,6 @@ class PdfParser(Parser):
                 ", ".join(map(str, sorted(cover_pages))),
             )
 
-        return _build_blocks(lines, tables, running, body_size, levels, cover_pages)
+        return _build_blocks(
+            lines, tables, figures, running, body_size, levels, cover_pages
+        )

@@ -7,7 +7,9 @@
 from app.core.config import settings
 from app.models.knowledge import ParseBackend
 from app.services.knowledge.parser.baidu_impl import BaiduDocParser
-from app.services.knowledge.parser.base import BlockType, DocumentBlock, Parser
+from app.services.knowledge.parser.base import (
+    BlockType, DocumentBlock, Parser, figure_marker, strip_figure_markers,
+)
 from app.services.knowledge.parser.markdown_impl import MarkdownParser
 from app.services.knowledge.parser.pdf_impl import PdfParser
 from app.services.knowledge.parser.text_impl import PlainTextParser
@@ -62,5 +64,7 @@ __all__ = [
     "ParseBackend",
     "Parser",
     "available_backends",
+    "figure_marker",
     "get_parser",
+    "strip_figure_markers",
 ]

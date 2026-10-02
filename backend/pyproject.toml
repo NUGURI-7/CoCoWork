@@ -37,6 +37,9 @@ dependencies = [
     "charset-normalizer>=3.4.7",
     "skills-ref>=0.1.1",
     "pdfplumber>=0.11.10",
+    # 抽图用（渲染 PDF 页/区域为位图）。pdfplumber 本就传递依赖它，
+    # 但我们自己 import，故显式声明——不蹭别人的传递依赖
+    "pypdfium2>=5.12.1",
     "docker[ssh]>=7.1.0",
     "ddgs>=9.14.4",
     "tiktoken>=0.13.0",

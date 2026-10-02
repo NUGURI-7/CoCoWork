@@ -13,6 +13,8 @@
 """
 
 import logging
+from dataclasses import replace
+from io import BytesIO
 from typing import NamedTuple
 from uuid import UUID
 
@@ -23,7 +25,9 @@ from app.models.knowledge import (
 )
 from app.schemas.knowledge import ChunkConfig
 from app.services.knowledge.splitter import splitter
-from app.services.knowledge.parser import DocumentBlock, get_parser
+from app.services.knowledge.parser import (
+    BlockType, DocumentBlock, get_parser, strip_figure_markers,
+)
 from app.services.knowledge.assembler import assemble_paragraphs
 from app.services.knowledge.tokenization import tokenize
 from app.services.model.model_client import ModelClient
@@ -77,6 +81,34 @@ async def _parse_with_fallback(
     return blocks, ParseBackend.LOCAL
 
 
+async def _persist_figures(
+        doc: Document, blocks: list[DocumentBlock],
+) -> list[DocumentBlock]:
+    """把 FIGURE 块的图字节写进对象存储，meta 里 image_bytes 换成 figure_key。
+
+    解析器只把图裁成字节塞进 meta（见 base.py 的两阶段合同），落地到对象存储是
+    管线的活——这里才有 kb_id / doc_id 拼 key，解析器拿不到也不该拿到。
+    非 FIGURE 块原样放行；FIGURE 块是冻结的，用 replace 复制一份换掉 meta。
+    """
+    out: list[DocumentBlock] = []
+    for block in blocks:
+        if block.block_type is not BlockType.FIGURE:
+            out.append(block)
+            continue
+        index = block.meta["index"]
+        key = f"kb/{doc.knowledge_base_id}/doc/{doc.id}/figures/{index}.png"
+        await storage.save(
+            key, BytesIO(block.meta["image_bytes"]), content_type="image/png",
+        )
+        out.append(
+            replace(
+                block,
+                meta={"figure_key": key, "index": index, "bbox": block.meta["bbox"]},
+            )
+        )
+    return out
+
+
 async def process_document(doc_id: UUID) -> None:
     """文档处理入口。
 
@@ -102,6 +134,7 @@ async def process_document(doc_id: UUID) -> None:
 
     raw = await storage.read(doc.storage_key)
     blocks, used_backend = await _parse_with_fallback(doc, raw)
+    blocks = await _persist_figures(doc, blocks)
 
     # === 切段 ===
     doc.stage = DocStage.SPLITTING
@@ -122,8 +155,12 @@ async def process_document(doc_id: UUID) -> None:
             char_length=len(d.content),
             # 页码只有 PDF 有。没有时给空 dict 而不是 {"page": None}——
             # 免得下游要分「没这个键」和「键在但值是 null」两种情况
-            meta={"page": d.page} if d.page is not None else {},
-            search_vector=tokenize(d.content),
+            meta={
+                **({"page": d.page} if d.page is not None else {}),
+                **({"figures": [dict(f) for f in d.figures]} if d.figures else {}),
+            },
+            # 关键词索引抠掉图记号：记号是渲染路标，进全文检索是噪音
+            search_vector=tokenize(strip_figure_markers(d.content)),
         )
         for i, d in enumerate(drafts)
     ]
@@ -149,7 +186,11 @@ async def process_document(doc_id: UUID) -> None:
             if chunk_cfg.prepend_title and paragraph.title
             else ""
         )
-        sub_chunks = splitter.split(paragraph.content, chunk_cfg)
+        # 切子块算向量前抠掉图记号：子块原文落 Embedding.text、也拿去算向量，
+        # 记号进这两处都是噪音；正文 content 已入库、仍留记号，不受影响
+        sub_chunks = splitter.split(
+            strip_figure_markers(paragraph.content), chunk_cfg
+        )
         for idx, chunk_text in enumerate(sub_chunks):
             chunk_items.append(
                 _ChunkItem(paragraph.id, idx, chunk_text, prefix + chunk_text)

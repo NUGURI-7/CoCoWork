@@ -27,7 +27,7 @@ from app.services.knowledge.assembler import (
     MAX_PARAGRAPH_CHARS,
     assemble_paragraphs,
 )
-from app.services.knowledge.parser import BlockType, DocumentBlock
+from app.services.knowledge.parser import BlockType, DocumentBlock, figure_marker
 
 
 def h(text: str, level: int, page: int | None = None) -> DocumentBlock:
@@ -279,3 +279,48 @@ def test_page_is_none_for_formats_without_pages():
     """markdown / txt 没有页码，恒为 None——定位信息由标题链承担。"""
     drafts = assemble_paragraphs([h("# 标题", 1), p("正文一"), p("正文二")])
     assert all(d.page is None for d in drafts)
+
+
+# --- 图块：key 汇进段的 figures，记号随正文走 ---
+
+
+def fig(index: int, key: str | None = "kb/x/doc/y/figures/z.png", page: int | None = None) -> DocumentBlock:
+    """造图块。key 默认有值（模拟已过 persist）；传 None 模拟未过 persist 的解析产物。"""
+    meta: dict = {"index": index, "bbox": (0.0, 0.0, 1.0, 1.0)}
+    if key is not None:
+        meta["figure_key"] = key
+    return DocumentBlock(text=figure_marker(index), block_type=BlockType.FIGURE, page=page, meta=meta)
+
+
+def test_figure_key_collected_into_draft():
+    """图夹在正文里：记号进 content 原位，key 进 draft.figures。
+
+    加标题罩着，三块才并进同一段——无标题时每块各自成段（见 test_*_no_title_*），
+    那条路径测不出「同段内收集」。
+    """
+    drafts = assemble_paragraphs(
+        [h("# 章", 1), p("上段"), fig(1, "kb/a/doc/b/figures/1.png"), p("下段")]
+    )
+    assert len(drafts) == 1
+    d = drafts[0]
+    assert "上段" in d.content and figure_marker(1) in d.content and "下段" in d.content
+    assert d.figures == ({"index": 1, "key": "kb/a/doc/b/figures/1.png"},)
+
+
+def test_figure_without_key_keeps_marker_but_not_collected():
+    """未过 persist 的图块（无 figure_key）：记号仍进正文，但不进 figures 清单。"""
+    drafts = assemble_paragraphs([h("# 章", 1), p("正文"), fig(1, key=None)])
+    fig_draft = next(d for d in drafts if figure_marker(1) in d.content)
+    assert fig_draft.figures == ()
+
+
+def test_figures_split_across_paragraphs_by_heading():
+    """标题分段时，每段只收自己那张图，不串台。"""
+    blocks = [
+        h("# 一章", 1), p("甲", page=1), fig(1, "k1"),
+        h("# 二章", 1), p("乙", page=2), fig(2, "k2"),
+    ]
+    drafts = assemble_paragraphs(blocks)
+    by_title = {d.title: d.figures for d in drafts}
+    assert by_title["一章"] == ({"index": 1, "key": "k1"},)
+    assert by_title["二章"] == ({"index": 2, "key": "k2"},)
