@@ -113,10 +113,14 @@ PARAM_DEFINITIONS: dict[str, ModelTypeParams] = {
     ),
     "embedding": ModelTypeParams(
         config_fields=[
-            ParamField(key="dimensions", label="向量维度", type="number", default=1024),
             ParamField(key="max_input_tokens", label="最大输入 Token", type="number", default=8192),
         ],
-        invocation_params=[],
+        invocation_params=[
+            ParamField(
+                key="dimensions", label="向量维度", type="number", default=None,
+                description="留空则使用模型原生维度；仅 Qwen3-Embedding 等支持自定义维度的模型可填",
+            ),
+        ],
     ),
     "rerank": ModelTypeParams(
         config_fields=[

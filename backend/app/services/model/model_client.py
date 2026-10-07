@@ -64,6 +64,12 @@ class ModelClient:
             **params,
         )
 
+    @staticmethod
+    def embedding_params(config: dict[str, Any] | None) -> dict[str, Any]:
+        """模型配置中需随每次 embeddings 请求下发的参数（可选的 dimensions）。"""
+        dimensions = (config or {}).get("dimensions")
+        return {"dimensions": dimensions} if dimensions else {}
+
     @classmethod
     async def create_embedding(
         cls,
@@ -76,6 +82,6 @@ class ModelClient:
         response = await client.embeddings.create(
             model=model.model_name,
             input=texts,
-            **params,
+            **{**cls.embedding_params(model.config), **params},
         )
         return [item.embedding for item in response.data]

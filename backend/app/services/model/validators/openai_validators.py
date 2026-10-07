@@ -14,6 +14,7 @@ class OpenAIChatValidator(BaseModelValidator):
 
     async def validate(
         self, base_url: str, credentials: BaseCredentials, model_name: str,
+        *, config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         client = ModelClient.build_client(base_url, credentials.api_key)
         try:
@@ -35,12 +36,14 @@ class OpenAIEmbeddingValidator(BaseModelValidator):
 
     async def validate(
         self, base_url: str, credentials: BaseCredentials, model_name: str,
+        *, config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         client = ModelClient.build_client(base_url, credentials.api_key)
         try:
             resp = await client.embeddings.create(
                 model=model_name,
                 input=["test"],
+                **ModelClient.embedding_params(config),
             )
         except Exception as e:
             logger.warning("Embedding 模型验证失败: %s %s", model_name, e)

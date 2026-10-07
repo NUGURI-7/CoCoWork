@@ -18,7 +18,10 @@ class RerankValidator(BaseModelValidator):
     def __init__(self, client: BaseRerankClient) -> None:
         self._client = client
 
-    async def validate(self, base_url: str, credentials: BaseCredentials, model_name: str) -> dict[str, Any]:
+    async def validate(
+        self, base_url: str, credentials: BaseCredentials, model_name: str,
+        *, config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         try:
             await self._client.rerank(
                 base_url=base_url,

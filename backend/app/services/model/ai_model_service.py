@@ -64,7 +64,9 @@ class AIModelService:
 
         # 3. 连通性验证（顺带探测固有信息，如 embedding 维度）
         validator = get_validator(provider.provider_type, data.model_type)
-        probed_meta = await validator.validate(base_url, creds, data.model_name)
+        probed_meta = await validator.validate(
+            base_url, creds, data.model_name, config=data.config,
+        )
 
         # 4. 验证通过，入库
         model = await AIModel.create(
