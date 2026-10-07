@@ -21,6 +21,7 @@ import pdfplumber
 from app.services.knowledge.parser.base import (
     BlockType, DocumentBlock, Parser, figure_marker,
 )
+from app.services.knowledge.parser.figure_render import render_region
 
 logger = logging.getLogger(__name__)
 
@@ -72,9 +73,6 @@ _COVER_SIZE_RATIO = 1.5
 # 大标题 19.7pt 是正文的 1.97 倍、且整页无正文字号行，前两个条件全中，
 # 只有「51 行」这条拦得住它。封面不会有那么多行
 _COVER_MAX_LINES = 20
-
-# 抽图渲染分辨率（DPI）。150 比默认 72 清楚、又不至于让单图体积失控
-_FIGURE_RESOLUTION = 150
 
 # 图框铺满整页多大比例就判为「背景/扫描页」而非插图——扫描件一页就是一张
 # 整页图，不剔掉会把整页当插图抽出来。0.9 给排版留了页边距余量
@@ -399,19 +397,6 @@ def _is_page_background(
     return area / page_area >= _FIGURE_PAGE_COVERAGE
 
 
-def _render_region(page, bbox: tuple[float, float, float, float]) -> bytes:
-    """把页面上 bbox 这块区域渲染成 PNG 字节。
-
-    **渲染区域而非抽原始图流**：原始图流有各种颜色空间 / 掩膜 / 变换，直接取出
-    要自己处理一堆编码；裁页面再渲染，pdfplumber（底层 pypdfium2）把这些都算好，
-    拿到的恒是一张规整 RGB 位图。分辨率按 `_FIGURE_RESOLUTION`。
-    """
-    cropped = page.crop(bbox)
-    out = BytesIO()
-    cropped.to_image(resolution=_FIGURE_RESOLUTION).save(out, format="PNG")
-    return out.getvalue()
-
-
 def _page_figures(page, page_no: int) -> list[tuple[float, bytes, tuple[float, float, float, float]]]:
     """抽一页里的位图插图，返回 `[(顶部坐标, PNG字节, bbox)]`。
 
@@ -427,7 +412,7 @@ def _page_figures(page, page_no: int) -> list[tuple[float, bytes, tuple[float, f
         if _is_page_background(bbox, page.width, page.height):
             logger.info("第 %d 页一张图铺满整页，判为背景跳过", page_no)
             continue
-        figures.append((im["top"], _render_region(page, bbox), bbox))
+        figures.append((im["top"], render_region(page, bbox), bbox))
     return figures
 
 

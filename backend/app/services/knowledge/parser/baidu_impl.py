@@ -6,7 +6,7 @@
   提交拿取件单、轮询到完成、再发一次 HTTP 把结构化结果拉下来。全程跑在 SAQ
   worker 里，web 侧不参与。
 - **翻译层**（`blocks_from_parse_result` 及其下属）——纯函数，只认 `parse_result`
-  这个 dict，不关心它是现调 API 来的还是读的本地存档。故映射逻辑能拿 `out/` 里
+  与原文件字节，不关心前者是现调 API 来的还是读的本地存档。故映射逻辑能拿 `out/` 里
   的存档直接跑，**改映射不烧解析额度**。
 
 百度返回的形状（实测确认，非文档推断）：
@@ -22,13 +22,18 @@ import asyncio
 import base64
 import logging
 import re
+from io import BytesIO
 from typing import Any
 
 import httpx
+import pdfplumber
 
 from app.core.config import settings
 from app.core.redis import redis_client
-from app.services.knowledge.parser.base import BlockType, DocumentBlock, Parser
+from app.services.knowledge.parser.base import (
+    BlockType, DocumentBlock, Parser, figure_marker,
+)
+from app.services.knowledge.parser.figure_render import render_region
 
 logger = logging.getLogger(__name__)
 
@@ -171,7 +176,9 @@ async def _download(client: httpx.AsyncClient, result: dict[str, Any]) -> dict[s
 
 
 # 百度 layout.type → 我们的块类型。实测见过的取值：
-# header / footer / number（页眉页脚页码，纯噪声，丢）
+# header / footer / number / header_image（页眉页脚页码、页眉装饰图，纯噪声，丢）
+# doc_title（文章大标题，无 sub_type 层级，固定当一级标题）
+# image（插图，不走本表，按框从原 PDF 截图，见 _figure_block）
 # text（正文）/ paragraph_title（标题）/ table（表格）
 # figure_title（图表标题——实测在论文里全是表标题，「表2-3 粉煤灰基本性能参数」）
 # vision_footnote（脚注）
@@ -181,6 +188,7 @@ async def _download(client: httpx.AsyncClient, result: dict[str, Any]) -> dict[s
 _TYPE_MAP: dict[str, BlockType] = {
     "text": BlockType.PARAGRAPH,
     "paragraph_title": BlockType.HEADING,
+    "doc_title": BlockType.HEADING,
     "table": BlockType.TABLE,
     "figure_title": BlockType.PARAGRAPH,
     "vision_footnote": BlockType.PARAGRAPH,
@@ -189,7 +197,12 @@ _TYPE_MAP: dict[str, BlockType] = {
 # 认不出的 type 一律丢弃，而不是降级成正文——parse-don't-validate 在这里要
 # 反过来用：百度的 type 是封闭枚举，冒出没见过的值多半是新的非正文元素
 # （印章、水印之类），当正文收进来是污染，宁可漏不可脏。
-_DROP_TYPES = frozenset({"header", "footer", "number"})
+_DROP_TYPES = frozenset({"header", "footer", "number", "header_image"})
+
+# doc_title 的 sub_type 为空，按 title_N 解析不出层级，固定给一级
+_DOC_TITLE_LEVEL = 1
+
+_IMAGE_TYPE = "image"
 
 _TITLE_LEVEL = re.compile(r"^title_(\d+)$")
 
@@ -198,6 +211,49 @@ def _heading_level(sub_type: str) -> int | None:
     """`title_3` → 3。认不出的层级返回 None，由调用方降级处理。"""
     match = _TITLE_LEVEL.match(sub_type or "")
     return int(match.group(1)) if match else None
+
+
+def _layout_bbox(
+        layout: dict[str, Any], page_meta: dict[str, Any], pdf_page,
+) -> tuple[float, float, float, float] | None:
+    """百度 position [左, 上, 宽, 高] → pdfplumber 的 (左, 上, 右, 下)，单位换成 PDF 点。
+
+    百度的坐标按它自己记的页面尺寸（page meta 的 page_width / page_height）给出，
+    与 PDF 实际页面尺寸不一定相同，按两者之比缩放；缺尺寸时视为同一坐标系。
+    结果夹回页面范围内：越界的框 pdfplumber 裁剪会直接报错。
+    """
+    position = layout.get("position")
+    if not position or len(position) != 4:
+        return None
+    x, y, w, h = position
+    scale_x = pdf_page.width / (page_meta.get("page_width") or pdf_page.width)
+    scale_y = pdf_page.height / (page_meta.get("page_height") or pdf_page.height)
+    x0 = max(0.0, x * scale_x)
+    top = max(0.0, y * scale_y)
+    x1 = min(float(pdf_page.width), (x + w) * scale_x)
+    bottom = min(float(pdf_page.height), (y + h) * scale_y)
+    if x1 <= x0 or bottom <= top:
+        return None
+    return x0, top, x1, bottom
+
+
+def _figure_block(
+        layout: dict[str, Any], page_meta: dict[str, Any], pdf_page, page_no: int, index: int,
+) -> DocumentBlock | None:
+    """image layout → FIGURE 块：按框从原 PDF 截图。框无效返回 None。
+
+    meta 合同与本地路一致（见 base.DocumentBlock）：image_bytes / index / bbox。
+    """
+    bbox = _layout_bbox(layout, page_meta, pdf_page)
+    if bbox is None:
+        logger.warning("第 %d 页插图坐标无效，跳过：%r", page_no, layout.get("position"))
+        return None
+    return DocumentBlock(
+        text=figure_marker(index),
+        block_type=BlockType.FIGURE,
+        page=page_no,
+        meta={"image_bytes": render_region(pdf_page, bbox), "index": index, "bbox": bbox},
+    )
 
 
 def _to_block(
@@ -226,7 +282,10 @@ def _to_block(
 
     level: int | None = None
     if block_type is BlockType.HEADING:
-        level = _heading_level(layout.get("sub_type", ""))
+        level = (
+            _DOC_TITLE_LEVEL if layout_type == "doc_title"
+            else _heading_level(layout.get("sub_type", ""))
+        )
         if level is None:
             logger.warning(
                 "标题层级认不出 sub_type=%r，降级为正文：%.20s",
@@ -239,29 +298,43 @@ def _to_block(
     )
 
 
-def blocks_from_parse_result(parsed: dict[str, Any]) -> list[DocumentBlock]:
-    """百度 `parse_result` → 块列表，顺序即阅读顺序。
+def blocks_from_parse_result(parsed: dict[str, Any], raw: bytes) -> list[DocumentBlock]:
+    """百度 `parse_result` + 原 PDF 字节 → 块列表，顺序即阅读顺序。
 
     `pages` 与页内 `layouts` 百度都按阅读顺序给，照单遍历即可，不必自己排。
+    原 PDF 只用来截插图：百度只给图的框，不给图本身。
     """
     blocks: list[DocumentBlock] = []
+    figure_index = 0  # 文档内自增编号，与正文记号 [[figure:N]] 的 N 同值
 
-    for page in parsed.get("pages", []):
-        # 百度的 page_num 从 0 起，IR 的 page 从 1 起
-        raw_page = page.get("page_num")
-        page_no = raw_page + 1 if isinstance(raw_page, int) else None
+    with pdfplumber.open(BytesIO(raw)) as pdf:
+        for page in parsed.get("pages", []):
+            # 百度的 page_num 从 0 起，IR 的 page 从 1 起
+            raw_page = page.get("page_num")
+            page_no = raw_page + 1 if isinstance(raw_page, int) else None
 
-        # 表格块在 layouts 里的 text 是一坨 table_html，真正要的 markdown
-        # 在同页的 tables[] 里，两边靠 layout_id 认亲
-        table_markdowns = {
-            table.get("layout_id", ""): table.get("markdown", "")
-            for table in page.get("tables", [])
-        }
+            # 表格块在 layouts 里的 text 是一坨 table_html，真正要的 markdown
+            # 在同页的 tables[] 里，两边靠 layout_id 认亲
+            table_markdowns = {
+                table.get("layout_id", ""): table.get("markdown", "")
+                for table in page.get("tables", [])
+            }
 
-        for layout in page.get("layouts", []):
-            block = _to_block(layout, page_no, table_markdowns)
-            if block is not None:
-                blocks.append(block)
+            for layout in page.get("layouts", []):
+                if layout.get("type") == _IMAGE_TYPE:
+                    # 页码对不上原 PDF（理论上不该发生）就放弃这张图，不拖垮整份文档
+                    if page_no is None or not 1 <= page_no <= len(pdf.pages):
+                        continue
+                    block = _figure_block(
+                        layout, page.get("meta") or {}, pdf.pages[page_no - 1],
+                        page_no, figure_index + 1,
+                    )
+                    if block is not None:
+                        figure_index += 1
+                else:
+                    block = _to_block(layout, page_no, table_markdowns)
+                if block is not None:
+                    blocks.append(block)
 
     return blocks
 
@@ -291,4 +364,5 @@ class BaiduDocParser(Parser):
             result = await _poll(client, token, task_id)
             parsed = await _download(client, result)
 
-        return blocks_from_parse_result(parsed)
+        # 截图要用 pdfplumber 渲染，同步阻塞，丢进线程池免得卡住事件循环
+        return await asyncio.to_thread(blocks_from_parse_result, parsed, raw)
