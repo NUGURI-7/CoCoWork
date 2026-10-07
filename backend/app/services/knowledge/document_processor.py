@@ -29,6 +29,7 @@ from app.services.knowledge.parser import (
     BlockType, DocumentBlock, get_parser, strip_figure_markers,
 )
 from app.services.knowledge.assembler import assemble_paragraphs
+from app.services.knowledge.retrieval.vector_index import ensure_hnsw_index
 from app.services.knowledge.tokenization import tokenize
 from app.services.model.model_client import ModelClient
 
@@ -195,6 +196,9 @@ async def process_document(doc_id: UUID) -> None:
             chunk_items.append(
                 _ChunkItem(paragraph.id, idx, chunk_text, prefix + chunk_text)
             )
+
+    # 写向量前确保本库的 HNSW 索引就绪：空库时建索引几乎零成本，之后的写入自动进索引
+    await ensure_hnsw_index(kb.id, kb.embedding_dim)
 
     # 分批调 embedding（避免单次 batch 撞 API 上限）
     BATCH = 32

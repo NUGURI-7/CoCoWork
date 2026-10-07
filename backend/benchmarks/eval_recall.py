@@ -44,6 +44,7 @@ from app.services.knowledge.retrieval.reranker import rerank_window
 from app.services.knowledge.retrieval.service import RetrievalService
 from app.services.knowledge.retrieval.sql import load_sql
 from app.services.knowledge.retrieval.vector import CANDIDATE_FACTOR, _to_vector_literal
+from app.services.knowledge.retrieval.vector_index import vector_type
 from app.services.knowledge.stopwords import STOPWORDS
 from app.services.knowledge.tokenization import tokenize_query
 from app.services.model import ModelClient
@@ -161,7 +162,7 @@ async def _explain_search(kb, query_text: str, top_k: int, show_plan: bool) -> f
     """EXPLAIN ANALYZE 一次向量检索 SQL（与产品同事务同会话参数）。"""
     vectors = await ModelClient.create_embedding(kb.embedding_model, [query_text.strip()])
     sql = "EXPLAIN (ANALYZE, FORMAT TEXT) " + load_sql("vector_search").format(
-        dim=kb.embedding_dim,
+        vector_type=vector_type(kb.embedding_dim),
     )
     pool = top_k * CANDIDATE_FACTOR
     # 与产品检索同款事务 + 会话参数，EXPLAIN 测的才是产品真实走的计划

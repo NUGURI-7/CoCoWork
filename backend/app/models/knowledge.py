@@ -192,9 +192,12 @@ class Embedding(UUIDBaseModel):
     - 不可变派生数据（重嵌入 = 删了重建），故只有 `created_at`、无 `updated_at`。
     """
 
+    # 刻意不建普通索引：向量检索的按库过滤由每库一条 HNSW 部分索引承担（见 retrieval/vector_index.py）。
+    # 有这条索引时，规划器会误判「按库取出全部再排序」更便宜而弃用 HNSW（实测 89ms vs 7ms）。
+    # 代价：删库时级联删除向量需顺扫全表。
     knowledge_base = fields.ForeignKeyField(
         "models.KnowledgeBase", related_name="embeddings", on_delete=fields.CASCADE,
-        db_index=True,
+        db_index=False,
     )
     document = fields.ForeignKeyField(
         "models.Document", related_name="embeddings", on_delete=fields.CASCADE,

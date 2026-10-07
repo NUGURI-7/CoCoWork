@@ -16,6 +16,7 @@ from app.services.knowledge.retrieval.base import (
     Retriever,
 )
 from app.services.knowledge.retrieval.sql import load_sql
+from app.services.knowledge.retrieval.vector_index import vector_type
 from app.services.model import ModelClient
 
 # 内层 ANN 候选池 = top_k × 此倍数：同段多块挤占名额 + 阈值过滤都要备胎；
@@ -61,12 +62,11 @@ class VectorRetriever(Retriever):
 
         # 2. 原生 SQL 检索（sql/vector_search.sql）：
         #    HNSW 捞候选（内层 LIMIT 候选池）→ 按段去重 → 阈值 → top_k。
-        #    {dim} 是类型修饰符（不能参数化），format 拼入；其余值全走 $ 参数（防注入）。
-        #    SQL 里 ORDER BY 的 cast 表达式须与按库建的 HNSW 部分索引定义一致才命中索引。
-        dim = kb.embedding_dim
+        #    转换类型（含维度）不能参数化，format 拼入；其余值全走 $ 参数（防注入）。
+        #    转换类型取自 vector_index，与按库建的 HNSW 部分索引同源，保证命中索引。
         pool = params.top_k * CANDIDATE_FACTOR
 
-        sql = load_sql("vector_search").format(dim=dim)
+        sql = load_sql("vector_search").format(vector_type=vector_type(kb.embedding_dim))
 
         # SET LOCAL 只在事务内生效；ef_search 是 HNSW 的候选名单深度：
         # 低于候选池会截胡池子，低于默认 40 会让搜索变浅——取两者较大值

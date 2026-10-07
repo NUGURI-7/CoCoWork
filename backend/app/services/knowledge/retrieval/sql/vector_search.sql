@@ -1,15 +1,15 @@
 -- 向量检索(父子块):HNSW 捞候选 → 按段去重 → 阈值过滤 → top_k
--- 占位符:{dim} = 库锁定的向量维度(类型修饰符,PG 不许参数化,Python 端 format 拼入)
+-- 占位符:{vector_type} = 转换类型,如 vector(1024)(PG 不许参数化,Python 端 format 拼入)
 -- $1 query 向量  $2 kb_id  $3 相似度阈值  $4 top_k  $5 候选池大小
--- 注意:ORDER BY 的 cast 表达式必须与 HNSW 索引定义逐字一致,否则不命中索引
+-- 注意:转换类型须与 HNSW 索引定义一致,否则不命中索引——两边都取自 vector_index.vector_type(),不要在此手写
 
 WITH nearest AS (SELECT e.paragraph_id,
                         e.document_id,
                         e.text AS chunk_text,
-                        e.embedding::vector({dim}) <=> $1::vector({dim}) AS distance
+                        e.embedding::{vector_type} <=> $1::{vector_type} AS distance
 FROM embeddings e
 WHERE e.knowledge_base_id = $2 AND e.source_type = 'content'
-ORDER BY e.embedding::vector({dim}) <=> $1::vector({dim})
+ORDER BY e.embedding::{vector_type} <=> $1::{vector_type}
     LIMIT $5
     ),
     dedup AS (

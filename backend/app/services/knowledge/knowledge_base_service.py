@@ -14,6 +14,7 @@ from app.schemas.knowledge import (
     KnowledgeBaseUpdate,
 )
 from app.services.knowledge.parser import available_backends
+from app.services.knowledge.retrieval.vector_index import drop_hnsw_index
 from app.services.model.model_client import ModelClient
 
 logger = logging.getLogger(__name__)
@@ -179,6 +180,11 @@ class KnowledgeBaseService:
         if kb is None:
             raise NotFound404("知识库不存在")
         await kb.delete()
+        try:
+            await drop_hnsw_index(kb.id)
+        except Exception:
+            # 库已删成功，残留一条空索引不影响正确性，不应让删除请求报错
+            logger.exception("删库后清理 HNSW 索引失败 kb_id=%s", kb.id)
 
 
 async def get_knowledge_base_service() -> KnowledgeBaseService:

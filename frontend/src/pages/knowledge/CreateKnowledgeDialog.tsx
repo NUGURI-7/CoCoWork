@@ -44,6 +44,9 @@ const DEFAULT_CHUNK_SIZE = '256'
 const DEFAULT_OVERLAP = '20'
 /** 与后端 ChunkConfig.prepend_title 的默认值保持一致 */
 const DEFAULT_PREPEND_TITLE = true
+/** pgvector HNSW 索引的维度上限，与后端 vector_index.HNSW_MAX_DIM 保持一致；
+ *  超过的库后端不建向量索引、检索走全表扫描 */
+const HNSW_MAX_DIM = 2000
 
 interface CreateKnowledgeDialogProps {
   open: boolean
@@ -91,6 +94,8 @@ export function CreateKnowledgeDialog({
   }, [open])
 
   const hasModels = models.length > 0
+  const selectedDim = models.find((m) => m.id === modelId)?.meta?.embedding_dim
+  const exceedsIndexDim = selectedDim !== undefined && selectedDim > HNSW_MAX_DIM
   const canSubmit = name.trim() && modelId && !submitting
 
   function resetForm() {
@@ -217,6 +222,11 @@ export function CreateKnowledgeDialog({
             ) : (
               <p className="text-muted-foreground text-xs">
                 建库后更换模型需重新向量化全部文档
+              </p>
+            )}
+            {exceedsIndexDim && (
+              <p className="text-warning text-xs">
+                该模型为 {selectedDim} 维，超过 {HNSW_MAX_DIM} 维不建向量索引，数据量大时检索会变慢
               </p>
             )}
           </div>
