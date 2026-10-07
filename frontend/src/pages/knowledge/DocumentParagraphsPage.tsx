@@ -30,7 +30,7 @@ ring.register()
  * 有没有只剩一行标题的空段。编辑能力后续版本再加。
  *
  * 展开态放在页面级而不是卡片内部：顶部的「全部展开 / 全部收起」要能一把推平所有卡片，
- * 状态散在各卡片里就同步不了。翻页时清空，新一页默认全部折叠。
+ * 状态散在各卡片里就同步不了。每次取到新一页都重置为全部展开。
  */
 export default function DocumentParagraphsPage() {
   const { kbId, docId } = useParams({
@@ -73,7 +73,7 @@ export default function DocumentParagraphsPage() {
         page_size: PAGE_SIZE,
       })
       setPageData(data)
-      setExpandedIds(new Set()) // 换页 = 新内容，回到默认折叠
+      setExpandedIds(new Set(data.records.map((p) => p.id))) // 换页 = 新内容，回到默认展开
     } catch {
       setPageData(EMPTY_PAGE)
     } finally {
@@ -110,7 +110,8 @@ export default function DocumentParagraphsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    // 阅读型页面：整列限宽居中（约 50 字一行），留白落在页面两侧而不是卡片里
+    <div className="mx-auto max-w-4xl space-y-6">
       {/* 面包屑：知识库列表 / 本库 / 当前文档 */}
       <div className="text-muted-foreground flex min-w-0 items-center gap-1 text-sm">
         <Link
@@ -175,7 +176,8 @@ export default function DocumentParagraphsPage() {
         </div>
       ) : (
         <>
-          <div className="space-y-2">
+          {/* 浅灰底板衬白卡片，段与段的边界更醒目 */}
+          <div className="bg-muted/60 space-y-3 rounded-xl p-3">
             {pageData.records.map((p) => (
               <ParagraphCard
                 key={p.id}
