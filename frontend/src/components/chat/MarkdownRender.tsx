@@ -8,6 +8,7 @@ import remarkMath from 'remark-math'
 import { cn } from '@/lib/utils'
 
 import { CodeBlock } from './CodeBlock'
+import { MarkdownImage } from './MarkdownImage'
 import { MermaidBlock } from './MermaidBlock'
 
 import 'katex/dist/katex.min.css'
@@ -127,6 +128,9 @@ const MarkdownChunk = memo(function MarkdownChunk({
           }
           // 兜底（极少触发）：原样吐出
           return <pre>{children}</pre>
+        },
+        img({ src, alt }) {
+          return <MarkdownImage src={typeof src === 'string' ? src : undefined} alt={alt} />
         },
       }}
     >

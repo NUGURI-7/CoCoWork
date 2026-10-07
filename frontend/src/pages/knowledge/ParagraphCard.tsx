@@ -1,8 +1,9 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ListTree } from 'lucide-react'
 
 import { MarkdownRender } from '@/components/chat/MarkdownRender'
 import { Button } from '@/components/ui/button'
+import { injectFigures } from '@/lib/figures'
 import { cn } from '@/lib/utils'
 import type { Paragraph } from '@/types'
 
@@ -24,19 +25,28 @@ interface ParagraphCardProps {
  * 页码 | 字数）。行宽由页面列宽控制，卡内不再限宽。展开态由页面统一控制，默认展开。
  *
  * 「要不要显示展开按钮」靠实测高度而非字数阈值 —— 一个 markdown 表格可能字数不多
- * 但渲染出来很高，按 char_length 猜会漏判。
+ * 但渲染出来很高，按 char_length 猜会漏判。图片是异步加载的、加载完才把内容撑高，
+ * 故用 ResizeObserver 盯内容高度，变了就重判。
  */
 export function ParagraphCard({ paragraph, expanded, onToggle }: ParagraphCardProps) {
-  const bodyRef = useRef<HTMLDivElement>(null)
+  // 内容层不受折叠限高约束，量它的自然高度；外层容器负责裁切
+  const contentRef = useRef<HTMLDivElement>(null)
   const [overflowing, setOverflowing] = useState(false)
 
-  // 渲染后量一次实际高度，超过折叠高度才给展开按钮。
-  // 依赖 content：翻页复用同一个组件实例时要重新量。
   useLayoutEffect(() => {
-    const el = bodyRef.current
+    const el = contentRef.current
     if (!el) return
-    setOverflowing(el.scrollHeight > COLLAPSED_MAX_HEIGHT)
-  }, [paragraph.content])
+    const measure = () => setOverflowing(el.offsetHeight > COLLAPSED_MAX_HEIGHT)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  const content = useMemo(
+    () => injectFigures(paragraph.content, paragraph.figures),
+    [paragraph.content, paragraph.figures],
+  )
 
   return (
     <div className="bg-card overflow-hidden rounded-lg border shadow-sm">
@@ -71,11 +81,12 @@ export function ParagraphCard({ paragraph, expanded, onToggle }: ParagraphCardPr
       {/* 正文：折叠时限高 + 底部渐隐，暗示「下面还有」 */}
       <div className="relative px-4 py-3">
         <div
-          ref={bodyRef}
           className="overflow-hidden"
           style={expanded ? undefined : { maxHeight: COLLAPSED_MAX_HEIGHT }}
         >
-          <MarkdownRender content={paragraph.content} />
+          <div ref={contentRef}>
+            <MarkdownRender content={content} />
+          </div>
         </div>
         {!expanded && overflowing && (
           <div className="from-card pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t to-transparent" />

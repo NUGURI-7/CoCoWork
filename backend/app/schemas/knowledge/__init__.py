@@ -13,7 +13,7 @@ from app.schemas.knowledge.knowledge_base_schema import (
     KnowledgeBaseOut,
     KnowledgeBaseUpdate,
 )
-from app.schemas.knowledge.paragraph_schema import ParagraphOut
+from app.schemas.knowledge.paragraph_schema import FigureOut, ParagraphOut
 
 from app.schemas.knowledge.retrieval_schema import (
     RetrievalHit,
@@ -24,6 +24,7 @@ __all__ = [
     "ALLOWED_FILE_TYPES",
     "ChunkConfig",
     "DocumentOut",
+    "FigureOut",
     "KnowledgeBaseCreate",
     "KnowledgeBaseOut",
     "KnowledgeBaseUpdate",

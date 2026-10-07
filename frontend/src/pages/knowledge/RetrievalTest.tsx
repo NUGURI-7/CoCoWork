@@ -3,6 +3,7 @@ import { FileText, Layers, ListTree, Search, Timer } from 'lucide-react'
 import { ring } from 'ldrs'
 
 import { retrievalTest } from '@/api/knowledge'
+import { MarkdownRender } from '@/components/chat/MarkdownRender'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -15,6 +16,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { injectFigures } from '@/lib/figures'
 import { RETRIEVAL_MODE_LABEL } from '@/lib/retrieval'
 import type { RetrievalMode, RetrievalTestResult } from '@/types'
 
@@ -243,7 +245,7 @@ function ResultsArea({
               </span>
             </div>
           )}
-          <p className="text-foreground text-sm leading-relaxed">{r.content}</p>
+          <MarkdownRender content={injectFigures(r.content, r.figures)} />
         </div>
       ))}
     </div>

@@ -9,6 +9,13 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 
+class FigureOut(BaseModel):
+    """段内一张图：编号对应正文记号 [[figure:N]] 的 N，url 是对象存储的临时直链。"""
+
+    index: int = Field(description="图编号，与正文记号 [[figure:N]] 的 N 同值")
+    url: str = Field(description="预签名直链，浏览器直接取图；限时有效")
+
+
 class ParagraphOut(BaseModel):
     """段对外输出（分段列表用）。
 
@@ -26,6 +33,9 @@ class ParagraphOut(BaseModel):
     content: str
     char_length: int
     chunk_count: int = Field(default=0, description="段内子块数（content 向量数）")
+    figures: list[FigureOut] = Field(
+        default_factory=list, description="段内插图，由 service 签好链接后回填；无图为空列表",
+    )
 
     meta: dict = Field(exclude=True, description="定位信息 jsonb；仅作 page 的来源，不输出")
 

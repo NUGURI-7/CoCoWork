@@ -18,6 +18,7 @@ from app.services.knowledge import (
     get_knowledge_base_service,
     get_retrieval_service,
 )
+from app.services.knowledge.figure_urls import attach_hit_figures
 from app.services.knowledge.parser import available_backends
 from app.services.knowledge.retrieval import RetrievalParams
 
@@ -104,6 +105,7 @@ async def retrieval_test(
     svc: RetrievalServiceDep,
 ) -> ResponseModel[RetrievalTestOut]:
     result = await svc.retrieve(current_user, kb_id, params)
+    await attach_hit_figures(result.hits)
     return success(data=RetrievalTestOut(
         hits=result.hits,
         embed_ms=result.timings.get("embed_ms", 0.0),

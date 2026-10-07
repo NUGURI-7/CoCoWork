@@ -154,6 +154,12 @@ export interface UploadInitOut {
  * - `page`：段的起始页，仅 PDF 有，其余格式为 null
  * - `chunk_count`：段内子块数（= content 向量数），后端分页后回填
  */
+/** 段内一张图：index 对应正文记号 [[figure:N]] 的 N，url 是对象存储的限时直链 */
+export interface Figure {
+  index: number
+  url: string
+}
+
 export interface Paragraph {
   id: string
   position: number
@@ -162,6 +168,8 @@ export interface Paragraph {
   char_length: number
   chunk_count: number
   page: number | null
+  /** 段内插图；无图为空数组 */
+  figures: Figure[]
 }
 
 // ============================================================================
@@ -185,6 +193,8 @@ export interface RetrievalHit {
   title: string
   /** 段的起始页；仅 PDF 有，其余格式为 null */
   page: number | null
+  /** 段内插图（仅命中测试回填）；无图为空数组 */
+  figures: Figure[]
   content: string
   chunk_text: string
   score: number

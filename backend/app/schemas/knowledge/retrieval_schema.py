@@ -10,6 +10,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.schemas.knowledge.paragraph_schema import FigureOut
+
 
 class RetrievalHit(BaseModel):
     """单条命中结果：命中子块所属的整段 + 来源 + 分数。
@@ -33,6 +35,9 @@ class RetrievalHit(BaseModel):
     )
     page: int | None = Field(
         default=None, description="段的起始页（仅 PDF；其余格式为 null）",
+    )
+    figures: list[FigureOut] = Field(
+        default_factory=list, description="段内插图（仅命中测试回填；给模型的检索结果不带）",
     )
     content: str = Field(description="命中段全文（返回给模型的单元）")
     chunk_text: str = Field(description="实际命中的子块原文")

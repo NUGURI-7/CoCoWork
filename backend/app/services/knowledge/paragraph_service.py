@@ -13,6 +13,7 @@ from app.core.http import PageData, PaginationParams, paginate
 from app.models.knowledge import Embedding, Paragraph, SourceType
 from app.models.user import User
 from app.schemas.knowledge import ParagraphOut
+from app.services.knowledge.figure_urls import sign_figures
 
 
 class ParagraphService:
@@ -35,6 +36,8 @@ class ParagraphService:
 
         page_data = await paginate(qs, params, out=ParagraphOut)
         await self._fill_chunk_counts(page_data.records)
+        for record in page_data.records:
+            record.figures = await sign_figures(record.meta)
         return page_data
 
     @staticmethod
