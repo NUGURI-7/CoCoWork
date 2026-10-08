@@ -9,6 +9,7 @@ import logging
 from pathlib import PurePosixPath
 from uuid import UUID
 
+from tortoise.expressions import Q
 from tortoise.queryset import QuerySet
 
 from app.core.config import settings
@@ -17,7 +18,7 @@ from app.core.storage import storage
 from app.models.knowledge import Document, KnowledgeBase, DocStatus, DocStage
 from app.models.user import User
 from app.schemas.knowledge import ALLOWED_FILE_TYPES
-from app.tasks.registry import PROCESS_DOCUMENT
+from app.tasks.registry import INDEX_DOCUMENT, PARSE_DOCUMENT, TaskSpec
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,30 @@ def _parse_file_type(name: str) -> str:
 def _build_storage_key(kb_id: UUID, doc_id: UUID, file_type: str) -> str:
     """约定 `kb/{kb_id}/doc/{doc_id}.{ext}`。两后端通用（R2=对象 key，Local=相对路径）。"""
     return f"kb/{kb_id}/doc/{doc_id}.{file_type}"
+
+
+# 可触发解析：已上传待处理 / 已解析、已完成（重新解析）/ 任意一步失败
+_PARSABLE = (
+    Q(status=DocStatus.PENDING, stage=DocStage.UPLOADED)
+    | Q(status__in=[DocStatus.PARSED, DocStatus.COMPLETED, DocStatus.FAILED])
+)
+
+# 可触发建索引：已解析 / 已完成（重建）/ 建索引那步失败。
+# 解析那步失败时没有可用的新段落，须先重新解析
+_INDEXABLE = (
+    Q(status__in=[DocStatus.PARSED, DocStatus.COMPLETED])
+    | Q(status=DocStatus.FAILED, stage=DocStage.EMBEDDING)
+)
+
+
+def _reject_reason(doc: Document) -> str:
+    """触发被拒时，按文档当前状态说明原因。"""
+    if doc.status == DocStatus.PROCESSING:
+        return "文档处理中，请稍候"
+    if doc.status == DocStatus.PENDING:
+        return "文档尚未解析" if doc.stage == DocStage.UPLOADED else "文档尚未上传完成"
+    # 走到这里只剩一种：解析那步失败的文档点了建索引
+    return "解析失败，请先重新解析"
 
 
 class DocumentService:
@@ -135,39 +160,57 @@ class DocumentService:
         await doc.save(update_fields=["size", "stage"])
         return doc
 
-    async def trigger_progress(self, user: User, kb_id: UUID, doc_id: UUID) -> Document:
-        """触发文档处理：只允许已上传或失败重试的 doc 进入管线。
+    async def trigger_parse(self, user: User, kb_id: UUID, doc_id: UUID) -> Document:
+        """触发解析：首次解析、重新解析、失败重试都走这里。"""
+        return await self._trigger(user, kb_id, doc_id, _PARSABLE, PARSE_DOCUMENT)
 
-                - stage=uploaded：首次触发
-                - status=failed：失败重试
-                - 其余（pending 未传字节 / processing 已在跑 / completed 想重跑）一律拒绝
-        """
+    async def trigger_index(self, user: User, kb_id: UUID, doc_id: UUID) -> Document:
+        """触发建索引：首次建、重建、建索引失败重试都走这里。"""
+        return await self._trigger(user, kb_id, doc_id, _INDEXABLE, INDEX_DOCUMENT)
+
+    async def _trigger(
+            self, user: User, kb_id: UUID, doc_id: UUID, allowed: Q, task: TaskSpec,
+    ) -> Document:
+        """检查状态并改成处理中，再入队。"""
         doc = await self._get_user_doc(user, kb_id, doc_id)
-        # 只有「已上传待处理」或「失败重试」可触发
-        if not (doc.status == DocStatus.FAILED or doc.stage == DocStage.UPLOADED):
-            if doc.status == DocStatus.PROCESSING:
-                raise ValidationException("文档处理中，请稍候")
-            if doc.status == DocStatus.COMPLETED:
-                raise ValidationException("文档已处理完成，如需重切请删除后重传")
-            raise ValidationException("文档尚未上传完成")  # pending 未传字节
-        # 同步置 processing + queued：DB 立即反映「已入队待处理」，刷新页面也能正确续轮询
-        # （worker 真正取到任务后，process_document 才把 stage 推进到 parsing）
+        if not await self._claim(doc, allowed):
+            # 按当前状态说原因：被另一个请求抢先时，当前状态已是处理中
+            await doc.refresh_from_db(fields=["status", "stage"])
+            raise ValidationException(_reject_reason(doc))
+        if not await self._enqueue(doc, task):
+            raise AppApiException(code=503, message="任务队列不可用，请稍后重试")
+
         doc.status = DocStatus.PROCESSING
         doc.stage = DocStage.QUEUED
         doc.error_message = ""
-        await doc.save(update_fields=["status", "stage", "error_message"])
-
-        try:
-            await PROCESS_DOCUMENT.enqueue(doc_id=str(doc.id))
-        except Exception as e:
-            # 状态已落库，入队却挂了（Redis 不可用等）；不回滚就永远卡在 processing
-            logger.exception("文档入队失败 doc_id=%s", doc.id)
-            doc.status = DocStatus.FAILED
-            doc.error_message = f"入队失败：{type(e).__name__}: {e}"
-            await doc.save(update_fields=["status", "error_message"])
-            raise AppApiException(code=503, message="任务队列不可用，请稍后重试") from e
-
         return doc
+
+    @staticmethod
+    async def _claim(doc: Document, allowed: Q) -> bool:
+        """带条件的 UPDATE：状态符合规则才改成处理中 / 排队中，返回是否改成功。
+
+        检查和改状态是同一条语句：连点两下时只有一个请求改得动，不会入队两个任务。
+        同步置 queued：DB 立即反映「已入队待处理」，刷新页面也能正确续轮询。
+        """
+        updated = await Document.filter(allowed, id=doc.id).update(
+            status=DocStatus.PROCESSING, stage=DocStage.QUEUED, error_message="",
+        )
+        return updated > 0
+
+    @staticmethod
+    async def _enqueue(doc: Document, task: TaskSpec) -> bool:
+        """入队，返回是否成功。失败时退回触发前的状态（doc 上存的仍是触发前的值）：
+        任务没开始，文档本身没失败，不标 failed。
+        """
+        try:
+            await task.enqueue(doc_id=str(doc.id))
+        except Exception:
+            logger.exception("文档入队失败 doc_id=%s task=%s", doc.id, task.name)
+            await Document.filter(id=doc.id).update(
+                status=doc.status, stage=doc.stage, error_message=doc.error_message,
+            )
+            return False
+        return True
 
     async def delete(
             self, user: User, kb_id: UUID, doc_id: UUID,
@@ -187,14 +230,25 @@ class DocumentService:
 
         await doc.delete()  # FK CASCADE 自动清 paragraphs / embeddings
 
-    async def trigger_progress_many(
-            self, user:User, kb_id: UUID, document_ids: list[UUID]
-    ) -> tuple[list[UUID],list[UUID]]:
-        """批量触发处理：过滤出可入队的 doc，返回 (triggered, skipped)。
+    async def trigger_parse_many(
+            self, user: User, kb_id: UUID, document_ids: list[UUID],
+    ) -> tuple[list[UUID], list[UUID]]:
+        return await self._trigger_many(user, kb_id, document_ids, _PARSABLE, PARSE_DOCUMENT)
 
-                单条规则同 `trigger_progress`：stage=uploaded 或 status=failed 可触发，
-                其余（processing / completed / pending 未传字节）跳过；不属本 kb / 不存在
-                的 id 也归 skipped。一次 JOIN 查全部，避免 N+1。
+    async def trigger_index_many(
+            self, user: User, kb_id: UUID, document_ids: list[UUID],
+    ) -> tuple[list[UUID], list[UUID]]:
+        return await self._trigger_many(user, kb_id, document_ids, _INDEXABLE, INDEX_DOCUMENT)
+
+    async def _trigger_many(
+            self, user: User, kb_id: UUID, document_ids: list[UUID],
+            allowed: Q, task: TaskSpec,
+    ) -> tuple[list[UUID], list[UUID]]:
+        """批量触发，返回 (triggered, skipped)。
+
+        每个文档单独走「条件更新 → 入队」：Tortoise 的 update 只返回改了几行、
+        不返回改了哪几行，一条语句批量改完分不清哪些是这次触发的。
+        不属本库 / 不存在 / 状态不允许 / 入队失败的 id 都归 skipped。
         """
         await self._ensure_user_kb(user, kb_id)
 
@@ -203,45 +257,14 @@ class DocumentService:
             knowledge_base_id=kb_id,
             knowledge_base__created_by=user,
         )
+        claimed: set[UUID] = set()
+        for doc in docs:
+            if await self._claim(doc, allowed) and await self._enqueue(doc, task):
+                claimed.add(doc.id)
 
-        allowed = {
-            doc.id
-            for doc in docs
-            if doc.status == DocStatus.FAILED or doc.stage == DocStage.UPLOADED
-        }
-
-        triggered = [did for did in document_ids if did in allowed]
-        skipped = [did for did in document_ids if did not in allowed]
-        # 同步置 processing + queued：DB 立即反映「已入队待处理」，刷新页面也能正确续轮询
-        # （worker 真正取到任务后，process_document 才把 stage 推进到 parsing）
-        if not triggered:
-            return triggered, skipped
-
-        await Document.filter(id__in=triggered).update(
-            status=DocStatus.PROCESSING,
-            stage=DocStage.QUEUED,
-            error_message="",
-        )
-
-        # 逐个入队；个别失败不牵连其余，失败的标 failed 并归入 skipped 回给前端
-        enqueued: list[UUID] = []
-        failed: list[UUID] = []
-        for doc_id in triggered:
-            try:
-                await PROCESS_DOCUMENT.enqueue(doc_id=str(doc_id))
-                enqueued.append(doc_id)
-            except Exception:
-                logger.exception("文档入队失败 doc_id=%s", doc_id)
-                failed.append(doc_id)
-
-        if failed:
-            await Document.filter(id__in=failed).update(
-                status=DocStatus.FAILED,
-                error_message="入队失败：任务队列不可用",
-            )
-            skipped.extend(failed)
-
-        return enqueued, skipped
+        triggered = [did for did in document_ids if did in claimed]
+        skipped = [did for did in document_ids if did not in claimed]
+        return triggered, skipped
 
     async def delete_many(
             self, user: User, kb_id: UUID, document_ids: list[UUID],

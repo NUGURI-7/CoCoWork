@@ -133,22 +133,32 @@ export function confirmDocumentUpload(kbId: string, docId: string) {
   )
 }
 
-/** 触发文档处理管线（向量化）。后端 BackgroundTasks 跑，立即返回，前端轮询看状态。 */
-export function triggerProcessDocument(kbId: string, docId: string) {
-  return post<Document>(
-    `/knowledge-bases/${kbId}/documents/${docId}/process`,
-    undefined,
+/** 触发解析（解析 → 存图 → 段落入库，停在 parsed）。worker 异步跑，立即返回，前端轮询看状态。 */
+export function triggerParseDocument(kbId: string, docId: string) {
+  return post<Document>(`/knowledge-bases/${kbId}/documents/${docId}/parse`)
+}
+
+/** 触发建索引（段落 → 向量 + 关键词词条，到 completed）。worker 异步跑，立即返回，前端轮询看状态。 */
+export function triggerIndexDocument(kbId: string, docId: string) {
+  return post<Document>(`/knowledge-bases/${kbId}/documents/${docId}/index`)
+}
+
+/**
+ * 批量触发解析。返回 triggered / skipped 两组 id。
+ * silent：由调用方按 triggered/skipped 自定义 toast（部分成功语义）。
+ */
+export function batchParseDocuments(kbId: string, documentIds: string[]) {
+  return post<BatchProcessResult>(
+    `/knowledge-bases/${kbId}/documents/batch-parse`,
+    { document_ids: documentIds },
     { silent: true },
   )
 }
 
-/**
- * 批量触发向量化。返回 triggered / skipped 两组 id（skipped = 状态不允许）。
- * silent：由调用方按 triggered/skipped 自定义 toast（部分成功语义）。
- */
-export function batchProcessDocuments(kbId: string, documentIds: string[]) {
+/** 批量触发建索引。返回与 toast 约定同 `batchParseDocuments`。 */
+export function batchIndexDocuments(kbId: string, documentIds: string[]) {
   return post<BatchProcessResult>(
-    `/knowledge-bases/${kbId}/documents/batch-process`,
+    `/knowledge-bases/${kbId}/documents/batch-index`,
     { document_ids: documentIds },
     { silent: true },
   )
@@ -223,7 +233,7 @@ export function uploadDocumentToR2(
 /**
  * 分页列出某文档切出的段（按 position 升序）。
  *
- * 段是处理管线的产物，只有已向量化的文档才有；没跑过的文档返回空页。
+ * 段是解析的产物，解析过的文档才有；没解析过的文档返回空页。
  */
 export function listParagraphsPaginated(
   kbId: string,

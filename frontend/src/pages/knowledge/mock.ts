@@ -20,22 +20,36 @@ interface StatusMeta {
 /** 文档显示状态：把后端 (status, stage) 二维组合映射成单一展示态。 */
 export type DocDisplayStatus =
   | 'uploading' // pending + stage=''（占位已建、字节未传完）
-  | 'uploaded' // pending + stage='uploaded'（已传完、等向量化）
+  | 'uploaded' // pending + stage='uploaded'（已传完、等解析）
   | 'queued' // processing + stage='queued'（已入队、worker 还没取走）
-  | 'processing' // 向量化管线进行中
-  | 'completed' // 向量化完成、可用
-  | 'failed' // 任一阶段失败
+  | 'parsing' // processing + parsing / splitting
+  | 'parsed' // 段落已入库、尚不可检索，等用户建索引
+  | 'indexing' // processing + embedding
+  | 'completed' // 已建索引、可检索
+  | 'parse_failed' // failed，stage 停在解析那几步
+  | 'index_failed' // failed + stage='embedding'
 
 /** 后端 Document → 单一展示态 */
 export function getDocDisplayStatus(doc: Document): DocDisplayStatus {
-  if (doc.status === 'failed') return 'failed'
+  if (doc.status === 'failed') {
+    // stage 停在出错那步，决定重试按钮重做哪一步
+    return doc.stage === 'embedding' ? 'index_failed' : 'parse_failed'
+  }
   if (doc.status === 'completed') return 'completed'
+  if (doc.status === 'parsed') return 'parsed'
   // 入队与真正开跑都是 processing，靠 stage 区分（重试等待期同样回落 queued）
   if (doc.status === 'processing') {
-    return doc.stage === 'queued' ? 'queued' : 'processing'
+    if (doc.stage === 'queued') return 'queued'
+    return doc.stage === 'embedding' ? 'indexing' : 'parsing'
   }
   // status === 'pending'
   return doc.stage === 'uploaded' ? 'uploaded' : 'uploading'
+}
+
+const FAILED_META: StatusMeta = {
+  label: '失败',
+  dot: 'bg-destructive',
+  badgeClass: 'bg-destructive/15 text-destructive border-destructive/40',
 }
 
 /** 文档状态徽标（DocumentList 用，按 DocDisplayStatus 索引） */
@@ -47,7 +61,7 @@ export const docStatusMeta: Record<DocDisplayStatus, StatusMeta> = {
     badgeClass: 'bg-muted text-muted-foreground border-border',
   },
   uploaded: {
-    label: '未向量化',
+    label: '未解析',
     dot: 'bg-muted-foreground',
     badgeClass: 'bg-muted text-muted-foreground border-border',
   },
@@ -57,22 +71,31 @@ export const docStatusMeta: Record<DocDisplayStatus, StatusMeta> = {
     pulse: true,
     badgeClass: 'bg-warning/8 text-warning-foreground border-warning/25',
   },
-  processing: {
-    label: '向量化中',
+  parsing: {
+    label: '解析中',
+    dot: 'bg-warning',
+    pulse: true,
+    badgeClass: 'bg-warning/15 text-warning-foreground border-warning/40',
+  },
+  // 停下来等用户动手的状态，用品牌色区别于「进行中」的黄与「完成」的绿
+  parsed: {
+    label: '待建索引',
+    dot: 'bg-brand',
+    badgeClass: 'bg-brand-subtle text-brand border-brand-border',
+  },
+  indexing: {
+    label: '建索引中',
     dot: 'bg-warning',
     pulse: true,
     badgeClass: 'bg-warning/15 text-warning-foreground border-warning/40',
   },
   completed: {
-    label: '已向量化',
+    label: '已完成',
     dot: 'bg-success',
     badgeClass: 'bg-success/15 text-success border-success/40',
   },
-  failed: {
-    label: '失败',
-    dot: 'bg-destructive',
-    badgeClass: 'bg-destructive/15 text-destructive border-destructive/40',
-  },
+  parse_failed: { ...FAILED_META, label: '解析失败' },
+  index_failed: { ...FAILED_META, label: '建索引失败' },
 }
 
 /** 知识库状态徽标（KnowledgeCard / KnowledgeDetailPage header 用） */

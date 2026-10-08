@@ -136,39 +136,69 @@ async def upload_complete(
     return success(message="上传已确认")
 
 
-@router.post("/{doc_id}/process", summary="触发文档处理管线（向量化）")
-async def process(
+@router.post("/{doc_id}/parse", summary="触发文档解析")
+async def parse(
         kb_id: UUID,
         doc_id: UUID,
         current_user: CurrentUserDep,
         svc: DocumentServiceDep,
 ) -> ResponseModel[DocumentOut]:
-    """手动触发文档向量化：解析→切段→切块→embed。
+    """解析 → 存图 → 段落入库，停在 parsed。已解析 / 已完成的文档会重新解析。
 
-        端点立即返回，处理由 SAQ worker 在独立进程跑；前端轮询 `GET /{doc_id}`
-        看 status / stage 推进。
+    端点立即返回，处理由 SAQ worker 在独立进程跑；前端轮询 `GET /{doc_id}`
+    看 status / stage 推进。
     """
-    doc = await svc.trigger_progress(current_user, kb_id, doc_id)
-    return success(data=DocumentOut.model_validate(doc), message="已触发处理")
+    doc = await svc.trigger_parse(current_user, kb_id, doc_id)
+    return success(data=DocumentOut.model_validate(doc), message="已触发解析")
 
 
-@router.post("/batch-process", summary="批量触发文档处理（向量化）")
-async def batch_process(
+@router.post("/{doc_id}/index", summary="触发建索引")
+async def index(
+        kb_id: UUID,
+        doc_id: UUID,
+        current_user: CurrentUserDep,
+        svc: DocumentServiceDep,
+) -> ResponseModel[DocumentOut]:
+    """段落 → 子块向量 + 关键词词条，到 completed。已完成的文档会重建索引。
+
+    端点立即返回，处理由 SAQ worker 在独立进程跑；前端轮询 `GET /{doc_id}`
+    看 status / stage 推进。
+    """
+    doc = await svc.trigger_index(current_user, kb_id, doc_id)
+    return success(data=DocumentOut.model_validate(doc), message="已触发建索引")
+
+
+@router.post("/batch-parse", summary="批量触发文档解析")
+async def batch_parse(
         kb_id: UUID,
         data: BatchDocumentIn,
         current_user: CurrentUserDep,
         svc: DocumentServiceDep,
 ) -> ResponseModel[BatchProcessOut]:
-    """批量向量化：service 过滤出可处理的 doc 并逐个入队。
-
-    返回 triggered / skipped 两组 id，前端据此乐观更新 + 提示被跳过的。
-    """
-    triggered, skipped = await svc.trigger_progress_many(
+    """返回 triggered / skipped 两组 id，前端据此乐观更新 + 提示被跳过的。"""
+    triggered, skipped = await svc.trigger_parse_many(
         current_user, kb_id, data.document_ids,
     )
     return success(
         data=BatchProcessOut(triggered=triggered, skipped=skipped),
-        message=f"已触发 {len(triggered)} 个文档处理",
+        message=f"已触发 {len(triggered)} 个文档解析",
+    )
+
+
+@router.post("/batch-index", summary="批量触发建索引")
+async def batch_index(
+        kb_id: UUID,
+        data: BatchDocumentIn,
+        current_user: CurrentUserDep,
+        svc: DocumentServiceDep,
+) -> ResponseModel[BatchProcessOut]:
+    """返回 triggered / skipped 两组 id，前端据此乐观更新 + 提示被跳过的。"""
+    triggered, skipped = await svc.trigger_index_many(
+        current_user, kb_id, data.document_ids,
+    )
+    return success(
+        data=BatchProcessOut(triggered=triggered, skipped=skipped),
+        message=f"已触发 {len(triggered)} 个文档建索引",
     )
 
 

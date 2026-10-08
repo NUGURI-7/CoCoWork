@@ -19,17 +19,18 @@ class KBStatus(StrEnum):
 class DocStatus(StrEnum):
     PENDING = "pending"
     PROCESSING = "processing"
+    PARSED = "parsed"  # 段落已入库、尚不可检索，等用户触发建索引
     COMPLETED = "completed"
     FAILED = "failed"
 
 
 class DocStage(StrEnum):
-    NONE = ""  # 没在任何阶段（pending / completed 时）
+    NONE = ""  # 没在任何阶段（parsed / completed 时）
     UPLOADED = "uploaded"
     QUEUED = "queued"  # 已入队等 worker 取；重试等待期也回落到这里
     PARSING = "parsing"
     SPLITTING = "splitting"
-    EMBEDDING = "embedding"
+    EMBEDDING = "embedding"  # 建索引：向量 + 关键词词条
 
 
 class SourceType(StrEnum):
@@ -107,7 +108,8 @@ class Document(UUIDBaseModel, TimestampMixin):
 
     原文件存对象存储（`storage_key` 指向）；文本解析、切段、切块、向量化后
     分别落到 Paragraph / Embedding。`status` + `stage` + `error_message`
-    跟踪异步处理管线。v1 手动向量化：上传只建记录（status=pending）。
+    跟踪异步处理管线。处理分两步、各由用户触发：解析（落 Paragraph，
+    status=parsed）→ 建索引（向量 + 关键词词条，status=completed）。
 
     - `parse_backend`：实际解析后端；与库设置不一致 = 这份降级过，或建库后改过设置
     """

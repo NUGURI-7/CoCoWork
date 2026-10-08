@@ -4,7 +4,7 @@
 「这行是二级标题」这个事实丢掉，下游只能按分隔符硬切。IR 让解析器把
 类型 / 标题层级 / 页码显式写成字段，切块器据此做语义边界切分。
 
-设计见 `docs/design/pdf-parsing-v1.md`。业务侧（process_document）只依赖
+设计见 `docs/design/pdf-parsing-v1.md`。业务侧（parse_document）只依赖
 本 ABC 的 parse 方法，换解析后端不动业务代码。
 """
 

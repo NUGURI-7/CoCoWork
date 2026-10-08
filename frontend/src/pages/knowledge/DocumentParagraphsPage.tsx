@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from '@tanstack/react-router'
-import { ChevronLeft, ChevronsDownUp, ChevronsUpDown, FileText, Inbox } from 'lucide-react'
+import { ChevronLeft, ChevronsDownUp, ChevronsUpDown, FileText, Inbox, Sparkles } from 'lucide-react'
 import { ring } from 'ldrs'
+import { toast } from 'sonner'
 
-import { getDocument, getKnowledgeBase, listParagraphsPaginated } from '@/api/knowledge'
+import {
+  getDocument,
+  getKnowledgeBase,
+  listParagraphsPaginated,
+  triggerIndexDocument,
+} from '@/api/knowledge'
 import { DataPagination } from '@/components/data-pagination'
 import { Button } from '@/components/ui/button'
 import { useTabTitle } from '@/stores/use-tab-sync'
@@ -11,6 +17,9 @@ import type { Document, KnowledgeBase, PageData, Paragraph } from '@/types'
 import { ParagraphCard } from './ParagraphCard'
 
 const PAGE_SIZE = 20
+
+/** 处理中轮询文档状态的间隔，与知识库详情页文档列表一致 */
+const POLL_INTERVAL_MS = 1500
 
 /** 空分页结果占位（初始 state / 错误 fallback） */
 const EMPTY_PAGE: PageData<Paragraph> = {
@@ -29,6 +38,9 @@ ring.register()
  * 只读展示文档被切成了哪些段，用来核对切分质量：标题链对不对、段是不是被腰斩、
  * 有没有只剩一行标题的空段。编辑能力后续版本再加。
  *
+ * 文档待建索引（parsed）时顶部给「建索引」按钮：审完段落就地触发，不必退回列表。
+ * 文档处理中时轮询其状态，结束后刷新统计与段列表（子块数随建索引变化）。
+ *
  * 展开态放在页面级而不是卡片内部：顶部的「全部展开 / 全部收起」要能一把推平所有卡片，
  * 状态散在各卡片里就同步不了。每次取到新一页都重置为全部展开。
  */
@@ -43,6 +55,7 @@ export default function DocumentParagraphsPage() {
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+  const [triggering, setTriggering] = useState(false)
 
   // header 用的库 / 文档信息只在 id 变化时取一次，翻页不重复请求
   useEffect(() => {
@@ -84,6 +97,37 @@ export default function DocumentParagraphsPage() {
   useEffect(() => {
     fetchParagraphs()
   }, [fetchParagraphs])
+
+  // 处理中 → 定时取文档状态，直到脱离 processing；结束时刷新段列表并提示结果
+  useEffect(() => {
+    if (doc?.status !== 'processing') return
+    const timer = setTimeout(async () => {
+      try {
+        const next = await getDocument(kbId, docId)
+        setDoc(next)
+        if (next.status === 'processing') return
+        fetchParagraphs()
+        if (next.status === 'completed') toast.success('建索引完成')
+        else if (next.status === 'failed') toast.error(next.error_message || '处理失败')
+      } catch {
+        // 拦截器已 toast
+      }
+    }, POLL_INTERVAL_MS)
+    return () => clearTimeout(timer)
+  }, [doc, kbId, docId, fetchParagraphs])
+
+  async function handleIndex() {
+    if (triggering) return
+    setTriggering(true)
+    try {
+      setDoc(await triggerIndexDocument(kbId, docId))
+      toast.success('已触发建索引')
+    } catch {
+      // 拦截器已 toast
+    } finally {
+      setTriggering(false)
+    }
+  }
 
   useTabTitle(`/knowledge/${kbId}/documents/${docId}`, doc?.name)
 
@@ -149,16 +193,30 @@ export default function DocumentParagraphsPage() {
           </div>
         </div>
 
-        {pageData.records.length > 0 && (
-          <Button variant="outline" size="sm" className="shrink-0" onClick={toggleAll}>
-            {allExpanded ? (
-              <ChevronsDownUp className="size-4" />
-            ) : (
-              <ChevronsUpDown className="size-4" />
-            )}
-            {allExpanded ? '全部收起' : '全部展开'}
-          </Button>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          {pageData.records.length > 0 && (
+            <Button variant="outline" size="sm" onClick={toggleAll}>
+              {allExpanded ? (
+                <ChevronsDownUp className="size-4" />
+              ) : (
+                <ChevronsUpDown className="size-4" />
+              )}
+              {allExpanded ? '全部收起' : '全部展开'}
+            </Button>
+          )}
+          {doc?.status === 'parsed' && (
+            <Button size="sm" disabled={triggering} onClick={handleIndex}>
+              <Sparkles className="size-4" />
+              建索引
+            </Button>
+          )}
+          {doc?.status === 'processing' && (
+            <Button size="sm" disabled>
+              <l-ring size="14" stroke="2" speed="2" color="currentColor" />
+              处理中…
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* 段列表 */}
@@ -171,7 +229,7 @@ export default function DocumentParagraphsPage() {
           <Inbox className="size-8 opacity-40" />
           <p className="text-foreground text-sm font-medium">这份文档还没有分段</p>
           <p className="max-w-xs text-xs">
-            段是向量化时切出来的。回到知识库对这份文档执行「向量化」，完成后即可在这里查看切分结果
+            段是解析时切出来的。回到知识库对这份文档执行「解析」，完成后即可在这里查看切分结果
           </p>
         </div>
       ) : (

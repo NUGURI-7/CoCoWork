@@ -18,9 +18,11 @@ from app.core.redis import redis_client
 from app.db.checkpointer import init_checkpointer, shutdown_checkpointer
 from app.db.postgresql import TORTOISE_CONFIG
 from app.tasks.checkpoint_cleanup_task import cleanup_checkpoints_task
-from app.tasks.document_task import process_document_task
+from app.tasks.document_task import index_document_task, parse_document_task
 from app.tasks.memory_digest_task import digest_memory_task
-from app.tasks.registry import CLEANUP_CHECKPOINTS, DIGEST_MEMORY, PROCESS_DOCUMENT
+from app.tasks.registry import (
+    CLEANUP_CHECKPOINTS, DIGEST_MEMORY, INDEX_DOCUMENT, PARSE_DOCUMENT,
+)
 from app.tasks.queue import queue
 
 
@@ -44,7 +46,8 @@ async def shutdown(ctx: dict) -> None:
 settings = {
     "queue": queue,
     "functions": [                                      # 一行一个任务
-        (PROCESS_DOCUMENT.name, process_document_task),
+        (PARSE_DOCUMENT.name, parse_document_task),
+        (INDEX_DOCUMENT.name, index_document_task),
         (DIGEST_MEMORY.name, digest_memory_task),
     ],
     # 定时任务。函数不用再进上面的 functions —— SAQ 会自己把 cron 的函数并进去

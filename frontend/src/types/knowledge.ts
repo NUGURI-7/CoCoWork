@@ -90,15 +90,21 @@ export interface KnowledgeBaseUpdatePayload {
 // Document
 // ============================================================================
 
-/** 文档大状态（对齐后端 Document.status） */
-export type DocumentStatus = 'pending' | 'processing' | 'completed' | 'failed'
+/** 文档大状态（对齐后端 Document.status）
+ *
+ * 处理分两步、各由用户触发：解析 → `parsed`（段落已入库、尚不可检索）→ 建索引 → `completed`。
+ */
+export type DocumentStatus = 'pending' | 'processing' | 'parsed' | 'completed' | 'failed'
 
 /** 文档细分阶段（对齐后端 Document.stage）
  *
- * - `''` = init 后还没传完
- * - `'uploaded'` = 字节已传完、等向量化
+ * - `''` = init 后还没传完；parsed / completed 时也为空
+ * - `'uploaded'` = 字节已传完、等解析
  * - `'queued'` = 已入队、等 worker 取（重试等待期也回落到这里）
- * - `'parsing'` / `'splitting'` / `'embedding'` = 向量化管线进行中（片5）
+ * - `'parsing'` / `'splitting'` = 解析进行中
+ * - `'embedding'` = 建索引进行中（向量 + 关键词词条）
+ *
+ * failed 时 stage 停在出错那步：`embedding` = 建索引失败，其余 = 解析失败。
  */
 export type DocumentStage =
   | ''
@@ -220,10 +226,10 @@ export interface RetrievalTestResult {
 // Document — 批量操作
 // ============================================================================
 
-/** 批量向量化结果（对齐后端 BatchProcessOut）
+/** 批量触发（解析 / 建索引）结果（对齐后端 BatchProcessOut）
  *
  * - `triggered`：已入队处理的文档 id（前端乐观标 processing + 轮询）
- * - `skipped`：状态不允许、被跳过的文档 id（前端提示用户）
+ * - `skipped`：不存在、状态不允许或入队失败而跳过的文档 id（前端提示用户）
  */
 export interface BatchProcessResult {
   triggered: string[]

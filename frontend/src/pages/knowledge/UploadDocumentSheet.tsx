@@ -153,7 +153,7 @@ export function UploadDocumentSheet({
   function handleFinish() {
     const doneCount = queue.filter((q) => q.status === 'done').length
     if (doneCount > 0) {
-      toast.success(`已添加 ${doneCount} 篇文档，等待向量化`)
+      toast.success(`已添加 ${doneCount} 篇文档，等待解析`)
       onUploaded?.()
     }
     onOpenChange(false)
@@ -165,7 +165,7 @@ export function UploadDocumentSheet({
         <SheetHeader>
           <SheetTitle>上传文档</SheetTitle>
           <SheetDescription>
-            支持 MD / TXT / PDF，单文件最大 50 MB。上传后将进入待向量化队列。
+            支持 MD / TXT / PDF，单文件最大 50 MB。上传后在文档列表里点「解析」开始处理。
           </SheetDescription>
         </SheetHeader>
 

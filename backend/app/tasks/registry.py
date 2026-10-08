@@ -87,8 +87,11 @@ class CronSpec:
 
 # === 知识库 ===
 
-# 解析 → 切段 → 切块 → 向量化整条管线。大文档分批 embedding 慢，给足 30 分钟
-PROCESS_DOCUMENT = TaskSpec(name="knowledge.process_document", timeout=1800)
+# 解析 → 存图 → 段落入库。百度云端解析要轮询取结果、大 PDF 本地解析也慢，给足 30 分钟
+PARSE_DOCUMENT = TaskSpec(name="knowledge.parse_document", timeout=1800)
+
+# 段落 → 子块向量 + 关键词词条。大文档分批 embedding 慢，给足 30 分钟
+INDEX_DOCUMENT = TaskSpec(name="knowledge.index_document", timeout=1800)
 
 
 # === 记忆 ===

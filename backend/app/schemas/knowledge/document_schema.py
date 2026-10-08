@@ -56,10 +56,10 @@ class BatchDeleteOut(BaseModel):
 
 
 class BatchProcessOut(BaseModel):
-    """批量向量化响应：已触发 / 被跳过（状态不允许）的文档 id。"""
+    """批量触发（解析 / 建索引）响应：已触发 / 被跳过的文档 id。"""
 
     triggered: list[UUID] = Field(description="已入队处理的文档 id")
-    skipped: list[UUID] = Field(description="状态不允许、被跳过的文档 id")
+    skipped: list[UUID] = Field(description="不存在、状态不允许或入队失败而跳过的文档 id")
 
 
 class UploadInitIn(BaseModel):
