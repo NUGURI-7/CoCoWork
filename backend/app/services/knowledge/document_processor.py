@@ -22,6 +22,7 @@ from typing import NamedTuple
 from uuid import UUID
 
 from tortoise.transactions import in_transaction
+from uuid_utils.compat import uuid7
 
 from app.core.storage import storage
 from app.models.knowledge import SourceType
@@ -34,6 +35,7 @@ from app.services.knowledge.parser import (
     BlockType, DocumentBlock, get_parser, strip_figure_markers,
 )
 from app.services.knowledge.assembler import assemble_paragraphs
+from app.services.knowledge.document_service import build_doc_prefix
 from app.services.knowledge.retrieval.vector_index import ensure_hnsw_index
 from app.services.knowledge.tokenization import tokenize
 from app.services.model.model_client import ModelClient
@@ -96,13 +98,45 @@ async def _parse_with_fallback(
     return blocks, ParseBackend.LOCAL
 
 
+def _new_figure_dir(doc: Document) -> str:
+    """本次解析的图目录 `kb/{kb}/doc/{doc}/figures/{uuid7}/`。
+
+    每次解析独占一个目录：与旧段落引用的图不重名，换段落成功后按 key 删旧图、
+    失败整目录删新图，都不用逐张比对。
+    """
+    return f"{build_doc_prefix(doc.knowledge_base_id, doc.id)}figures/{uuid7()}/"
+
+
+async def _referenced_figure_keys(doc_id: UUID) -> list[str]:
+    """文档现有段落引用的全部图 key —— 换段落成功后要删的旧图。"""
+    metas = await Paragraph.filter(document_id=doc_id).values_list("meta", flat=True)
+    return [fig["key"] for meta in metas for fig in meta.get("figures", [])]
+
+
+async def _delete_figures(keys: list[str]) -> None:
+    """按 key 逐个删图。失败只记日志：残留几张孤儿图不影响正确性，不该让解析失败。"""
+    for key in keys:
+        try:
+            await storage.delete(key)
+        except Exception as e:
+            logger.warning("删除旧图失败 key=%s: %s", key, e)
+
+
+async def _discard_figure_dir(figure_dir: str) -> None:
+    """解析失败时删掉本次写下的图目录。失败只记日志：要往外抛的是原异常，不能被它盖掉。"""
+    try:
+        await storage.delete_prefix(figure_dir)
+    except Exception as e:
+        logger.warning("删除本次解析的图目录失败 dir=%s: %s", figure_dir, e)
+
+
 async def _persist_figures(
-        doc: Document, blocks: list[DocumentBlock],
+        blocks: list[DocumentBlock], figure_dir: str,
 ) -> list[DocumentBlock]:
     """把 FIGURE 块的图字节写进对象存储，meta 里 image_bytes 换成 figure_key。
 
     解析器只把图裁成字节塞进 meta（见 base.py 的两阶段合同），落地到对象存储是
-    管线的活——这里才有 kb_id / doc_id 拼 key，解析器拿不到也不该拿到。
+    管线的活——key 落在调用方给的本次解析目录下，解析器拿不到也不该拿到。
     非 FIGURE 块原样放行；FIGURE 块是冻结的，用 replace 复制一份换掉 meta。
     """
     out: list[DocumentBlock] = []
@@ -111,7 +145,7 @@ async def _persist_figures(
             out.append(block)
             continue
         index = block.meta["index"]
-        key = f"kb/{doc.knowledge_base_id}/doc/{doc.id}/figures/{index}.png"
+        key = f"{figure_dir}{index}.png"
         await storage.save(
             key, BytesIO(block.meta["image_bytes"]), content_type="image/png",
         )
@@ -124,31 +158,10 @@ async def _persist_figures(
     return out
 
 
-async def parse_document(doc_id: UUID) -> None:
-    """第一步：解析 → 存图 → 组装段落落库，停在 parsed 等用户触发建索引。
-
-    换段落（删旧 + 写新）与置 parsed 在同一个事务里：重新解析中途失败时，
-    旧段落与旧索引原样保留，文档仍可检索。
-    异常一律外抛：SAQ 靠异常判定任务失败并触发重试，失败落库由 tasks 层负责。
-    """
-    doc = await Document.filter(id=doc_id).prefetch_related(
-        "knowledge_base",
-    ).get_or_none()
-    if doc is None:
-        # 文档已被删；重试也变不出来，当任务正常结束，不抛
-        logger.error("parse_document: 文档不存在 doc_id=%s", doc_id)
-        return
-
-    # === 解析 ===
-    # status 幂等重设：service 已置 processing，此处兜底直接调用的场景
-    doc.status = DocStatus.PROCESSING
-    doc.stage = DocStage.PARSING
-    await doc.save(update_fields=["status", "stage"])
-
-    raw = await storage.read(doc.storage_key)
-    blocks, used_backend = await _parse_with_fallback(doc, raw)
-    blocks = await _persist_figures(doc, blocks)
-
+async def _replace_paragraphs(
+        doc: Document, blocks: list[DocumentBlock], used_backend: ParseBackend,
+) -> int:
+    """切段：组装段落，与置 parsed 在同一个事务里换掉旧段落。返回新段数。"""
     # === 切段 ===
     doc.stage = DocStage.SPLITTING
     await doc.save(update_fields=["stage"])
@@ -194,9 +207,49 @@ async def parse_document(doc_id: UUID) -> None:
             using_db=conn,
         )
 
+    return len(paragraphs)
+
+
+async def parse_document(doc_id: UUID) -> None:
+    """第一步：解析 → 存图 → 组装段落落库，停在 parsed 等用户触发建索引。
+
+    换段落（删旧 + 写新）与置 parsed 在同一个事务里：重新解析中途失败时，
+    旧段落与旧索引原样保留，文档仍可检索。
+    异常一律外抛：SAQ 靠异常判定任务失败并触发重试，失败落库由 tasks 层负责。
+    """
+    doc = await Document.filter(id=doc_id).prefetch_related(
+        "knowledge_base",
+    ).get_or_none()
+    if doc is None:
+        # 文档已被删；重试也变不出来，当任务正常结束，不抛
+        logger.error("parse_document: 文档不存在 doc_id=%s", doc_id)
+        return
+
+    # === 解析 ===
+    # status 幂等重设：service 已置 processing，此处兜底直接调用的场景
+    doc.status = DocStatus.PROCESSING
+    doc.stage = DocStage.PARSING
+    await doc.save(update_fields=["status", "stage"])
+
+    raw = await storage.read(doc.storage_key)
+    blocks, used_backend = await _parse_with_fallback(doc, raw)
+
+    # 本次解析的图写进独占目录：段落换成之前，旧段落引用的旧图一张不动
+    figure_dir = _new_figure_dir(doc)
+    old_figure_keys = await _referenced_figure_keys(doc.id)
+    try:
+        blocks = await _persist_figures(blocks, figure_dir)
+        paragraph_count = await _replace_paragraphs(doc, blocks, used_backend)
+    except Exception:
+        # 段落没换成：新图没有段落引用，整目录删掉；旧段落和旧图原样保留
+        await _discard_figure_dir(figure_dir)
+        raise
+    # 段落已换成：旧图不再被任何段落引用
+    await _delete_figures(old_figure_keys)
+
     logger.info(
         "parse_document doc_id=%s 完成，%d 段（解析后端 %s）",
-        doc.id, len(paragraphs), used_backend,
+        doc.id, paragraph_count, used_backend,
     )
 
 

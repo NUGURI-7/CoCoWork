@@ -80,6 +80,28 @@ class R2Storage(Storage):
             self._client.delete_object, Bucket=self._bucket, Key=key,
         )
 
+    async def delete_prefix(self, prefix: str) -> int:
+        self._ensure_dir_prefix(prefix)
+
+        # S3 协议没有「按前缀删」：分页列出（每页至多 1000 个），逐页批量删（每次至多 1000 个）
+        def _run() -> int:
+            deleted = 0
+            paginator = self._client.get_paginator("list_objects_v2")
+            for page in paginator.paginate(Bucket=self._bucket, Prefix=prefix):
+                objects = [{"Key": obj["Key"]} for obj in page.get("Contents", [])]
+                if not objects:
+                    continue
+                resp = self._client.delete_objects(
+                    Bucket=self._bucket, Delete={"Objects": objects, "Quiet": True},
+                )
+                # Quiet 模式只回报失败的；批量删除部分失败不抛异常，要自己检查
+                if errors := resp.get("Errors"):
+                    raise RuntimeError(f"批量删除部分失败 prefix={prefix} 首个错误={errors[0]}")
+                deleted += len(objects)
+            return deleted
+
+        return await asyncio.to_thread(_run)
+
     async def stat_size(self, key: str) -> int:
         try:
             resp = await asyncio.to_thread(

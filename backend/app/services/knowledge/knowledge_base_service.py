@@ -5,6 +5,7 @@ from tortoise.functions import Count, Sum
 from tortoise.queryset import QuerySet
 
 from app.core.exceptions.types import NotFound404, ValidationException
+from app.core.storage import storage
 from app.models.knowledge import KnowledgeBase, KBStatus, ParseBackend
 from app.models.model import AIModel
 from app.models.user import User
@@ -185,6 +186,12 @@ class KnowledgeBaseService:
         except Exception:
             # 库已删成功，残留一条空索引不影响正确性，不应让删除请求报错
             logger.exception("删库后清理 HNSW 索引失败 kb_id=%s", kb.id)
+        # 库下所有文档的原件与派生对象（解析出的图）都在 kb/{kb_id}/ 下，一次清掉。
+        # 放在删库之后：删存储失败只留孤儿对象；先删存储、删库却失败，会留下指向空文件的记录
+        try:
+            await storage.delete_prefix(f"kb/{kb.id}/")
+        except Exception:
+            logger.exception("删库后清理存储对象失败 kb_id=%s", kb.id)
 
 
 async def get_knowledge_base_service() -> KnowledgeBaseService:

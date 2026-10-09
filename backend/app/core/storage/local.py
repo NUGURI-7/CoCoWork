@@ -58,6 +58,22 @@ class LocalStorage(Storage):
         path = self._resolve(key)
         await asyncio.to_thread(lambda: path.unlink(missing_ok=True))
 
+    async def delete_prefix(self, prefix: str) -> int:
+        self._ensure_dir_prefix(prefix)
+        path = self._resolve(prefix)
+        if path == self._root:
+            # `a/../` 这类前缀解析后就是根，_resolve 的穿越检查拦不住
+            raise ValueError(f"前缀解析后指向存储根目录: {prefix!r}")
+
+        def _run() -> int:
+            if not path.is_dir():
+                return 0
+            count = sum(1 for p in path.rglob("*") if p.is_file())
+            shutil.rmtree(path)
+            return count
+
+        return await asyncio.to_thread(_run)
+
     async def exists(self, key: str) -> bool:
         path = self._resolve(key)
         return await asyncio.to_thread(path.is_file)

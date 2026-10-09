@@ -33,6 +33,14 @@ def _build_storage_key(kb_id: UUID, doc_id: UUID, file_type: str) -> str:
     return f"kb/{kb_id}/doc/{doc_id}.{file_type}"
 
 
+def build_doc_prefix(kb_id: UUID, doc_id: UUID) -> str:
+    """文档派生对象（解析出的图等）的目录前缀 `kb/{kb_id}/doc/{doc_id}/`。
+
+    与原件 `kb/{kb_id}/doc/{doc_id}.{ext}` 同级不同名：原件不在这个目录里，删文档两样都要删。
+    """
+    return f"kb/{kb_id}/doc/{doc_id}/"
+
+
 # 可触发解析：已上传待处理 / 已解析、已完成（重新解析）/ 任意一步失败
 _PARSABLE = (
     Q(status=DocStatus.PENDING, stage=DocStage.UPLOADED)
@@ -217,18 +225,29 @@ class DocumentService:
     ) -> None:
         """删文档：先清 storage 对象（失败仅 log），再 ORM 级联清段/向量。"""
         doc = await self._get_user_doc(user, kb_id, doc_id)
+        await self._purge_storage(doc)
+        await doc.delete()  # FK CASCADE 自动清 paragraphs / embeddings
 
+    @staticmethod
+    async def _purge_storage(doc: Document) -> None:
+        """清掉文档在对象存储里的全部东西：原件 + 派生目录（解析出的图）。
+
+        失败只记日志、不抛：不阻塞 ORM 清理，用户始终能删掉记录；残留对象不影响正确性。
+        """
         if doc.storage_key:
             try:
                 await storage.delete(doc.storage_key)
             except Exception as e:
-                # 不阻塞 ORM 清理：用户始终能清掉记录，孤儿对象交给桶生命周期
                 logger.warning(
-                    "删除 storage 对象失败 doc_id=%s key=%s: %s",
-                    doc.id, doc.storage_key, e,
+                    "删除原件失败 doc_id=%s key=%s: %s", doc.id, doc.storage_key, e,
                 )
-
-        await doc.delete()  # FK CASCADE 自动清 paragraphs / embeddings
+        prefix = build_doc_prefix(doc.knowledge_base_id, doc.id)
+        try:
+            await storage.delete_prefix(prefix)
+        except Exception as e:
+            logger.warning(
+                "删除文档派生对象失败 doc_id=%s prefix=%s: %s", doc.id, prefix, e,
+            )
 
     async def trigger_parse_many(
             self, user: User, kb_id: UUID, document_ids: list[UUID],
@@ -283,14 +302,7 @@ class DocumentService:
             return 0
 
         for doc in docs:
-            if doc.storage_key:
-                try:
-                    await storage.delete(doc.storage_key)
-                except Exception as e:
-                    logger.warning(
-                        "批量删除 storage 对象失败 doc_id=%s key=%s: %s",
-                        doc.id, doc.storage_key, e,
-                    )
+            await self._purge_storage(doc)
         await Document.filter(id__in=[doc.id for doc in docs]).delete()
         return len(docs)
 

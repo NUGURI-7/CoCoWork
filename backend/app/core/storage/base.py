@@ -47,6 +47,20 @@ class Storage(ABC):
         """删除对象。不存在不报错（幂等）。"""
 
     @abstractmethod
+    async def delete_prefix(self, prefix: str) -> int:
+        """删除以 `prefix` 开头的全部对象，返回删除个数。没有匹配不报错（幂等）。
+
+        `prefix` 只当「目录」用，必须以 `/` 结尾：`kb/1/doc/2/` 不会误删
+        `kb/1/doc/23/...`，而裸前缀 `kb/1/doc/2` 在对象存储里会连它一起匹配上。
+        """
+
+    @staticmethod
+    def _ensure_dir_prefix(prefix: str) -> None:
+        """前缀校验：必须以 / 结尾且不是根。空串 / 根会删掉整个桶，宁可报错。"""
+        if not prefix.endswith("/") or prefix.strip("/") == "":
+            raise ValueError(f"前缀必须以 / 结尾且不能是根: {prefix!r}")
+
+    @abstractmethod
     async def exists(self, key: str) -> bool:
         """对象是否存在。"""
 
