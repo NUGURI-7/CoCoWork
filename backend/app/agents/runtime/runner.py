@@ -343,6 +343,8 @@ def _build_kb_tool_description(kb: KnowledgeBase) -> str:
     return (
         f"检索知识库《{kb.name}》：{desc}。"
         f"当你需要查询与此主题相关的信息时使用，输入一个自然语言查询。"
+        f"结果正文中的 [[figure:xxx]] 是插图记号；回答引用到的段落里有与问题相关的插图时，"
+        f"把对应记号原样单独成行写在回答的相应位置，用户会看到图片。不相关的插图不要写。"
     )
 
 

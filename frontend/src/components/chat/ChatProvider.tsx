@@ -49,3 +49,13 @@ export function useChat<T>(selector: (state: ChatState) => T): T {
   }
   return useStore(store, selector)
 }
+
+/**
+ * 可选版：不在 <ChatProvider> 内时返回 null。
+ *
+ * 给对话内外共用的组件用（如 MarkdownImage 也出现在知识库段预览里），
+ * 它们只在对话里才需要 store 的能力。
+ */
+export function useOptionalChatStore(): ChatStore | null {
+  return useContext(ChatContext)
+}

@@ -23,6 +23,7 @@ from langgraph.errors import GraphRecursionError
 from langgraph.types import Command
 from app.agents.runtime.events import EventType
 from app.agents.stream_contract import EMIT_TEXT_KEY, INTERNAL_STEP_KEY
+from app.tools.base import ClientArtifact
 
 logger = logging.getLogger(__name__)
 
@@ -520,12 +521,15 @@ async def _on_tool_end(
         return
 
     content = getattr(output, "content", None)
+    artifact = getattr(output, "artifact", None)
     yield EventType.TOOL_RESULT, {
         "index": block_idx,
         "id": tool_call_id,
         "status": "success",
         "result_summary": _summarize_tool_result(content),
         "result_data": content,
+        # 只转发声明给前端的那份；MCP 适配器等别的来源塞的 artifact 一律丢弃
+        "artifact": artifact.model_dump(mode="json") if isinstance(artifact, ClientArtifact) else None,
     }
 
 

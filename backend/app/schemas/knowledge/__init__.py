@@ -13,7 +13,7 @@ from app.schemas.knowledge.knowledge_base_schema import (
     KnowledgeBaseOut,
     KnowledgeBaseUpdate,
 )
-from app.schemas.knowledge.paragraph_schema import FigureOut, ParagraphOut
+from app.schemas.knowledge.paragraph_schema import FigureOut, FigureUrlsIn, FigureUrlsOut, ParagraphOut
 
 from app.schemas.knowledge.retrieval_schema import (
     RetrievalHit,
@@ -25,6 +25,8 @@ __all__ = [
     "ChunkConfig",
     "DocumentOut",
     "FigureOut",
+    "FigureUrlsIn",
+    "FigureUrlsOut",
     "KnowledgeBaseCreate",
     "KnowledgeBaseOut",
     "KnowledgeBaseUpdate",

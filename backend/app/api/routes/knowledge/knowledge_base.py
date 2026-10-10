@@ -7,6 +7,8 @@ from app.core.depends import get_current_user
 from app.core.http import ResponseModel, success
 from app.models.user import User
 from app.schemas.knowledge import (
+    FigureUrlsIn,
+    FigureUrlsOut,
     KnowledgeBaseCreate,
     KnowledgeBaseOut,
     KnowledgeBaseUpdate,
@@ -18,7 +20,7 @@ from app.services.knowledge import (
     get_knowledge_base_service,
     get_retrieval_service,
 )
-from app.services.knowledge.figure_urls import attach_hit_figures
+from app.services.knowledge.figure_urls import attach_hit_figures, sign_paragraph_figures
 from app.services.knowledge.parser import available_backends
 from app.services.knowledge.retrieval import RetrievalParams
 
@@ -64,6 +66,15 @@ async def list_parse_backends(
     别人家服务的响应时间上。
     """
     return success(data=[backend.value for backend in available_backends()])
+
+
+@router.post("/figure-urls", summary="批量换取段内插图的签名链接")
+async def sign_figure_urls(
+        data: FigureUrlsIn,
+        current_user: CurrentUserDep,
+) -> ResponseModel[FigureUrlsOut]:
+    urls = await sign_paragraph_figures(current_user, data.paragraph_ids)
+    return success(data=FigureUrlsOut(urls=urls))
 
 
 @router.get("/{kb_id}", summary="知识库详情")

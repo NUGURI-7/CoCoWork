@@ -81,3 +81,38 @@ async def test_attach_hit_figures_empty_skips_query(monkeypatch):
     monkeypatch.setattr(figure_urls.Paragraph, "filter", _filter)
 
     await figure_urls.attach_hit_figures([])
+
+
+async def test_sign_paragraph_figures_keys_and_owner_filter(fake_storage, monkeypatch):
+    """键 = figure_ref(段 id, 编号)；查询条件里必须带上「库是本人建的」。"""
+    pid = uuid4()
+    user = object()
+    rows = [{"id": pid, "meta": {"figures": [{"index": 1, "key": "k/1.png"}, {"index": 2, "key": "k/2.png"}]}}]
+    seen: dict = {}
+
+    class _QS:
+        async def values(self, *fields):
+            return rows
+
+    def _filter(**kwargs):
+        seen.update(kwargs)
+        return _QS()
+
+    monkeypatch.setattr(figure_urls.Paragraph, "filter", _filter)
+
+    urls = await figure_urls.sign_paragraph_figures(user, [pid])
+
+    assert seen["knowledge_base__created_by"] is user
+    assert urls == {
+        figure_urls.figure_ref(pid, 1): "https://signed.example/k/1.png",
+        figure_urls.figure_ref(pid, 2): "https://signed.example/k/2.png",
+    }
+
+
+async def test_sign_paragraph_figures_empty_skips_query(monkeypatch):
+    def _filter(**_):
+        raise AssertionError("空列表不该查库")
+
+    monkeypatch.setattr(figure_urls.Paragraph, "filter", _filter)
+
+    assert await figure_urls.sign_paragraph_figures(object(), []) == {}

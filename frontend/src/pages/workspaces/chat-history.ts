@@ -17,6 +17,7 @@ import type {
   ChatMessage,
   DelegateBlock,
   RenderBlock,
+  ToolArtifact,
   WorkspaceMessage,
 } from '@/types'
 
@@ -76,6 +77,7 @@ function translateOne(
       resultSummary:
         typeof b.result_summary === 'string' ? b.result_summary : null,
       resultData: b.result_data ?? null,
+      artifact: (b.artifact as ToolArtifact | null | undefined) ?? null,
       collapsed: true,
     }
   }

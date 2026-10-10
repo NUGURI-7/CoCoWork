@@ -22,6 +22,7 @@ from typing import Any, Literal
 
 from langchain_core.tools import BaseTool
 from langgraph.errors import GraphBubbleUp
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,16 @@ ToolCategory = Literal["data_source", "utility"]
 MAX_TOOL_OUTPUT_CHARS = 4000
 
 
+class ClientArtifact(BaseModel):
+    """工具结果里给前端用的那份数据 —— 流式事件与落库只认这个类型的 artifact。
+
+    别的来源的 artifact（如 MCP 适配器塞的 structured_content）不转发：
+    前端用不上，且无大小上限。kind 供前端分辨是哪种数据。
+    """
+
+    kind: str
+
+
 class CoCoTool(BaseTool):
     """项目所有工具的统一基类。子类只实现 `_execute`，横切逻辑由本类兜底。"""
 
@@ -63,11 +74,15 @@ class CoCoTool(BaseTool):
     timeout_seconds: float = 30.0  # 单次执行超时
 
     @abstractmethod
-    async def _execute(self, **kwargs: Any) -> str:
-        """子类实现：纯业务逻辑。入参由 args_schema 解析后按名注入，返回给 LLM 的字符串。"""
+    async def _execute(self, **kwargs: Any) -> str | tuple[str, Any]:
+        """子类实现：纯业务逻辑。入参由 args_schema 解析后按名注入，返回给 LLM 的字符串。
+
+        声明了 `response_format="content_and_artifact"` 的子类返回 `(content, artifact)`：
+        content 给 LLM，artifact 只随 ToolMessage 往下游走、不进上下文。
+        """
         ...
 
-    async def _arun(self, *args: Any, run_manager: Any = None, **kwargs: Any) -> str:
+    async def _arun(self, *args: Any, run_manager: Any = None, **kwargs: Any) -> str | tuple[str, Any]:
         """统一执行管线：超时 → 业务 → 异常兜底 → 输出截断。子类不重写本方法。
 
         run_manager 是 LangChain 注入的回调管理器，此处接住但不透传给 `_execute`。
@@ -78,7 +93,7 @@ class CoCoTool(BaseTool):
             )
         except asyncio.TimeoutError:
             logger.warning("tool %r timeout after %ss", self.name, self.timeout_seconds)
-            return f"工具「{self.display_name}」执行超时（超过 {self.timeout_seconds:g} 秒）"
+            return self._pack(f"工具「{self.display_name}」执行超时（超过 {self.timeout_seconds:g} 秒）")
         except GraphBubbleUp:
             # LangGraph 的控制流信号（人工确认的中断、工具返回 Command 注入 state、
             # 图排空），全靠抛异常向上冒泡实现 —— **它们不是「工具出错」**。
@@ -89,9 +104,18 @@ class CoCoTool(BaseTool):
         except Exception as exc:
             # 异常不外抛、不让 traceback 进 LLM context —— 翻成一句话，由 LLM 自行决定换法
             logger.exception("tool %r failed", self.name)
-            return f"工具「{self.display_name}」执行出错：{exc}"
+            return self._pack(f"工具「{self.display_name}」执行出错：{exc}")
 
-        return self._cap_output(result)
+        if isinstance(result, tuple):
+            content, artifact = result
+            return self._pack(self._cap_output(content), artifact)
+        return self._pack(self._cap_output(result))
+
+    def _pack(self, content: str, artifact: Any = None) -> str | tuple[str, Any]:
+        """按 response_format 出最终形态：content_and_artifact 一律回二元组（含出错 / 超时路径）。"""
+        if self.response_format == "content_and_artifact":
+            return content, artifact
+        return content
 
     def _cap_output(self, text: str) -> str:
         """超长输出截断 —— 防单个工具返回把 context 撑爆（上下文管理 L1）。"""

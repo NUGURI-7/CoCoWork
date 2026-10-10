@@ -105,6 +105,8 @@ export type {
   ToolUseDeltaPayload,
   ToolUseStopPayload,
   ToolResultPayload,
+  KnowledgeHitsArtifact,
+  ToolArtifact,
   ErrorPayload,
   Artifact,
   CompactStartPayload,

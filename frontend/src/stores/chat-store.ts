@@ -31,6 +31,7 @@ import { toast } from 'sonner'
 import { v4 as uuidv4 } from 'uuid'
 
 import { ChatStreamHttpError, streamChat } from '@/api/chat-stream'
+import { signFigureUrls } from '@/api/knowledge'
 import { isFileOpTool } from '@/components/chat/blocks/tool-format'
 import type {
   ApiContentBlock,
@@ -38,6 +39,7 @@ import type {
   ArtifactsPayload,
   AskAnswer,
   InterruptPayload,
+  KnowledgeHitsArtifact,
   CompactStopPayload,
   AssistantMessage,
   ChatMessage,
@@ -53,6 +55,7 @@ import type {
   MessageStartPayload,
   RenderBlock,
   TextBlock,
+  ToolArtifact,
   ToolResultPayload,
   ToolUseBlock,
   ToolUseDeltaPayload,
@@ -144,6 +147,21 @@ function findBlockByIndex(
   return blocks.find((b) => b.index === index)
 }
 
+function isKnowledgeHits(a: ToolArtifact | null | undefined): a is KnowledgeHitsArtifact {
+  return a?.kind === 'knowledge_hits'
+}
+
+/** 一组块里（含派活卡片里的子块）所有知识库命中的段 id —— 回答里的插图记号都出自这些段。 */
+function collectHitParagraphIds(blocks: RenderBlock[], out: Set<string>): void {
+  for (const b of blocks) {
+    if (b.type === 'tool_use' && isKnowledgeHits(b.artifact)) {
+      for (const id of b.artifact.paragraph_ids) out.add(id)
+    } else if (b.type === 'delegate') {
+      collectHitParagraphIds(b.blocks, out)
+    }
+  }
+}
+
 // ============ State / Actions 类型 ============
 
 export interface ChatState {
@@ -175,6 +193,18 @@ export interface ChatState {
    * **刻意只活在内存里**：刷新后消失（产品决策，别的项目也不留痕）。
    */
   compactedBeforeIds: string[]
+
+  /**
+   * 回答里插图记号 → 签名直链（键 `<段短标识>-N`）。
+   *
+   * 消息里只存段 id，链接一小时过期，所以每次进对话 / 每次检索完现签。
+   * 链接不落进 messages：过期重签只换这张表，消息本身不动。
+   */
+  figureUrls: Record<string, string>
+  /** 还没返回的签名请求数。> 0 时表里查不到的记号显示占位，= 0 时视为无效记号去掉 */
+  figureSigning: number
+  /** 对当前所有消息里命中过的段重签一遍（进对话时、图片链接过期时调） */
+  refreshFigures: () => void
 
   send: (content: ApiContentBlock[], mentionedMemberIds?: string[]) => Promise<void>
   /**
@@ -235,6 +265,8 @@ export function createChatStore({
   let abortCtrl: AbortController | null = null
   // 这一轮被 @ 的成员 id —— send 时记下，message_start 盖到 assistant 上（乐观显示成员身份）
   let pendingSenderMemberId: string | undefined
+  // reset 时 +1：换了对话之后才返回的签名结果不再并进新对话的表
+  let figureGeneration = 0
 
   return createStore<ChatState>()(
     immer((set, get) => {
@@ -450,6 +482,7 @@ export function createChatStore({
                 partialInputJson: '',
                 resultSummary: null,
                 resultData: null,
+                artifact: null,
                 collapsed: false,
               }
               container.push(block)
@@ -528,8 +561,11 @@ export function createChatStore({
                 b.status = p.status
                 b.resultSummary = p.result_summary
                 b.resultData = p.result_data
+                b.artifact = p.artifact ?? null
               }
             })
+            // 检索一结束就签：模型拿到结果才开始写回答，写到记号时链接多半已就位
+            if (isKnowledgeHits(p.artifact)) void signFigures(p.artifact.paragraph_ids)
             return
           }
           case 'message_delta': {
@@ -695,12 +731,42 @@ export function createChatStore({
         })
       }
 
+      /** 签一批段的插图并并入对照表。失败不提示：图只是回答的附属，记号按无效处理去掉 */
+      async function signFigures(paragraphIds: string[]): Promise<void> {
+        if (paragraphIds.length === 0) return
+        const generation = figureGeneration
+        set((s) => {
+          s.figureSigning += 1
+        })
+        let urls: Record<string, string> = {}
+        try {
+          urls = await signFigureUrls(paragraphIds)
+        } catch {
+          // 交给记号兜底：签名数归零后查不到的记号直接去掉
+        }
+        if (generation !== figureGeneration) return
+        set((s) => {
+          Object.assign(s.figureUrls, urls)
+          s.figureSigning -= 1
+        })
+      }
+
       return {
         messages: [],
         isLoading: false,
         artifactsRevision: 0,
         isCompacting: false,
         compactedBeforeIds: [],
+        figureUrls: {},
+        figureSigning: 0,
+
+        refreshFigures() {
+          const ids = new Set<string>()
+          for (const m of get().messages) {
+            if (m.role === 'assistant') collectHitParagraphIds(m.blocks, ids)
+          }
+          void signFigures([...ids])
+        },
 
         async send(content, mentionedMemberIds) {
           // 防重入 —— 上一轮还在跑时不允许新发送
@@ -825,7 +891,10 @@ export function createChatStore({
             s.isLoading = false
             s.isCompacting = false
             s.compactedBeforeIds = []
+            s.figureUrls = {}
+            s.figureSigning = 0
           })
+          figureGeneration += 1
         },
 
         hydrate(messages) {
@@ -833,6 +902,7 @@ export function createChatStore({
             s.messages = messages
             s.isLoading = false
           })
+          get().refreshFigures()
         },
       }
     }),

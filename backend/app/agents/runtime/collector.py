@@ -183,6 +183,7 @@ class MessageCollector:
             "partial_json": "",
             "result_summary": None,
             "result_data": None,
+            "artifact": None,
             "status": None,
         }
         subagent = payload.get("subagent")
@@ -217,6 +218,7 @@ class MessageCollector:
         block["status"] = payload.get("status")
         block["result_summary"] = payload.get("result_summary")
         block["result_data"] = payload.get("result_data")
+        block["artifact"] = payload.get("artifact")
 
     def _absorb_usage(self, payload: dict[str, Any]) -> None:
         """message_delta → 分流进两笔互不相干的账。

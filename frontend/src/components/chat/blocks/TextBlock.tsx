@@ -1,7 +1,9 @@
-import { memo } from 'react'
+import { memo, useMemo } from 'react'
 
+import { injectAnswerFigures } from '@/lib/figures'
 import type { TextBlock as TextBlockType } from '@/types'
 
+import { useChat } from '../ChatProvider'
 import { MarkdownRender } from '../MarkdownRender'
 
 interface TextBlockProps {
@@ -16,12 +18,17 @@ interface TextBlockProps {
  *
  * memo：流式那条消息每 token 重渲染，但已完成的块 block 引用不变（immer），
  * 靠 memo 跳过 —— 只有正在长的那个块重解析 markdown，其余块不动。
+ *
+ * 渲染前把知识库插图记号换成图片（见 injectAnswerFigures）。
  */
 export const TextBlock = memo(function TextBlock({ block }: TextBlockProps) {
-  return (
-    <MarkdownRender
-      content={block.content}
-      isStreaming={block.status === 'active'}
-    />
+  const figureUrls = useChat((s) => s.figureUrls)
+  const signing = useChat((s) => s.figureSigning > 0)
+  const isStreaming = block.status === 'active'
+  const content = useMemo(
+    () => injectAnswerFigures(block.content, figureUrls, signing, isStreaming),
+    [block.content, figureUrls, signing, isStreaming],
   )
+
+  return <MarkdownRender content={content} isStreaming={isStreaming} />
 })

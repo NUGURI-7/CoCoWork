@@ -16,6 +16,16 @@ class FigureOut(BaseModel):
     url: str = Field(description="预签名直链，浏览器直接取图；限时有效")
 
 
+class FigureUrlsIn(BaseModel):
+    """批量换插图直链：传对话里知识库工具命中过的段 id。"""
+
+    paragraph_ids: list[UUID] = Field(max_length=500, description="命中段 id 列表")
+
+
+class FigureUrlsOut(BaseModel):
+    urls: dict[str, str] = Field(description="图标识 `<段短标识>-N` → 预签名直链；无权或已不存在的段不出现")
+
+
 class ParagraphOut(BaseModel):
     """段对外输出（分段列表用）。
 

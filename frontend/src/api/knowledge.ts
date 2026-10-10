@@ -273,3 +273,24 @@ export function retrievalTest(
     ...(params.rerankModelId && { rerank_model_id: params.rerankModelId }),
   })
 }
+
+/** 签名接口单次最多收的段 id 数，与后端 FigureUrlsIn 的上限一致 */
+const FIGURE_URLS_BATCH = 500
+
+/**
+ * 段 id → 段内插图的签名直链，键是 `<段短标识>-N`，与回答里的 [[figure:…]] 记号对应。
+ *
+ * 超过单次上限时分批并发请求再合并；无权或已不存在的段不出现在结果里。
+ */
+export async function signFigureUrls(paragraphIds: string[]): Promise<Record<string, string>> {
+  const batches: string[][] = []
+  for (let i = 0; i < paragraphIds.length; i += FIGURE_URLS_BATCH) {
+    batches.push(paragraphIds.slice(i, i + FIGURE_URLS_BATCH))
+  }
+  const results = await Promise.all(
+    batches.map((ids) =>
+      post<{ urls: Record<string, string> }>('/knowledge-bases/figure-urls', { paragraph_ids: ids }),
+    ),
+  )
+  return Object.assign({}, ...results.map((r) => r.urls))
+}

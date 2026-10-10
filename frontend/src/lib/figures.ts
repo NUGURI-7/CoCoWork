@@ -18,3 +18,33 @@ export function injectFigures(content: string, figures: Figure[] | undefined): s
     return url ? `![图 ${n}](<${url}>)` : ''
   })
 }
+
+/** 回答里的插图记号 [[figure:<段短标识>-N]]，与后端 figure_urls.figure_ref 的格式一致 */
+const ANSWER_FIGURE_MARKER = /\[\[figure:([0-9a-f]{8}-\d+)\]\]/g
+
+/** 末尾吐了一半的记号（`[[`、`[[fig`、`[[figure:a1b2` …），流式期间先藏起来 */
+const PARTIAL_MARKER_TAIL = /\[\[(?:f(?:i(?:g(?:u(?:r(?:e(?::[0-9a-f-]*)?)?)?)?)?)?)?$/
+
+/** 链接还没签回来时的占位图地址，MarkdownImage 认到它画占位框 */
+export const FIGURE_PENDING_SRC = '#figure-pending'
+
+/**
+ * 把模型回答里的 `[[figure:<段短标识>-N]]` 换成 markdown 图片。
+ *
+ * - 表里有：换成 `![图](url)`
+ * - 表里没有、签名请求还在路上：换成占位图，链接回来后自动变成真图
+ * - 表里没有、也没有在途请求：模型抄错或段已被重新解析，直接去掉
+ */
+export function injectAnswerFigures(
+  content: string,
+  urls: Record<string, string>,
+  signing: boolean,
+  isStreaming: boolean,
+): string {
+  const text = isStreaming ? content.replace(PARTIAL_MARKER_TAIL, '') : content
+  return text.replace(ANSWER_FIGURE_MARKER, (_, ref: string) => {
+    const url = urls[ref]
+    if (url) return `![图](<${url}>)`
+    return signing ? `![图片加载中](${FIGURE_PENDING_SRC})` : ''
+  })
+}

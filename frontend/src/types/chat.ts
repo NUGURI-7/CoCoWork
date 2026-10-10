@@ -217,7 +217,21 @@ export interface ToolResultPayload extends SubagentScoped {
   status: 'success' | 'error'
   result_summary: string
   result_data: unknown
+  /** 工具附带给前端的数据（不进模型上下文）；多数工具为 null */
+  artifact?: ToolArtifact | null
 }
+
+/**
+ * 工具结果里给前端用的那份数据 —— 后端 `ClientArtifact` 的 JSON 形态，kind 区分种类。
+ * 前端只认识列出来的种类，别的 kind 原样存着、不处理。
+ */
+export interface KnowledgeHitsArtifact {
+  kind: 'knowledge_hits'
+  /** 本次命中的段 id —— 拿去换段内插图的签名链接 */
+  paragraph_ids: string[]
+}
+
+export type ToolArtifact = KnowledgeHitsArtifact | { kind: string }
 
 export interface ErrorPayload {
   /** 'internal_error' / 'provider_error' / 'context_overflow' / 'cancelled' 等 */
@@ -301,6 +315,7 @@ export interface ToolUseBlock {
   partialInputJson: string
   resultSummary: string | null
   resultData: unknown
+  artifact: ToolArtifact | null
   collapsed: boolean
 }
 

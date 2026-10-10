@@ -39,6 +39,7 @@ class ToolUseBlock(_BlockBase):
     partial_json: str = ""
     result_summary: Any = None
     result_data: Any = None
+    artifact: Any = None
     status: str | None = None
 
     @property

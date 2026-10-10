@@ -73,3 +73,39 @@ def test_多条命中按序编号且以分隔线相接():
 def test_空命中返回空串():
     """`_execute` 在 hits 为空时会走「未找到」的分支，这里只锁住不炸。"""
     assert _format_hits([]) == ""
+
+
+def test_图记号改写成跨段唯一():
+    """两段都有 figure:1，改写后前缀取各自段 id 的短标识，互不相撞。"""
+    from app.core.identifiers import short_id
+
+    a = _hit(content="流程如下：\n\n[[figure:1]]\n\n第三步")
+    b = _hit(content="[[figure:1]]\n\n[[figure:2]]")
+    out = _format_hits([a, b])
+
+    pa, pb = short_id(a.paragraph_id), short_id(b.paragraph_id)
+    assert f"[[figure:{pa}-1]]" in out
+    assert f"[[figure:{pb}-1]]" in out
+    assert f"[[figure:{pb}-2]]" in out
+    # 段内原始写法不再出现
+    assert "[[figure:1]]" not in out
+
+
+async def test_工具返回正文与命中段id():
+    """content_and_artifact：出错 / 超时路径也必须回二元组，artifact 为 None。"""
+    from unittest.mock import patch
+
+    from app.tools.knowledge_retrieval import KnowledgeRetrievalTool
+
+    tool = KnowledgeRetrievalTool.model_construct(
+        name="knowledge_x", description="d", display_name="知识库", kb_id=uuid4(), user=None,
+        default_top_k=3, response_format="content_and_artifact", timeout_seconds=5.0,
+        max_output_chars=4000,
+    )
+    with patch(
+        "app.tools.knowledge_retrieval._retrieval_service.retrieve",
+        side_effect=RuntimeError("boom"),
+    ):
+        content, artifact = await tool._arun(query="q")
+    assert "执行出错" in content
+    assert artifact is None
