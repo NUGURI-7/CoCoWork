@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CoCoWork — 多 Agent 协作平台</title>
-<meta name="description" content="不是一个聊天框。给它一个需求，它会拆解任务、分派成员、把结果交给你。">
+<title>CoCoWork — 企业内部的 AI 业务能力门户</title>
+<meta name="description" content="CoCoWork 是企业内部的 AI 业务能力门户，汇集为不同部门和业务线开发的 Agent 与 AI 工作流，支持多 Agent 协作。">
 <link rel="icon" href="img/logo.svg">
 
 <style>
@@ -407,7 +407,7 @@ footer { position: relative; border-top: 1px solid var(--line); padding: 56px 0 
     <nav class="nav-links">
       <a href="#features">核心能力</a>
       <a href="#interface">界面一览</a>
-      <a href="#guide">如何使用</a>
+      <a href="#guide">业务场景</a>
       <a href="#stack">技术栈</a>
     </nav>
     <div class="nav-cta">
@@ -423,27 +423,27 @@ footer { position: relative; border-top: 1px solid var(--line); padding: 56px 0 
 <div class="hero">
   <div class="wrap hero-grid">
     <div>
-      <span class="eyebrow"><i></i>多 Agent 协作平台</span>
+      <span class="eyebrow"><i></i>业务 Agent · AI 工作流 · 多 Agent 协作</span>
       <h1>
-        <span class="l"><span style="--i:0">Not just</span></span>
-        <span class="l"><span style="--i:1">a <span class="mark">chatbox<svg viewBox="0 0 300 12" preserveAspectRatio="none" aria-hidden="true"><path d="M3 8 C 62 2, 128 3, 186 6 S 268 9, 297 5"/></svg></span>.</span></span>
+        <span class="l"><span style="--i:0">企业内部 AI</span></span>
+        <span class="l"><span style="--i:1"><span class="mark">业务能力门户<svg viewBox="0 0 300 12" preserveAspectRatio="none" aria-hidden="true"><path d="M3 8 C 62 2, 128 3, 186 6 S 268 9, 297 5"/></svg></span></span></span>
       </h1>
       <p class="lead">
-        不是一个聊天框 —— 给它一个需求，它会拆解任务、分派成员、把结果交给你。
-        整个过程在对话中实时呈现：谁在做什么、进行到哪一步、产出了什么，全程可见。
+        汇集为不同部门和业务线开发的<strong>业务 Agent 与 AI 工作流</strong>。
+        员工可以从同一个入口直接使用业务能力，也可以让多个 Agent 围绕一项任务分工协作。
       </p>
       <div class="actions">
         <a class="btn btn-primary btn-lg" href="https://demo.nuguri.org" target="_blank" rel="noopener">体验 Demo <span class="ar">→</span></a>
         <a class="btn btn-lg" href="https://github.com/NUGURI-7/CoCoWork" target="_blank" rel="noopener">在 GitHub 查看</a>
       </div>
-      <p class="hero-note">演示账号 test01 / testcocowork · 开箱即用</p>
+      <p class="hero-note">当前 Demo 展示多助手协作、资料检索和文件交付</p>
     </div>
 
     <!-- 演示动画：与登录页同一套 -->
     <div class="demo">
       <div class="demo-bar">
         <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-        <span class="demo-tag"><span class="live"></span>workspace · running</span>
+        <span class="demo-tag"><span class="live"></span>协作演示</span>
       </div>
       <div class="demo-body">
         <div class="ask cyc" style="animation-name:cw-a">帮我把这季度的数据整理一下，做张图</div>
@@ -451,7 +451,7 @@ footer { position: relative; border-top: 1px solid var(--line); padding: 56px 0 
         <div class="sup cyc" style="animation-name:cw-b">
           <div class="av k">♛</div>
           <div>
-            <div class="name">Supervisor</div>
+            <div class="name">管家</div>
             <div class="sub">
               <span class="a1 cyc" style="animation-name:cw-say1">
                 正在分派
@@ -505,8 +505,8 @@ footer { position: relative; border-top: 1px solid var(--line); padding: 56px 0 
   <div class="wrap">
     <div class="section-head" data-reveal>
       <div class="kicker"><span>01</span><span class="ln"></span><span>核心能力</span></div>
-      <h2>围绕协作构建，而非单个助手的问答</h2>
-      <p>多个 Agent 在同一会话内分工，各自带着自己的知识库与技能。</p>
+      <h2>各类业务流程，统一使用入口</h2>
+      <p>各项业务能力有自己的流程和规则。固定流程按规则执行，需要多种能力的任务可以由多个 Agent 分工完成。</p>
     </div>
     <div class="cards">
       <div class="card" data-reveal style="--d:0ms">
@@ -548,12 +548,12 @@ footer { position: relative; border-top: 1px solid var(--line); padding: 56px 0 
   <div class="wrap">
     <div class="section-head" data-reveal>
       <div class="kicker"><span>02</span><span class="ln"></span><span>界面一览</span></div>
-      <h2>实际运行界面</h2>
+      <h2>现有版本界面</h2>
     </div>
     <div class="shots">
       <figure class="shot wide" data-reveal>
         <div class="frame"><img src="img/workspace-collab.webp" alt="工作空间协作" loading="lazy"></div>
-        <figcaption><b></b>工作空间 —— Supervisor 分派任务，成员各自执行，过程逐步展开</figcaption>
+        <figcaption><b></b>多助手协作，任务分派和成员进度在对话中展开</figcaption>
       </figure>
       <figure class="shot" data-reveal style="--d:60ms">
         <div class="frame"><img src="img/mention-direct.webp" alt="指定成员应答" loading="lazy"></div>
@@ -569,47 +569,32 @@ footer { position: relative; border-top: 1px solid var(--line); padding: 56px 0 
       </figure>
       <figure class="shot" data-reveal style="--d:120ms">
         <div class="frame"><img src="img/agents.webp" alt="Agent 配置" loading="lazy"></div>
-        <figcaption><b></b>Agent —— 绑定模型、知识库、工具与技能</figcaption>
+        <figcaption><b></b>Agent 配置界面，展示模型、知识库、工具和技能</figcaption>
       </figure>
     </div>
   </div>
 </section>
 
-<!-- ═══ 如何使用 ═══════════════════════════════════ -->
+<!-- ═══ 业务场景 ═══════════════════════════════════ -->
 <section id="guide" class="rule">
   <div class="wrap">
     <div class="section-head" data-reveal>
-      <div class="kicker"><span>03</span><span class="ln"></span><span>如何使用</span></div>
-      <h2>协作发生在工作空间中</h2>
-      <p>理解下面几点即可开始。</p>
+      <div class="kicker"><span>03</span><span class="ln"></span><span>业务场景示例</span></div>
+      <h2>两种业务，两套流程</h2>
     </div>
     <div class="steps">
       <div class="step" data-reveal>
         <div class="n">1</div>
         <div>
-          <h4>基本概念</h4>
-          <p>工作空间对应一个协作场景；Supervisor 为默认存在的调度者；成员是由用户招募的 Agent，各自具备不同能力。</p>
+          <h4>办公材料制作</h4>
+          <p>资料查询 Agent 和文档制作 Agent 分工，使用同一批产品资料按公司模板制作 PPT 和配套 Word。</p>
         </div>
       </div>
       <div class="step" data-reveal style="--d:70ms">
         <div class="n">2</div>
         <div>
-          <h4>两种交互方式</h4>
-          <p>直接发送消息，由 Supervisor 判断并安排成员执行；使用 <code>@</code> 指定成员，则由该成员直接应答。</p>
-        </div>
-      </div>
-      <div class="step" data-reveal style="--d:140ms">
-        <div class="n">3</div>
-        <div>
-          <h4>招募成员</h4>
-          <p>于通讯录中招募，成员来源为用户已创建的 Agent。为其关联知识库可获得检索能力，挂载技能可获得执行能力。</p>
-        </div>
-      </div>
-      <div class="step" data-reveal style="--d:210ms">
-        <div class="n">4</div>
-        <div>
-          <h4>执行过程</h4>
-          <p>分派出的任务在对话中逐一展开，成员的执行状态实时更新，完成后标记。</p>
+          <h4>合同初审</h4>
+          <p>业务工作流按既定规则核对合同主体、报价和条款，输出问题明细与修改建议，供员工复核。</p>
         </div>
       </div>
     </div>
