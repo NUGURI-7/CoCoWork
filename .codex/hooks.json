@@ -1,0 +1,18 @@
+{
+  "description": "CoCoWork 会话启动时检查本周开发周报。",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "^(startup|resume|clear|fork)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh \"$(git rev-parse --show-toplevel)/.codex/hooks/check-weekly.sh\"",
+            "timeout": 5,
+            "statusMessage": "检查开发周报"
+          }
+        ]
+      }
+    ]
+  }
+}
