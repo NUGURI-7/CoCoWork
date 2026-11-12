@@ -38,8 +38,10 @@ from app.services.memory import should_digest
 from app.services.sandbox.attachment import resolve_refs
 from app.services.workspace import (
     CompactionService,
+    ConversationService,
     MessageService,
     get_compaction_service,
+    get_conversation_service,
     get_message_service,
 )
 from app.tasks.registry import DIGEST_MEMORY
@@ -53,6 +55,7 @@ router = APIRouter(
 
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
 MessageServiceDep = Annotated[MessageService, Depends(get_message_service)]
+ConversationServiceDep = Annotated[ConversationService, Depends(get_conversation_service)]
 CompactionServiceDep = Annotated[CompactionService, Depends(get_compaction_service)]
 
 SSE_MEDIA_TYPE = "text/event-stream"
@@ -149,21 +152,13 @@ async def conversation_stream(
         body: ConversationStreamIn,
         current_user: CurrentUserDep,
         svc: MessageServiceDep,
+        conversations: ConversationServiceDep,
         compaction: CompactionServiceDep,
 ) -> StreamingResponse:
-    # ① 归属校验 + 取数：JOIN 一次过；prefetch workspace 拿 supervisor jsonb
-    conversation = (
-        await Conversation.filter(
-            id=conversation_id,
-            workspace_id=workspace_id,
-            workspace__created_by=current_user,
-        )
-        .prefetch_related("workspace")
-        .first()
+    # ① 取会话（第一句话时当场建）+ 归属校验；workspace 一并取出，下面要它的 supervisor jsonb
+    conversation = await conversations.get_or_create_in_workspace(
+        current_user, workspace_id, conversation_id,
     )
-
-    if conversation is None:
-        raise NotFound404("Conversation 不存在")
 
     # ② 拉历史 —— 必须是"落 user 之前"的快照，否则当前这句 history / content 双送
     past = await Message.filter(conversation_id=conversation_id).order_by("created_at")

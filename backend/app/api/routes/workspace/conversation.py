@@ -7,7 +7,6 @@ from app.core.depends import get_current_user
 from app.core.http import ResponseModel, success
 from app.models.user import User
 from app.schemas.workspace import (
-    ConversationCreate,
     ConversationOut,
     ConversationTitleIn,
     ConversationTitleOut,
@@ -24,17 +23,6 @@ CurrentUserDep = Annotated[User, Depends(get_current_user)]
 ConversationServiceDep = Annotated[
     ConversationService, Depends(get_conversation_service)
 ]
-
-
-@router.post("", summary="创建 Conversation")
-async def create_conversation(
-    workspace_id: UUID,
-    data: ConversationCreate,
-    current_user: CurrentUserDep,
-    svc: ConversationServiceDep,
-) -> ResponseModel[ConversationOut]:
-    conv = await svc.create(current_user, workspace_id, data)
-    return success(data=conv, message="创建成功")
 
 
 @router.get("", summary="列出 workspace 下的对话")

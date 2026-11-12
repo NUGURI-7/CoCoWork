@@ -63,7 +63,6 @@ export type {
   WorkspaceCreatePayload,
   WorkspaceUpdatePayload,
   Conversation,
-  ConversationCreatePayload,
   ConversationTitle,
   ConversationUpdatePayload,
   MessageRole,

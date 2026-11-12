@@ -54,11 +54,6 @@ export interface Conversation {
   updated_at: string
 }
 
-/** 对齐后端 ConversationCreate */
-export interface ConversationCreatePayload {
-  title?: string
-}
-
 /** 对齐后端 ConversationUpdate */
 export interface ConversationUpdatePayload {
   title?: string

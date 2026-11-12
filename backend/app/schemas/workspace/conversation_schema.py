@@ -14,15 +14,6 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class ConversationCreate(BaseModel):
-    """创建 conversation 请求体。
-
-    title 可不传,新建对话默认空字符串,等首条用户消息后由系统生成标题。
-    """
-
-    title: str = Field(default="", max_length=150, description="对话标题(可后置自动生成)")
-
-
 class ConversationUpdate(BaseModel):
     """更新 conversation 请求体(PATCH 风格)。"""
 

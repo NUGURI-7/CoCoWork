@@ -46,6 +46,12 @@ ring.register()
 interface WorkspaceChatProps {
   workspaceId: string
   conversationId: string
+  /**
+   * 新对话：库里还没有这条会话（id 由前端生成），不拉历史。
+   * 发出第一句话时后端在同一个请求里建库，随后回调 onStarted。
+   */
+  isNew?: boolean
+  onStarted?: () => void
   /** 管家是否已配 chat 模型；未配置时禁发 + 提示去右栏配置 */
   supervisorReady: boolean
   /** 顶部淡出遮罩（沉浸态无边框顶栏下用，替代硬分隔线） */
@@ -70,6 +76,8 @@ interface WorkspaceChatProps {
 export function WorkspaceChat({
   workspaceId,
   conversationId,
+  isNew = false,
+  onStarted,
   supervisorReady,
   topFade = false,
   onArtifacts,
@@ -97,10 +105,15 @@ export function WorkspaceChat({
   //   ② 进对话 hydrate 完历史 → 上次没起成的在这儿补上（lazy 兜底白捡）
   // 去重、占位、「已有名字就别动」全在 ensureConversationTitle 里判，这里只管报信号。
   const firstUserText = useStore(store, selectFirstUserText)
+  // 新对话的第一句话同时也是它入库的时刻：先头插进侧栏列表，再起名，再通知外层换网址。
   const ensureTitle = useWorkspaceSession((s) => s.ensureConversationTitle)
+  const materialize = useWorkspaceSession((s) => s.materializeConversation)
   useEffect(() => {
-    if (firstUserText) ensureTitle(workspaceId, conversationId, firstUserText)
-  }, [firstUserText, ensureTitle, workspaceId, conversationId])
+    if (!firstUserText) return
+    materialize(workspaceId, conversationId)
+    ensureTitle(workspaceId, conversationId, firstUserText)
+    onStarted?.()
+  }, [firstUserText, materialize, ensureTitle, onStarted, workspaceId, conversationId])
 
   // 产物信号：桶里每收一帧 artifacts 计数 +1，转手通知上游（产出物面板）重拉。
   // 初值 0 不触发；hydrate 回放历史不动这个计数，所以进对话不会白刷一次。
@@ -136,8 +149,9 @@ export function WorkspaceChat({
   }, [workspaceId])
 
   useEffect(() => {
-    // 桶已经有内容（之前灌过历史 / 正在后台跑）→ 不重灌，直接放行
-    if (store.getState().messages.length > 0) {
+    // 桶已经有内容（之前灌过历史 / 正在后台跑）→ 不重灌，直接放行。
+    // 新对话库里还没有，也没有历史可拉
+    if (isNew || store.getState().messages.length > 0) {
       setHistoryLoading(false)
       return
     }
@@ -161,7 +175,7 @@ export function WorkspaceChat({
       cancelled = true
       // 不再 reset()：切走时桶留在架子上、流继续。组件拆了，不碰桶。
     }
-  }, [store, workspaceId, conversationId])
+  }, [store, workspaceId, conversationId, isNew])
 
   if (historyLoading) {
     return (

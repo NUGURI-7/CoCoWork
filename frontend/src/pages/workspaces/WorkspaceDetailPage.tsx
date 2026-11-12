@@ -3,11 +3,10 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from 'react'
-import { Link, Outlet, useNavigate, useParams } from '@tanstack/react-router'
+import { Link, Outlet, useNavigate, useParams, useRouterState } from '@tanstack/react-router'
 import { ring } from 'ldrs'
 import {
   ChevronLeft,
@@ -99,13 +98,13 @@ ring.register()
  * /workspaces/$workspaceId — 工作空间详情页
  *
  * 会话列表已上提到全局侧边栏（workspace-session store），本页只消费 store 的
- * conversations 做 URL 同步 / 自动建会话，不再渲染会话列表面板。
+ * conversations 做 URL 同步 / 开空白新对话，不再渲染会话列表面板。
  *
  * 三栏：左（非沉浸 = 成员 roster，可关）/ 主对话（中，flex-1）/ 配置·产物面板
  * （右 320，可关，翻转）。沉浸模式（每空间记忆）：藏掉顶栏 / TabBar / 面包屑 /
  * 右侧面板，会话铺满；成员降级为沉浸顶栏右侧的头像条；标题 / 退出在沉浸顶栏。
  *
- * 接真状态：workspace 本体 + 成员招募/列表/踢人走本页真接口；会话列表/创建/删除走
+ * 接真状态：workspace 本体 + 成员招募/列表/踢人走本页真接口；会话列表/新对话/删除走
  * store。管家是合成行（workspace.supervisor，非 members 表的行），固定置顶。
  */
 export default function WorkspaceDetailPage() {
@@ -117,7 +116,10 @@ export default function WorkspaceDetailPage() {
   const conversations = useWorkspaceSession((s) => s.conversations)
   const convLoadedFor = useWorkspaceSession((s) => s.convLoadedFor)
   const setActiveWorkspace = useWorkspaceSession((s) => s.setActiveWorkspace)
-  const createConversation = useWorkspaceSession((s) => s.createConversation)
+  const onNewPage = useRouterState({
+    select: (s) =>
+      s.matches.some((m) => m.routeId === '/_authenticated/workspaces/$workspaceId/new'),
+  })
   const currentConvId = useCurrentConversationId()
 
   // 切会话 = 改 URL（push，前进后退能在会话间跳）；id=null 回 index；程序化跳转传 replace
@@ -228,29 +230,26 @@ export default function WorkspaceDetailPage() {
     }
   }, [workspaceId])
 
-  // 自动建会话：本空间会话加载完且一条不剩 → 建一条，保「进来就能打字」不变式。
-  // ref 防重入（异步建会话期间 effect 重跑不会重复发请求）。
-  const creatingRef = useRef(false)
+  // URL 同步：会话加载完后，若当前 URL 既不是新对话页、也不指向列表里的会话
+  // （落在 index / cid 失效 / 跨空间残留）→ replace 跳到最近一条；一条会话都没有
+  // 就跳新对话页，保「进来就能打字」。新对话不入库，发第一句话才建。
   useEffect(() => {
-    if (convLoadedFor !== workspaceId) return
+    if (convLoadedFor !== workspaceId || onNewPage) return
+    if (currentConvId && conversations.some((c) => c.id === currentConvId)) return
     if (conversations.length > 0) {
-      creatingRef.current = false
-      return
+      setCurrentConvId(conversations[0].id, { replace: true })
+    } else {
+      navigate({ to: '/workspaces/$workspaceId/new', params: { workspaceId }, replace: true })
     }
-    if (creatingRef.current) return
-    creatingRef.current = true
-    createConversation(workspaceId).finally(() => {
-      creatingRef.current = false
-    })
-  }, [convLoadedFor, workspaceId, conversations.length, createConversation])
-
-  // URL 同步：会话加载完后，若当前 URL 没指向有效会话（落在 index 或 cid 失效/跨空间残留），
-  // replace 跳到最近一条。自动建会话由上方 effect 负责，这里只管把 URL 钉到某一条。
-  useEffect(() => {
-    if (convLoadedFor !== workspaceId || conversations.length === 0) return
-    const valid = conversations.some((c) => c.id === currentConvId)
-    if (!valid) setCurrentConvId(conversations[0].id, { replace: true })
-  }, [convLoadedFor, workspaceId, conversations, currentConvId, setCurrentConvId])
+  }, [
+    convLoadedFor,
+    workspaceId,
+    onNewPage,
+    conversations,
+    currentConvId,
+    navigate,
+    setCurrentConvId,
+  ])
 
   async function handleRecruit(agentId: string) {
     const member = await recruitMember(workspaceId, { agent_id: agentId })

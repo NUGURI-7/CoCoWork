@@ -2,13 +2,13 @@ import logging
 from uuid import UUID
 
 from langchain_core.messages import HumanMessage
+from tortoise.exceptions import IntegrityError
 
 from app.agents.runtime.runner import build_chat_model
 from app.core.exceptions import AppApiException, NotFound404
 from app.models import Conversation, User, Workspace
 from app.schemas.agent import AgentConfig, ModelParams, ModelSlot
 from app.schemas.workspace import (
-    ConversationCreate,
     ConversationOut,
     ConversationUpdate,
 )
@@ -64,30 +64,48 @@ class ConversationService:
         if not exists:
             raise NotFound404("Workspace 不存在")
 
-    async def _get_user_conversation(
+    async def _find_owned(
         self, user: User, workspace_id: UUID, conversation_id: UUID,
-    ) -> Conversation:
-        """一次 JOIN 取 conversation + 归属校验。"""
-        conv =  await Conversation.filter(
+    ) -> Conversation | None:
+        """一次 JOIN 取 conversation + 归属校验，捎上 workspace。"""
+        return await Conversation.filter(
             id=conversation_id,
             workspace_id=workspace_id,
             workspace__created_by=user,
-        ).first()
+        ).select_related("workspace").first()
+
+    async def _get_user_conversation(
+        self, user: User, workspace_id: UUID, conversation_id: UUID,
+    ) -> Conversation:
+        conv = await self._find_owned(user, workspace_id, conversation_id)
         if conv is None:
             raise NotFound404("Conversation 不存在")
         return conv
 
-    async def create(
-        self, user: User, workspace_id: UUID, data: ConversationCreate,
-    ) -> ConversationOut:
-        """创建对话。先校验 workspace 归属再挂。"""
+    async def get_or_create_in_workspace(
+        self, user: User, workspace_id: UUID, conversation_id: UUID,
+    ) -> Conversation:
+        """取该用户在该工作空间的会话；还不存在就用这个 ID 新建。
+
+        会话在用户发出第一句话时才入库，ID 由前端生成。发消息与起名两个请求
+        同时到达，都走这里。
+        """
+        conv = await self._find_owned(user, workspace_id, conversation_id)
+        if conv is not None:
+            return conv
+
         await self._ensure_workspace_owned(user, workspace_id)
-        conv = await Conversation.create(
-            created_by=user,
-            workspace_id=workspace_id,
-            title=data.title,
-        )
-        return ConversationOut.model_validate(conv)
+        try:
+            await Conversation.create(
+                id=conversation_id, created_by=user, workspace_id=workspace_id,
+            )
+        except IntegrityError:
+            pass  # 这个 ID 已存在：并发的另一个请求刚建好，或它属于别人。下面统一重查
+
+        conv = await self._find_owned(user, workspace_id, conversation_id)
+        if conv is None:
+            raise NotFound404("Conversation 不存在")
+        return conv
 
     async def list_in_workspace(
             self, user: User, workspace_id: UUID,
@@ -126,19 +144,9 @@ class ConversationService:
         失败不降级:起名失败抛 503、库里保持空字符串。留空下次进对话才会再试;
         写个截断版进去等于把一个平庸标题永久锁死(条件写会挡住后续覆盖)。
         """
-        # 一次 JOIN 拿 conversation + 归属校验;select_related 捎上 workspace,
-        # 下面要读它的 supervisor jsonb 取模型槽位
-        conv = (
-            await Conversation.filter(
-                id=conversation_id,
-                workspace_id=workspace_id,
-                workspace__created_by=user,
-            )
-            .select_related("workspace")
-            .first()
-        )
-        if conv is None:
-            raise NotFound404("Conversation 不存在")
+        # 起名与第一句话同时发出,可能先于对话流到达,所以同样是「取或建」;
+        # 返回的 conversation 已捎上 workspace,下面要读它的 supervisor jsonb 取模型槽位
+        conv =await self.get_or_create_in_workspace(user, workspace_id, conversation_id)
 
         if conv.title:
             return conv.title

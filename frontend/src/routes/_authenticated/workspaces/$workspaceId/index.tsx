@@ -1,4 +1,4 @@
-/** /workspaces/:workspaceId —— 无会话落点：外壳 effect 会 replace 跳到最近一条会话 */
+/** /workspaces/:workspaceId —— 无会话落点：外壳 effect 会 replace 跳到最近一条会话，没有会话就跳新对话页 */
 import { createFileRoute } from '@tanstack/react-router'
 import { ring } from 'ldrs'
 

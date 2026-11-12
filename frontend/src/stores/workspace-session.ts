@@ -11,7 +11,6 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
 import {
-  createConversation as apiCreateConversation,
   deleteConversation as apiDeleteConversation,
   updateConversation as apiUpdateConversation,
   generateConversationTitle,
@@ -67,8 +66,8 @@ interface WorkspaceSessionState {
     conversationId: string,
     sourceText: string,
   ) => Promise<void>
-  /** 新建会话：建成后头插当前列表，返回新会话（失败返 null；导航交调用方） */
-  createConversation: (workspaceId: string) => Promise<Conversation | null>
+  /** 新对话发出第一句话：头插进列表（后端在同一个请求里建库）；已在列表里则不动 */
+  materializeConversation: (workspaceId: string, conversationId: string) => void
   /** 重命名会话：写库成功才改本地（失败不动，列表仍显示原名） */
   renameConversation: (
     workspaceId: string,
@@ -189,17 +188,20 @@ export const useWorkspaceSession = create<WorkspaceSessionState>()(
         }))
       },
 
-      createConversation: async (workspaceId) => {
-        let created: Conversation
-        try {
-          created = await apiCreateConversation(workspaceId)
-        } catch {
-          return null // 拦截器已 toast
+      materializeConversation: (workspaceId, conversationId) => {
+        const { activeWorkspaceId, conversations } = get()
+        if (activeWorkspaceId !== workspaceId) return
+        if (conversations.some((c) => c.id === conversationId)) return
+        const now = new Date().toISOString()
+        const conversation: Conversation = {
+          id: conversationId,
+          workspace_id: workspaceId,
+          title: '',
+          config: {},
+          created_at: now,
+          updated_at: now,
         }
-        if (get().activeWorkspaceId === workspaceId) {
-          set((s) => ({ conversations: [created, ...s.conversations] }))
-        }
-        return created
+        set({ conversations: [conversation, ...conversations] })
       },
 
       renameConversation: async (workspaceId, conversationId, title) => {

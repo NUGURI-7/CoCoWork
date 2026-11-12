@@ -27,7 +27,6 @@ export function useConversationActions() {
   const navigate = useNavigate()
   const activeWorkspaceId = useWorkspaceSession((s) => s.activeWorkspaceId)
   const conversations = useWorkspaceSession((s) => s.conversations)
-  const createConversation = useWorkspaceSession((s) => s.createConversation)
   const deleteConversation = useWorkspaceSession((s) => s.deleteConversation)
   const renameConversation = useWorkspaceSession((s) => s.renameConversation)
   const currentConvId = useCurrentConversationId()
@@ -44,21 +43,18 @@ export function useConversationActions() {
     [navigate, activeWorkspaceId],
   )
 
-  /** 新建会话并打开。 */
-  const createAndOpen = useCallback(async () => {
+  /** 打开空白新对话页（/new）。此时不入库，发出第一句话时后端才建。 */
+  const createAndOpen = useCallback(() => {
     if (!activeWorkspaceId) return
-    const created = await createConversation(activeWorkspaceId)
-    if (created) {
-      navigate({
-        to: '/workspaces/$workspaceId/c/$conversationId',
-        params: { workspaceId: activeWorkspaceId, conversationId: created.id },
-      })
-    }
-  }, [activeWorkspaceId, createConversation, navigate])
+    navigate({
+      to: '/workspaces/$workspaceId/new',
+      params: { workspaceId: activeWorkspaceId },
+    })
+  }, [activeWorkspaceId, navigate])
 
   /**
    * 删除会话。删的不是当前会话 → 只从列表移除；删的是当前会话 → 跳到最近一条剩余，
-   * 一条不剩则回空间 index（页面 entry effect 会自动补一条并跳过去）。
+   * 一条不剩则回空间 index（页面 effect 会跳到空白新对话页）。
    */
   const remove = useCallback(
     async (conversationId: string) => {

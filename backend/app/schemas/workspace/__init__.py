@@ -1,5 +1,4 @@
 from app.schemas.workspace.conversation_schema import (
-    ConversationCreate,
     ConversationOut,
     ConversationTitleIn,
     ConversationTitleOut,
@@ -20,7 +19,6 @@ from app.schemas.workspace.member_schema import (
 )
 
 __all__ = [
-    "ConversationCreate",
     "ConversationOut",
     "ConversationStreamIn",
     "ConversationTitleIn",

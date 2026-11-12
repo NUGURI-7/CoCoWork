@@ -10,7 +10,6 @@
 import { del, get, post, put } from '@/request'
 import type {
   Conversation,
-  ConversationCreatePayload,
   ConversationTitle,
   ConversationUpdatePayload,
   MemberRecruitPayload,
@@ -57,18 +56,6 @@ export function listConversations(workspaceId: string) {
 export function getConversation(workspaceId: string, conversationId: string) {
   return get<Conversation>(
     `/workspaces/${workspaceId}/conversations/${conversationId}`,
-  )
-}
-
-/** 创建对话（title 可不传，留空等系统按首轮内容自动生成）。 */
-export function createConversation(
-  workspaceId: string,
-  payload: ConversationCreatePayload = {},
-) {
-  return post<Conversation>(
-    `/workspaces/${workspaceId}/conversations`,
-    payload,
-    { silent: true },
   )
 }
 
