@@ -20,6 +20,7 @@ from app.core.depends import get_current_user
 from app.core.exceptions.types import ValidationException
 from app.core.http import PageData, PaginationDep, ResponseModel, paginate, success
 from app.core.storage import storage
+from app.models.knowledge import DocStage, DocStatus
 from app.models.user import User
 from app.schemas.knowledge import (
     BatchDeleteOut,
@@ -94,7 +95,7 @@ async def upload_passthrough(
         current_user: CurrentUserDep,
         svc: DocumentServiceDep,
 ) -> ResponseModel[None]:
-    """Local 模式专用：multipart 接字节 → 落盘 → 标 uploaded。
+    """Local 模式专用：multipart 接字节 → 落盘 → 安排解析。
 
     R2 模式应走 presign 直传 + upload-complete；此端点会直接拒绝。
     """
@@ -105,14 +106,14 @@ async def upload_passthrough(
 
     # 取 doc 做归属校验 + 拿 storage_key
     doc = await svc.get_by_id(current_user, kb_id, doc_id)
-    content_type = _content_type_for(doc.file_type)
+    if doc.status == DocStatus.PENDING and doc.stage == DocStage.NONE:
+        await storage.save(
+            doc.storage_key, file.file, content_type=_content_type_for(doc.file_type),
+        )
 
-    # 字节流落盘（LocalStorage 内部用 shutil.copyfileobj 分块拷贝，不爆内存）
-    await storage.save(doc.storage_key, file.file, content_type=content_type)
-
-    # 复校真实大小 + 标 uploaded（超限会清干净 + 抛错）
-    await svc.mark_uploaded(current_user, kb_id, doc_id)
-
+    doc = await svc.mark_uploaded(current_user, kb_id, doc_id)
+    if doc.stage == DocStage.UPLOADED:
+        return success(message="上传完成，请手动重试解析")
     return success(message="上传完成")
 
 
@@ -123,7 +124,7 @@ async def upload_complete(
         current_user: CurrentUserDep,
         svc: DocumentServiceDep,
 ) -> ResponseModel[None]:
-    """R2 模式专用：前端 PUT 完 R2 后调；后端复校真实大小 + 标 uploaded。
+    """R2 模式专用：前端 PUT 完 R2 后调；后端复校真实大小并安排解析。
 
     Local 模式应走 passthrough（一步完成）；此端点会直接拒绝。
     """
@@ -132,7 +133,9 @@ async def upload_complete(
             "当前存储后端不支持 complete 流程，passthrough 已完成上传",
         )
 
-    await svc.mark_uploaded(current_user, kb_id, doc_id)
+    doc = await svc.mark_uploaded(current_user, kb_id, doc_id)
+    if doc.stage == DocStage.UPLOADED:
+        return success(message="上传完成，请手动重试解析")
     return success(message="上传已确认")
 
 
@@ -143,7 +146,7 @@ async def parse(
         current_user: CurrentUserDep,
         svc: DocumentServiceDep,
 ) -> ResponseModel[DocumentOut]:
-    """解析 → 存图 → 段落入库，停在 parsed。已解析 / 已完成的文档会重新解析。
+    """解析后存储段落和全文检索词条。已解析 / 已完成的文档会重新解析。
 
     端点立即返回，处理由 SAQ worker 在独立进程跑；前端轮询 `GET /{doc_id}`
     看 status / stage 推进。
@@ -159,7 +162,7 @@ async def index(
         current_user: CurrentUserDep,
         svc: DocumentServiceDep,
 ) -> ResponseModel[DocumentOut]:
-    """段落 → 子块向量 + 关键词词条，到 completed。已完成的文档会重建索引。
+    """为已解析的段落生成子块向量。已完成的文档会重建向量。
 
     端点立即返回，处理由 SAQ worker 在独立进程跑；前端轮询 `GET /{doc_id}`
     看 status / stage 推进。

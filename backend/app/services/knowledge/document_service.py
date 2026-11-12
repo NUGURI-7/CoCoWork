@@ -41,9 +41,11 @@ def build_doc_prefix(kb_id: UUID, doc_id: UUID) -> str:
     return f"kb/{kb_id}/doc/{doc_id}/"
 
 
+_AWAITING_PARSE = Q(status=DocStatus.PENDING, stage=DocStage.UPLOADED)
+
 # 可触发解析：已上传待处理 / 已解析、已完成（重新解析）/ 任意一步失败
 _PARSABLE = (
-    Q(status=DocStatus.PENDING, stage=DocStage.UPLOADED)
+    _AWAITING_PARSE
     | Q(status__in=[DocStatus.PARSED, DocStatus.COMPLETED, DocStatus.FAILED])
 )
 
@@ -141,10 +143,25 @@ class DocumentService:
     ) -> Document:
         return await self._get_user_doc(user, kb_id, doc_id)
 
-    async def mark_uploaded(self, user: User, kb_id: UUID, doc_id: UUID, ) -> Document:
-        """文件传完后调：跟 storage 复校真实大小、超限就清理、否则置 stage=uploaded。"""
+    async def mark_uploaded(self, user: User, kb_id: UUID, doc_id: UUID) -> Document:
+        """确认原文件并安排解析。队列不可用时保留 uploaded，供手动重试。"""
         doc = await self._get_user_doc(user, kb_id, doc_id)
+        if doc.status != DocStatus.PENDING:
+            return doc
+        if doc.stage == DocStage.NONE:
+            await self._confirm_upload(doc)
+            await doc.refresh_from_db(fields=["size", "status", "stage", "error_message"])
 
+        if await self._claim(doc, _AWAITING_PARSE) and await self._enqueue(doc, PARSE_DOCUMENT):
+            doc.status = DocStatus.PROCESSING
+            doc.stage = DocStage.QUEUED
+            doc.error_message = ""
+        else:
+            await doc.refresh_from_db(fields=["status", "stage", "error_message"])
+        return doc
+
+    @staticmethod
+    async def _confirm_upload(doc: Document) -> None:
         try:
             actual_size = await storage.stat_size(doc.storage_key)
         except FileNotFoundError as e:
@@ -163,10 +180,9 @@ class DocumentService:
             await doc.delete()
             raise ValidationException(f"文件超出大小上限 {mb}MB")
 
-        doc.size = actual_size
-        doc.stage = DocStage.UPLOADED
-        await doc.save(update_fields=["size", "stage"])
-        return doc
+        await Document.filter(
+            id=doc.id, status=DocStatus.PENDING, stage=DocStage.NONE,
+        ).update(size=actual_size, stage=DocStage.UPLOADED)
 
     async def trigger_parse(self, user: User, kb_id: UUID, doc_id: UUID) -> Document:
         """触发解析：首次解析、重新解析、失败重试都走这里。"""
@@ -174,7 +190,14 @@ class DocumentService:
 
     async def trigger_index(self, user: User, kb_id: UUID, doc_id: UUID) -> Document:
         """触发建索引：首次建、重建、建索引失败重试都走这里。"""
+        kb = await self._ensure_user_kb(user, kb_id)
+        self._ensure_vectorization_supported(kb)
         return await self._trigger(user, kb_id, doc_id, _INDEXABLE, INDEX_DOCUMENT)
+
+    @staticmethod
+    def _ensure_vectorization_supported(kb: KnowledgeBase) -> None:
+        if kb.embedding_model_id is None or kb.embedding_dim is None:
+            raise ValidationException("该知识库未绑定 Embedding 模型，无法向量化")
 
     async def _trigger(
             self, user: User, kb_id: UUID, doc_id: UUID, allowed: Q, task: TaskSpec,
@@ -252,11 +275,14 @@ class DocumentService:
     async def trigger_parse_many(
             self, user: User, kb_id: UUID, document_ids: list[UUID],
     ) -> tuple[list[UUID], list[UUID]]:
+        await self._ensure_user_kb(user, kb_id)
         return await self._trigger_many(user, kb_id, document_ids, _PARSABLE, PARSE_DOCUMENT)
 
     async def trigger_index_many(
             self, user: User, kb_id: UUID, document_ids: list[UUID],
     ) -> tuple[list[UUID], list[UUID]]:
+        kb = await self._ensure_user_kb(user, kb_id)
+        self._ensure_vectorization_supported(kb)
         return await self._trigger_many(user, kb_id, document_ids, _INDEXABLE, INDEX_DOCUMENT)
 
     async def _trigger_many(
@@ -269,8 +295,6 @@ class DocumentService:
         不返回改了哪几行，一条语句批量改完分不清哪些是这次触发的。
         不属本库 / 不存在 / 状态不允许 / 入队失败的 id 都归 skipped。
         """
-        await self._ensure_user_kb(user, kb_id)
-
         docs = await Document.filter(
             id__in=document_ids,
             knowledge_base_id=kb_id,

@@ -87,10 +87,10 @@ class CronSpec:
 
 # === 知识库 ===
 
-# 解析 → 存图 → 段落入库。百度云端解析要轮询取结果、大 PDF 本地解析也慢，给足 30 分钟
+# 解析、存图、写入段落和关键词词条。云端轮询和大 PDF 解析给足 30 分钟。
 PARSE_DOCUMENT = TaskSpec(name="knowledge.parse_document", timeout=1800)
 
-# 段落 → 子块向量 + 关键词词条。大文档分批 embedding 慢，给足 30 分钟
+# 段落 → 子块向量。大文档分批 embedding 慢，给足 30 分钟。
 INDEX_DOCUMENT = TaskSpec(name="knowledge.index_document", timeout=1800)
 
 

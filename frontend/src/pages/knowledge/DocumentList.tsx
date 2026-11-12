@@ -57,6 +57,7 @@ import { docStatusMeta, getDocDisplayStatus, type DocDisplayStatus } from './moc
 
 interface DocumentListProps {
   kbId: string
+  canVectorize: boolean
   docs: Document[]
   /** 删除成功后回调，父组件用来 refetch 文档列表 */
   onDeleted?: () => void
@@ -83,7 +84,7 @@ const PARSABLE: ReadonlySet<DocDisplayStatus> = new Set([
   'uploaded', 'parsed', 'completed', 'parse_failed', 'index_failed',
 ])
 
-/** 能点「建索引」的展示态（与后端 `_INDEXABLE` 一致）：解析那步失败须先重新解析 */
+/** 向量化入口与后端 `_INDEXABLE` 一致。 */
 const INDEXABLE: ReadonlySet<DocDisplayStatus> = new Set(['parsed', 'completed', 'index_failed'])
 
 const PARSE_LABEL: Partial<Record<DocDisplayStatus, string>> = {
@@ -95,16 +96,15 @@ const PARSE_LABEL: Partial<Record<DocDisplayStatus, string>> = {
 }
 
 const INDEX_LABEL: Partial<Record<DocDisplayStatus, string>> = {
-  parsed: '建索引',
-  completed: '重建索引',
-  index_failed: '重试建索引',
+  parsed: '向量化',
+  completed: '重新向量化',
+  index_failed: '重试向量化',
 }
 
-/** 重新解析已完成文档的后果说明（单个 / 批量确认框共用） */
-const REPARSE_CONSEQUENCE =
-  '解析完成后，需要再点「建索引」才能恢复检索。'
+const REPARSE_CONSEQUENCE = '解析成功后会更新段落和关键词索引。'
+const REPARSE_VECTOR_CONSEQUENCE = '原有向量也会被清除，如需语义检索请重新向量化。'
 
-export function DocumentList({ kbId, docs, onDeleted, onProcessed }: DocumentListProps) {
+export function DocumentList({ kbId, canVectorize, docs, onDeleted, onProcessed }: DocumentListProps) {
   // 选中态：Set 存选中的 doc id，查/增/删都 O(1)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [batchConfirmOpen, setBatchConfirmOpen] = useState(false)
@@ -144,7 +144,7 @@ export function DocumentList({ kbId, docs, onDeleted, onProcessed }: DocumentLis
     setBatchTriggering(true)
     try {
       const run = action === 'parse' ? batchParseDocuments : batchIndexDocuments
-      const verb = action === 'parse' ? '解析' : '建索引'
+      const verb = action === 'parse' ? '解析' : '向量化'
       const { triggered, skipped } = await run(kbId, [...selected])
       // 每个被触发的 doc 复用单个版乐观更新（父级标 processing + 启动轮询）
       triggered.forEach((id) => onProcessed?.(id))
@@ -201,15 +201,17 @@ export function DocumentList({ kbId, docs, onDeleted, onProcessed }: DocumentLis
             <ScanText className="size-4" />
             批量解析
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={batchTriggering}
-            onClick={() => runBatch('index')}
-          >
-            <Sparkles className="size-4" />
-            批量建索引
-          </Button>
+          {canVectorize && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={batchTriggering}
+              onClick={() => runBatch('index')}
+            >
+              <Sparkles className="size-4" />
+              批量向量化
+            </Button>
+          )}
           <Button
             size="sm"
             variant="outline"
@@ -240,6 +242,7 @@ export function DocumentList({ kbId, docs, onDeleted, onProcessed }: DocumentLis
           <DocumentRow
             key={d.id}
             kbId={kbId}
+            canVectorize={canVectorize}
             doc={d}
             showBackend={showsParseBackend(d)}
             selected={selected.has(d.id)}
@@ -267,8 +270,8 @@ export function DocumentList({ kbId, docs, onDeleted, onProcessed }: DocumentLis
           <AlertDialogHeader>
             <AlertDialogTitle>解析选中的 {selected.size} 个文档？</AlertDialogTitle>
             <AlertDialogDescription>
-              所选文档中有 {selectedCompleted} 个已建好索引，重新解析将清除它们的段落和索引，
-              知识库将检索不到它们的内容。{REPARSE_CONSEQUENCE}
+              所选文档中有 {selectedCompleted} 个已完成。{REPARSE_CONSEQUENCE}
+              {canVectorize && REPARSE_VECTOR_CONSEQUENCE}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -317,6 +320,7 @@ export function DocumentList({ kbId, docs, onDeleted, onProcessed }: DocumentLis
 
 function DocumentRow({
   kbId,
+  canVectorize,
   doc,
   showBackend,
   selected,
@@ -326,6 +330,7 @@ function DocumentRow({
   onPreview,
 }: {
   kbId: string
+  canVectorize: boolean
   doc: Document
   showBackend: boolean
   selected: boolean
@@ -343,7 +348,7 @@ function DocumentRow({
   const display = getDocDisplayStatus(doc)
   const s = docStatusMeta[display]
   const parseLabel = PARSABLE.has(display) ? PARSE_LABEL[display] : undefined
-  const indexLabel = INDEXABLE.has(display) ? INDEX_LABEL[display] : undefined
+  const indexLabel = canVectorize && INDEXABLE.has(display) ? INDEX_LABEL[display] : undefined
   const canPreview = isPreviewable(doc.name)
 
   async function runTrigger(action: 'parse' | 'index') {
@@ -352,7 +357,7 @@ function DocumentRow({
     try {
       if (action === 'parse') await triggerParseDocument(kbId, doc.id)
       else await triggerIndexDocument(kbId, doc.id)
-      toast.success(`已触发「${doc.name}」${action === 'parse' ? '解析' : '建索引'}`)
+      toast.success(`已触发「${doc.name}」${action === 'parse' ? '解析' : '向量化'}`)
       setReparseConfirmOpen(false)
       onProcessed?.(doc.id)
     } catch {
@@ -569,7 +574,8 @@ function DocumentRow({
           <AlertDialogHeader>
             <AlertDialogTitle>重新解析「{doc.name}」？</AlertDialogTitle>
             <AlertDialogDescription>
-              将清除该文档现有的段落和索引，知识库将检索不到它的内容。{REPARSE_CONSEQUENCE}
+              {REPARSE_CONSEQUENCE}
+              {canVectorize && REPARSE_VECTOR_CONSEQUENCE}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

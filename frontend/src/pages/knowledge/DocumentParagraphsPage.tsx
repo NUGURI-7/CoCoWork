@@ -38,8 +38,7 @@ ring.register()
  * 只读展示文档被切成了哪些段，用来核对切分质量：标题链对不对、段是不是被腰斩、
  * 有没有只剩一行标题的空段。编辑能力后续版本再加。
  *
- * 文档待建索引（parsed）时顶部给「建索引」按钮：审完段落就地触发，不必退回列表。
- * 文档处理中时轮询其状态，结束后刷新统计与段列表（子块数随建索引变化）。
+ * 有向量模型且文档待向量化时，可在顶部触发。处理中轮询状态，结束后刷新段列表。
  *
  * 展开态放在页面级而不是卡片内部：顶部的「全部展开 / 全部收起」要能一把推平所有卡片，
  * 状态散在各卡片里就同步不了。每次取到新一页都重置为全部展开。
@@ -107,21 +106,24 @@ export default function DocumentParagraphsPage() {
         setDoc(next)
         if (next.status === 'processing') return
         fetchParagraphs()
-        if (next.status === 'completed') toast.success('建索引完成')
-        else if (next.status === 'failed') toast.error(next.error_message || '处理失败')
+        if (next.status === 'completed' || next.status === 'parsed') {
+          toast.success(next.status === 'completed' && kb?.embedding_model_id ? '向量化完成' : '解析完成')
+        } else if (next.status === 'failed') {
+          toast.error(next.error_message || '处理失败')
+        }
       } catch {
         // 拦截器已 toast
       }
     }, POLL_INTERVAL_MS)
     return () => clearTimeout(timer)
-  }, [doc, kbId, docId, fetchParagraphs])
+  }, [doc, kb, kbId, docId, fetchParagraphs])
 
   async function handleIndex() {
     if (triggering) return
     setTriggering(true)
     try {
       setDoc(await triggerIndexDocument(kbId, docId))
-      toast.success('已触发建索引')
+      toast.success('已触发向量化')
     } catch {
       // 拦截器已 toast
     } finally {
@@ -187,7 +189,7 @@ export default function DocumentParagraphsPage() {
             <h1 className="truncate text-xl font-semibold">{doc?.name ?? '文档分段'}</h1>
             <p className="text-muted-foreground mt-1.5 text-xs">
               {doc
-                ? `${doc.paragraph_count} 段 · ${doc.chunk_count.toLocaleString()} chunks · ${doc.char_length.toLocaleString()} 字符`
+                ? `${doc.paragraph_count} 段${kb?.embedding_model_id ? ` · ${doc.chunk_count.toLocaleString()} chunks` : ''} · ${doc.char_length.toLocaleString()} 字符`
                 : '加载中…'}
             </p>
           </div>
@@ -204,10 +206,10 @@ export default function DocumentParagraphsPage() {
               {allExpanded ? '全部收起' : '全部展开'}
             </Button>
           )}
-          {doc?.status === 'parsed' && (
+          {kb?.embedding_model_id && doc?.status === 'parsed' && (
             <Button size="sm" disabled={triggering} onClick={handleIndex}>
               <Sparkles className="size-4" />
-              建索引
+              向量化
             </Button>
           )}
           {doc?.status === 'processing' && (

@@ -110,7 +110,10 @@ export default function KnowledgeDetailPage() {
             </div>
             <p className="text-muted-foreground mt-1 text-sm">{kb.description}</p>
             <p className="text-muted-foreground mt-1.5 text-xs">
-              {kb.doc_count} 文档 · {kb.chunk_count.toLocaleString()} chunks · {kb.embedding_model_name}
+              {kb.doc_count} 文档
+              {kb.embedding_model_id
+                ? ` · ${kb.chunk_count.toLocaleString()} chunks · ${kb.embedding_model_name}`
+                : ' · 关键词检索'}
             </p>
           </div>
         </div>
@@ -138,6 +141,7 @@ export default function KnowledgeDetailPage() {
         <TabsContent value="documents" className="mt-4 space-y-4">
           <DocumentList
             kbId={kbId}
+            canVectorize={kb.embedding_model_id !== null}
             docs={pageData.records}
             onDeleted={refetchDocs}
             onProcessed={(docId) =>
@@ -161,6 +165,7 @@ export default function KnowledgeDetailPage() {
           <RetrievalTest
             kbId={kbId}
             kbMode={kb.retrieval_mode}
+            canVectorize={kb.embedding_model_id !== null}
             rerankModelId={kb.rerank_model_id}
             rerankModelName={kb.rerank_model_name}
           />

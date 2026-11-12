@@ -117,7 +117,7 @@ export function KnowledgeCard({ kb, onDeleted }: KnowledgeCardProps) {
               </span>
               <Badge variant="secondary" className="max-w-full gap-1">
                 <Layers />
-                <span className="truncate">{kb.embedding_model_name}</span>
+                <span className="truncate">{kb.embedding_model_name || '关键词检索'}</span>
               </Badge>
             </div>
             <div className="flex shrink-0 gap-5">
@@ -125,12 +125,14 @@ export function KnowledgeCard({ kb, onDeleted }: KnowledgeCardProps) {
                 <div className="font-mono text-xl leading-none tabular-nums">{kb.doc_count}</div>
                 <div className="text-muted-foreground mt-0.5 text-xs">文档</div>
               </div>
-              <div className="text-right">
-                <div className="font-mono text-xl leading-none tabular-nums">
-                  {kb.chunk_count.toLocaleString()}
+              {kb.embedding_model_id && (
+                <div className="text-right">
+                  <div className="font-mono text-xl leading-none tabular-nums">
+                    {kb.chunk_count.toLocaleString()}
+                  </div>
+                  <div className="text-muted-foreground mt-0.5 text-xs">chunks</div>
                 </div>
-                <div className="text-muted-foreground mt-0.5 text-xs">chunks</div>
-              </div>
+              )}
             </div>
           </div>
         </CardContent>

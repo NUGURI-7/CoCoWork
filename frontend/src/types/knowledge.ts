@@ -49,9 +49,9 @@ export interface KnowledgeBase {
   id: string
   name: string
   description: string
-  embedding_model_id: string
+  embedding_model_id: string | null
   embedding_model_name: string
-  embedding_dim: number
+  embedding_dim: number | null
   chunk_config: ChunkConfig
   status: KnowledgeBaseStatus
   doc_count: number
@@ -68,7 +68,8 @@ export interface KnowledgeBase {
 export interface KnowledgeBaseCreatePayload {
   name: string
   description?: string
-  embedding_model_id: string
+  embedding_model_id?: string
+  retrieval_mode?: RetrievalMode
   chunk_config?: Partial<ChunkConfig>
   /** 不传 = local。可选值取决于部署配置，见 getParseBackends() */
   parse_backend?: ParseBackend
@@ -92,7 +93,7 @@ export interface KnowledgeBaseUpdatePayload {
 
 /** 文档大状态（对齐后端 Document.status）
  *
- * 处理分两步、各由用户触发：解析 → `parsed`（段落已入库、尚不可检索）→ 建索引 → `completed`。
+ * 上传后自动解析，解析成功即可关键词检索。绑定了向量模型时，`parsed` 表示可手动向量化。
  */
 export type DocumentStatus = 'pending' | 'processing' | 'parsed' | 'completed' | 'failed'
 
@@ -102,9 +103,9 @@ export type DocumentStatus = 'pending' | 'processing' | 'parsed' | 'completed' |
  * - `'uploaded'` = 字节已传完、等解析
  * - `'queued'` = 已入队、等 worker 取（重试等待期也回落到这里）
  * - `'parsing'` / `'splitting'` = 解析进行中
- * - `'embedding'` = 建索引进行中（向量 + 关键词词条）
+ * - `'embedding'` = 向量化进行中
  *
- * failed 时 stage 停在出错那步：`embedding` = 建索引失败，其余 = 解析失败。
+ * failed 时 stage 停在出错那步：`embedding` = 向量化失败，其余 = 解析失败。
  */
 export type DocumentStage =
   | ''

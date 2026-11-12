@@ -1,7 +1,7 @@
-"""文档处理管线，分两步、各由用户触发：
+"""文档处理管线：
 
-- `parse_document(doc_id)`：解析 → 存图 → 组装段落落库，停在 parsed
-- `index_document(doc_id)`：段落 → 子块向量 + 关键词词条，到 completed
+- `parse_document(doc_id)`：上传后触发，解析并写段落和全文检索词条
+- `index_document(doc_id)`：手动触发，为绑定 embedding 的库生成子块向量
 
 由 SAQ worker 调用，薄封装见 `app/tasks/document_task.py`。
 
@@ -24,6 +24,7 @@ from uuid import UUID
 from tortoise.transactions import in_transaction
 from uuid_utils.compat import uuid7
 
+from app.core.exceptions.types import ValidationException
 from app.core.storage import storage
 from app.models.knowledge import SourceType
 from app.models.knowledge import (
@@ -161,13 +162,12 @@ async def _persist_figures(
 async def _replace_paragraphs(
         doc: Document, blocks: list[DocumentBlock], used_backend: ParseBackend,
 ) -> int:
-    """切段：组装段落，与置 parsed 在同一个事务里换掉旧段落。返回新段数。"""
+    """组装段落和关键词词条，在同一个事务里替换旧段落并更新文档状态。"""
     # === 切段 ===
     doc.stage = DocStage.SPLITTING
     await doc.save(update_fields=["stage"])
 
     # 标题感知组装：heading 开新段、正文并入当前段，超长在块边界续段。
-    # 关键词词条不在这里算：段落此时只供预览，建索引那步才让它可检索
     drafts = assemble_paragraphs(blocks)
     paragraphs = [
         Paragraph(
@@ -177,6 +177,7 @@ async def _replace_paragraphs(
             title=d.title[:_TITLE_MAX],
             position=i,
             char_length=len(d.content),
+            search_vector=tokenize(strip_figure_markers(d.content)),
             # 页码只有 PDF 有。没有时给空 dict 而不是 {"page": None}——
             # 免得下游要分「没这个键」和「键在但值是 null」两种情况
             meta={
@@ -190,7 +191,11 @@ async def _replace_paragraphs(
     doc.char_length = sum(len(b.text) for b in blocks)
     doc.paragraph_count = len(paragraphs)
     doc.chunk_count = 0  # 旧向量随旧段落级联删除
-    doc.status = DocStatus.PARSED
+    doc.status = (
+        DocStatus.PARSED
+        if doc.knowledge_base.embedding_model_id is not None
+        else DocStatus.COMPLETED
+    )
     doc.stage = DocStage.NONE
     doc.parse_backend = used_backend  # 事实，非期望：降级时与库设置不一致
 
@@ -211,9 +216,9 @@ async def _replace_paragraphs(
 
 
 async def parse_document(doc_id: UUID) -> None:
-    """第一步：解析 → 存图 → 组装段落落库，停在 parsed 等用户触发建索引。
+    """解析、存图、写段落和关键词词条。有向量模型的库停在 parsed，等待手动向量化。
 
-    换段落（删旧 + 写新）与置 parsed 在同一个事务里：重新解析中途失败时，
+    换段落（删旧 + 写新）与更新状态在同一个事务里：重新解析中途失败时，
     旧段落与旧索引原样保留，文档仍可检索。
     异常一律外抛：SAQ 靠异常判定任务失败并触发重试，失败落库由 tasks 层负责。
     """
@@ -254,10 +259,10 @@ async def parse_document(doc_id: UUID) -> None:
 
 
 async def index_document(doc_id: UUID) -> None:
-    """第二步：已落库的段落 → 子块向量 + 关键词词条，到 completed。
+    """为已落库的段落生成子块向量，到 completed。
 
     先建后删：新向量逐批写入时旧向量仍在，重建期间文档照常可检索；全部写完后
-    在一个事务里写关键词词条、删旧向量、置 completed。中途失败旧向量不动，
+    在一个事务里删旧向量、置 completed。中途失败旧向量不动，
     写了一半的新向量留到重试时当作旧的一并删掉。
     异常一律外抛，失败落库由 tasks 层负责。
     """
@@ -277,8 +282,20 @@ async def index_document(doc_id: UUID) -> None:
     await doc.save(update_fields=["status", "stage"])
 
     kb = doc.knowledge_base
+    if kb.embedding_model_id is None or kb.embedding_dim is None:
+        raise ValidationException("该知识库未绑定 Embedding 模型，无法向量化")
+
     chunk_cfg = ChunkConfig(**kb.chunk_config)
     paragraphs = await Paragraph.filter(document_id=doc.id).order_by("position")
+
+    # 兼容旧版只完成了解析的文档，补齐它们缺失的词条。
+    unindexed_paragraphs = [paragraph for paragraph in paragraphs if paragraph.search_vector is None]
+    if unindexed_paragraphs:
+        for paragraph in unindexed_paragraphs:
+            paragraph.search_vector = tokenize(strip_figure_markers(paragraph.content))
+        await Paragraph.bulk_update(
+            unindexed_paragraphs, fields=["search_vector"], batch_size=_SEARCH_VECTOR_BATCH,
+        )
 
     # 汇总所有段的子块
     chunk_items: list[_ChunkItem] = []
@@ -330,20 +347,11 @@ async def index_document(doc_id: UUID) -> None:
         await Embedding.bulk_create(embeddings)
         new_ids.extend(e.id for e in embeddings)
 
-    # 关键词索引抠掉图记号：记号是渲染路标，进全文检索是噪音
-    for paragraph in paragraphs:
-        paragraph.search_vector = tokenize(strip_figure_markers(paragraph.content))
-
     doc.chunk_count = len(chunk_items)
     doc.status = DocStatus.COMPLETED
     doc.stage = DocStage.NONE
 
     async with in_transaction() as conn:
-        if paragraphs:
-            await Paragraph.bulk_update(
-                paragraphs, fields=["search_vector"],
-                batch_size=_SEARCH_VECTOR_BATCH, using_db=conn,
-            )
         await conn.execute_query(_DELETE_STALE_EMBEDDINGS_SQL, [doc.id, new_ids])
         await doc.save(update_fields=["chunk_count", "status", "stage"], using_db=conn)
 

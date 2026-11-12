@@ -62,6 +62,7 @@ export function KnowledgeSettings({ kb, onUpdated }: KnowledgeSettingsProps) {
   const [rerankModels, setRerankModels] = useState<AIModel[]>([])
   const [rerankModelsLoading, setRerankModelsLoading] = useState(false)
   const [retrievalSaving, setRetrievalSaving] = useState(false)
+  const canVectorize = kb.embedding_model_id !== null
 
   const retrievalDirty =
     retrievalMode !== kb.retrieval_mode ||
@@ -215,7 +216,7 @@ export function KnowledgeSettings({ kb, onUpdated }: KnowledgeSettingsProps) {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {Object.entries(RETRIEVAL_MODE_LABEL).map(([k, label]) => (
+              {Object.entries(RETRIEVAL_MODE_LABEL).filter(([mode]) => canVectorize || mode === 'keyword').map(([k, label]) => (
                 <SelectItem key={k} value={k}>
                   {label}
                 </SelectItem>
@@ -223,8 +224,9 @@ export function KnowledgeSettings({ kb, onUpdated }: KnowledgeSettingsProps) {
             </SelectContent>
           </Select>
           <p className="text-muted-foreground text-xs">
-            向量检索按语义找、关键词检索按词面找、混合检索两路并发后融合排名。
-            词面精确查询（编号 / 型号 / 专有名词）多的库才值得开混合。
+            {canVectorize
+              ? '向量检索按语义匹配，关键词检索按词面匹配，混合检索会合并两路结果。'
+              : '此知识库使用关键词匹配。'}
           </p>
         </div>
         <div className="grid gap-2">
@@ -313,27 +315,29 @@ export function KnowledgeSettings({ kb, onUpdated }: KnowledgeSettingsProps) {
       </Section>
 
       {/* 分区4 · 向量化配置（只读锁定） */}
-      <Section
-        title="向量化配置"
-        desc="建库后锁定。更换 embedding 模型或切块参数需重新向量化全部文档（后续支持）。"
-        icon={<Lock className="text-muted-foreground size-4" />}
-      >
-        <ReadonlyField
-          label="Embedding 模型"
-          value={`${kb.embedding_model_name} · ${kb.embedding_dim} 维`}
-        />
-        <div className="grid grid-cols-2 gap-4">
-          <ReadonlyField label="Chunk Size" value={`${kb.chunk_config.chunk_size} token`} />
-          <ReadonlyField label="Overlap" value={`${kb.chunk_config.overlap} token`} />
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <ReadonlyField label="切分策略" value="递归切分" />
+      {canVectorize && (
+        <Section
+          title="向量化配置"
+          desc="建库后锁定。更换 embedding 模型或切块参数需重新向量化全部文档（后续支持）。"
+          icon={<Lock className="text-muted-foreground size-4" />}
+        >
           <ReadonlyField
-            label="标题链前置"
-            value={kb.chunk_config.prepend_title ? '已开启' : '未开启'}
+            label="Embedding 模型"
+            value={`${kb.embedding_model_name} · ${kb.embedding_dim} 维`}
           />
-        </div>
-      </Section>
+          <div className="grid grid-cols-2 gap-4">
+            <ReadonlyField label="Chunk Size" value={`${kb.chunk_config.chunk_size} token`} />
+            <ReadonlyField label="Overlap" value={`${kb.chunk_config.overlap} token`} />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <ReadonlyField label="切分策略" value="递归切分" />
+            <ReadonlyField
+              label="标题链前置"
+              value={kb.chunk_config.prepend_title ? '已开启' : '未开启'}
+            />
+          </div>
+        </Section>
+      )}
 
       {/* 分区5 · 危险操作 */}
       <Section

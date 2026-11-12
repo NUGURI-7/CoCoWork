@@ -6,7 +6,7 @@ from tortoise.queryset import QuerySet
 
 from app.core.exceptions.types import NotFound404, ValidationException
 from app.core.storage import storage
-from app.models.knowledge import KnowledgeBase, KBStatus, ParseBackend
+from app.models.knowledge import KnowledgeBase, KBStatus, ParseBackend, RetrievalMode
 from app.models.model import AIModel
 from app.models.user import User
 from app.schemas.knowledge import (
@@ -40,7 +40,7 @@ class KnowledgeBaseService:
         """ORM（带 annotate 计数）→ KnowledgeBaseOut，批量补 embedding 模型名。"""
         if not kbs:
             return []
-        model_ids = {kb.embedding_model_id for kb in kbs}
+        model_ids = {kb.embedding_model_id for kb in kbs if kb.embedding_model_id is not None}
         rerank_ids = {kb.rerank_model_id for kb in kbs if kb.rerank_model_id}
         all_ids = model_ids | rerank_ids
         name_map = dict(
@@ -93,32 +93,35 @@ class KnowledgeBaseService:
             )
 
     async def create(self, user: User, data: KnowledgeBaseCreate) -> KnowledgeBaseOut:
-        # 0. 先拦不可用的解析后端 —— 别等探测完维度、白跑一次 embedding 请求才发现
         self._ensure_backend_available(data.parse_backend)
+        self._ensure_retrieval_mode_supported(data.retrieval_mode, data.embedding_model_id)
 
-        # 1. 校验 embedding 模型归属 + 类型
-        model = (
-            await AIModel.filter(id=data.embedding_model_id, provider__created_by=user)
-            .select_related("provider")
-            .first()
-        )
-        if model is None:
-            raise NotFound404("Embedding 模型不存在")
-        if model.model_type != "embedding":
-            raise ValidationException("知识库必须绑定 embedding 类型的模型")
+        model = None
+        dim = None
+        if data.embedding_model_id is not None:
+            model = (
+                await AIModel.filter(id=data.embedding_model_id, provider__created_by=user)
+                .select_related("provider")
+                .first()
+            )
+            if model is None:
+                raise NotFound404("Embedding 模型不存在")
+            if model.model_type != "embedding":
+                raise ValidationException("知识库必须绑定 embedding 类型的模型")
 
-        # 2. 解析向量维度：优先读 meta 缓存，缺失则探测一次并回写
-        dim = (model.meta or {}).get("embedding_dim")
-        if not dim:
-            dim = await self._probe_embedding_dim(model)
+            dim = (model.meta or {}).get("embedding_dim")
+            if not dim:
+                dim = await self._probe_embedding_dim(model)
+            if dim <= 0:
+                raise ValidationException("向量维度必须大于零")
 
-        # 3. 入库
         kb = await KnowledgeBase.create(
             created_by=user,
             name=data.name,
             description=data.description,
             embedding_model=model,
             embedding_dim=dim,
+            retrieval_mode=data.retrieval_mode,
             chunk_config=data.chunk_config.model_dump(),
             status=KBStatus.READY,
             parse_backend=data.parse_backend,
@@ -126,11 +129,20 @@ class KnowledgeBaseService:
 
         return await self.get_by_id(user, kb.id)
 
+    @staticmethod
+    def _ensure_retrieval_mode_supported(
+        mode: RetrievalMode, embedding_model_id: UUID | None,
+    ) -> None:
+        if embedding_model_id is None and mode != RetrievalMode.KEYWORD:
+            raise ValidationException("向量和混合检索需要绑定 Embedding 模型")
+
     async def _probe_embedding_dim(self, model: AIModel) -> int:
         """实测 embedding 维度并回写 AIModel.meta（仅旧模型/缺失时兜底）。"""
         try:
             vectors = await ModelClient.create_embedding(model, ["dimension probe"])
             dim = len(vectors[0])
+            if dim == 0:
+                raise ValueError("Embedding 模型返回了空向量")
         except Exception as e:
             logger.warning("探测 embedding 维度失败: %s %s", model.model_name, e)
             raise ValidationException(f"无法确定向量维度: {e}") from e
@@ -142,7 +154,8 @@ class KnowledgeBaseService:
     async def update(
         self, user: User, kb_id: UUID, data: KnowledgeBaseUpdate,
     ) -> KnowledgeBaseOut:
-        if not await KnowledgeBase.filter(created_by=user, id=kb_id).exists():
+        kb = await KnowledgeBase.filter(created_by=user, id=kb_id).first()
+        if kb is None:
             raise NotFound404("知识库不存在")
 
         update_fields: dict = {}
@@ -153,6 +166,7 @@ class KnowledgeBaseService:
         if data.chunk_config is not None:
             update_fields["chunk_config"] = data.chunk_config.model_dump()
         if data.retrieval_mode is not None:
+            self._ensure_retrieval_mode_supported(data.retrieval_mode, kb.embedding_model_id)
             update_fields["retrieval_mode"] = data.retrieval_mode.value
         if data.parse_backend is not None:
             self._ensure_backend_available(data.parse_backend)

@@ -6,7 +6,7 @@
 import time
 from uuid import UUID
 
-from app.core.exceptions import NotFound404
+from app.core.exceptions.types import NotFound404, ValidationException
 from app.models import KnowledgeBase, User
 from app.services.knowledge.retrieval.base import (
     RetrievalMode,
@@ -58,10 +58,13 @@ class RetrievalService:
         if kb is None:
             raise NotFound404("知识库不存在")
 
-        # 2. dispatch 到具体 retriever
-        retriever = self._RETRIEVERS.get(params.mode)
+        mode = params.mode or kb.retrieval_mode
+        if mode != RetrievalMode.KEYWORD and (kb.embedding_model_id is None or kb.embedding_dim is None):
+            raise ValidationException("该知识库仅支持关键词检索")
+        params = params.model_copy(update={"mode": mode})
+        retriever = self._RETRIEVERS.get(mode)
         if retriever is None:
-            raise ValueError(f"未注册的检索模式：{params.mode}")
+            raise ValueError(f"未注册的检索模式：{mode}")
 
         # 3. 执行 + 外圈总耗时（不含归属校验，跟老代码 total_ms 语义对齐）
         t0 = time.perf_counter()

@@ -1,4 +1,4 @@
-"""SAQ 文档处理任务：解析、建索引各一个，由用户分别触发。
+"""SAQ 文档处理任务：上传后解析，按需手动向量化。
 
 worker 取到任务后调 document_processor 里对应的一步。出错时按剩余重试次数记状态：
 还有机会就把 stage 退回 queued 等下一轮，次数用尽才标 failed —— stage 停在出错
@@ -20,12 +20,12 @@ logger = logging.getLogger(__name__)
 
 
 async def parse_document_task(ctx: Context, *, doc_id: str) -> None:
-    """第一步：解析 → 存图 → 段落入库。"""
+    """解析、存图、写入段落和关键词词条。"""
     await _run_step(ctx, parse_document, UUID(doc_id))
 
 
 async def index_document_task(ctx: Context, *, doc_id: str) -> None:
-    """第二步：段落 → 子块向量 + 关键词词条。"""
+    """为已有段落生成子块向量。"""
     await _run_step(ctx, index_document, UUID(doc_id))
 
 

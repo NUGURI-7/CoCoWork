@@ -30,12 +30,14 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { RETRIEVAL_MODE_LABEL } from '@/lib/retrieval'
 import {
   ALL_PARSE_BACKENDS,
   PARSE_BACKEND_HINTS,
   PARSE_BACKEND_LABELS,
   type AIModel,
   type ParseBackend,
+  type RetrievalMode,
 } from '@/types'
 
 /** 切块默认值。单位是 token（cl100k_base 口径），中文一字约 1.14 token，
@@ -62,6 +64,7 @@ export function CreateKnowledgeDialog({
 }: CreateKnowledgeDialogProps) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [retrievalMode, setRetrievalMode] = useState<RetrievalMode>('keyword')
   const [modelId, setModelId] = useState('')
   const [chunkSize, setChunkSize] = useState(DEFAULT_CHUNK_SIZE)
   const [overlap, setOverlap] = useState(DEFAULT_OVERLAP)
@@ -72,17 +75,26 @@ export function CreateKnowledgeDialog({
   const [parseBackend, setParseBackend] = useState<ParseBackend>('local')
   const [availableBackends, setAvailableBackends] = useState<ParseBackend[]>(['local'])
 
-  // 打开时拉取可用的 embedding 模型（后端 list_own 天然只返回当前用户的模型）
+  const needsEmbedding = retrievalMode !== 'keyword'
+
   useEffect(() => {
-    if (!open) return
+    if (!open || !needsEmbedding) return
+    let active = true
     setModelsLoading(true)
     listAllModels({ modelType: 'embedding', enabledOnly: true })
-      .then(setModels)
+      .then((items) => {
+        if (active) setModels(items)
+      })
       .catch(() => {
         // 拦截器已 toast；下拉降级为空态
       })
-      .finally(() => setModelsLoading(false))
-  }, [open])
+      .finally(() => {
+        if (active) setModelsLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [open, needsEmbedding])
 
   // 解析后端可选项取决于部署侧配没配 Key，前端看不见，只能问后端。
   // 失败时退回只有 local —— 那条路零配置永远可用，不会把人挡在建库之外
@@ -96,11 +108,13 @@ export function CreateKnowledgeDialog({
   const hasModels = models.length > 0
   const selectedDim = models.find((m) => m.id === modelId)?.meta?.embedding_dim
   const exceedsIndexDim = selectedDim !== undefined && selectedDim > HNSW_MAX_DIM
-  const canSubmit = name.trim() && modelId && !submitting
+  const hasSelectedModel = !modelsLoading && models.some((m) => m.id === modelId)
+  const canSubmit = name.trim() && (!needsEmbedding || hasSelectedModel) && !submitting
 
   function resetForm() {
     setName('')
     setDescription('')
+    setRetrievalMode('keyword')
     setModelId('')
     setChunkSize(DEFAULT_CHUNK_SIZE)
     setOverlap(DEFAULT_OVERLAP)
@@ -115,12 +129,15 @@ export function CreateKnowledgeDialog({
       await createKnowledgeBase({
         name: name.trim(),
         description: description.trim() || undefined,
-        embedding_model_id: modelId,
-        chunk_config: {
-          chunk_size: Number(chunkSize) || Number(DEFAULT_CHUNK_SIZE),
-          overlap: Number(overlap) || Number(DEFAULT_OVERLAP),
-          prepend_title: prependTitle,
-        },
+        retrieval_mode: retrievalMode,
+        embedding_model_id: needsEmbedding ? modelId : undefined,
+        chunk_config: needsEmbedding
+          ? {
+              chunk_size: Number(chunkSize) || Number(DEFAULT_CHUNK_SIZE),
+              overlap: Number(overlap) || Number(DEFAULT_OVERLAP),
+              prepend_title: prependTitle,
+            }
+          : undefined,
         parse_backend: parseBackend,
       })
       toast.success('知识库创建成功')
@@ -147,7 +164,7 @@ export function CreateKnowledgeDialog({
         <DialogHeader>
           <DialogTitle>新建知识库</DialogTitle>
           <DialogDescription>
-            创建后将锁定 embedding 模型，用于文档向量化与检索
+            关键词检索可直接使用。向量检索和混合检索需要选择向量模型。
           </DialogDescription>
         </DialogHeader>
 
@@ -179,12 +196,30 @@ export function CreateKnowledgeDialog({
             />
           </div>
 
-          {/* Embedding 模型 */}
           <div className="grid gap-2">
+            <Label htmlFor="kb-retrieval-mode">默认检索方式</Label>
+            <Select
+              value={retrievalMode}
+              onValueChange={(mode) => setRetrievalMode(mode as RetrievalMode)}
+            >
+              <SelectTrigger id="kb-retrieval-mode" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(RETRIEVAL_MODE_LABEL).map(([mode, label]) => (
+                  <SelectItem key={mode} value={mode}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className={needsEmbedding ? 'grid gap-2' : 'hidden'}>
             <Label>
               Embedding 模型 <span className="text-destructive">*</span>
             </Label>
-            <Select value={modelId} onValueChange={setModelId} disabled={!hasModels}>
+            <Select value={modelId} onValueChange={setModelId} disabled={modelsLoading || !hasModels}>
               <SelectTrigger className="w-full">
                 <SelectValue
                   placeholder={
@@ -263,7 +298,7 @@ export function CreateKnowledgeDialog({
           </div>
 
           {/* 高级：切块配置 */}
-          <Accordion type="single" collapsible>
+          <Accordion type="single" collapsible className={needsEmbedding ? undefined : 'hidden'}>
             <AccordionItem value="advanced" className="border-b-0">
               <AccordionTrigger className="py-2 text-sm">
                 高级 · 切块配置

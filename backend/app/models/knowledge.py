@@ -19,7 +19,7 @@ class KBStatus(StrEnum):
 class DocStatus(StrEnum):
     PENDING = "pending"
     PROCESSING = "processing"
-    PARSED = "parsed"  # 段落已入库、尚不可检索，等用户触发建索引
+    PARSED = "parsed"  # 段落已入库，可关键词检索，等待手动向量化
     COMPLETED = "completed"
     FAILED = "failed"
 
@@ -30,7 +30,7 @@ class DocStage(StrEnum):
     QUEUED = "queued"  # 已入队等 worker 取；重试等待期也回落到这里
     PARSING = "parsing"
     SPLITTING = "splitting"
-    EMBEDDING = "embedding"  # 建索引：向量 + 关键词词条
+    EMBEDDING = "embedding"  # 手动向量化
 
 
 class SourceType(StrEnum):
@@ -59,9 +59,9 @@ class ParseBackend(StrEnum):
 
 
 class KnowledgeBase(UUIDBaseModel, TimestampMixin):
-    """知识库：一组文档的集合，建库时锁定一个 embedding 模型。
+    """知识库：一组文档的集合，可在建库时锁定一个 embedding 模型。
 
-    - `embedding_model` / `embedding_dim`：锁定的向量化模型与维度（换模型 = 全库重建）
+    - `embedding_model` / `embedding_dim`：纯关键词库两者为空，有向量的库建库时锁定
     - `chunk_config`：库级切块配置（chunk_size / overlap / strategy），改了需重切
     - `status`：库级状态（ready / reindexing，给换模型重建用）
     - `retrieval_mode` / `rerank_model`：库级检索设置（默认 mode + 精排模型；rerank 无状态可热换，故 SET_NULL）
@@ -75,9 +75,10 @@ class KnowledgeBase(UUIDBaseModel, TimestampMixin):
     description = fields.CharField(max_length=500, default="", description="描述")
     embedding_model = fields.ForeignKeyField(
         "models.AIModel", related_name="knowledge_bases", on_delete=fields.RESTRICT,
+        null=True, db_index=True,
         description="锁定的 embedding 模型",
     )
-    embedding_dim = fields.IntField(description="向量维度，建库时随模型锁定")
+    embedding_dim = fields.IntField(null=True, description="向量维度，随模型锁定")
     chunk_config = fields.JSONField(default=dict, description="切块配置：chunk_size / overlap / strategy")
     status = fields.CharEnumField(
         KBStatus, max_length=20, default=KBStatus.READY,
@@ -108,8 +109,8 @@ class Document(UUIDBaseModel, TimestampMixin):
 
     原文件存对象存储（`storage_key` 指向）；文本解析、切段、切块、向量化后
     分别落到 Paragraph / Embedding。`status` + `stage` + `error_message`
-    跟踪异步处理管线。处理分两步、各由用户触发：解析（落 Paragraph，
-    status=parsed）→ 建索引（向量 + 关键词词条，status=completed）。
+    跟踪异步处理管线。上传后解析并写入 Paragraph 和关键词词条。绑定
+    embedding 的库可手动向量化，纯关键词库解析后即 completed。
 
     - `parse_backend`：实际解析后端；与库设置不一致 = 这份降级过，或建库后改过设置
     """

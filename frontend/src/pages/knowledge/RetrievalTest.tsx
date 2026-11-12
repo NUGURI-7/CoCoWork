@@ -26,6 +26,7 @@ interface RetrievalTestProps {
   kbId: string
   /** 本库设置里配的检索模式，作为面板的初值 */
   kbMode: RetrievalMode
+  canVectorize: boolean
   /** 本库配置的精排模型；null = 没配，精排开关不可用 */
   rerankModelId: string | null
   rerankModelName: string | null
@@ -44,6 +45,7 @@ interface RetrievalTestProps {
 export function RetrievalTest({
   kbId,
   kbMode,
+  canVectorize,
   rerankModelId,
   rerankModelName,
 }: RetrievalTestProps) {
@@ -51,7 +53,8 @@ export function RetrievalTest({
   const [topK, setTopK] = useState('5')
   const [results, setResults] = useState<RetrievalTestResult | null>(null)
   const [loading, setLoading] = useState(false)
-  const [mode, setMode] = useState<RetrievalMode>(kbMode)
+  const [selectedMode, setMode] = useState<RetrievalMode | null>(null)
+  const mode = canVectorize ? (selectedMode ?? kbMode) : 'keyword'
   const [rerankOn, setRerankOn] = useState(false)
 
   const rerankAvailable = rerankModelId !== null
@@ -102,7 +105,7 @@ export function RetrievalTest({
                   <SelectValue>{RETRIEVAL_MODE_LABEL[mode]}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {Object.entries(RETRIEVAL_MODE_LABEL).map(([k, label]) => (
+                  {Object.entries(RETRIEVAL_MODE_LABEL).filter(([key]) => canVectorize || key === 'keyword').map(([k, label]) => (
                     <SelectItem key={k} value={k}>
                       {label}
                       {k === kbMode && (
@@ -149,7 +152,7 @@ export function RetrievalTest({
           </Button>
         </div>
         <p className="text-muted-foreground text-xs">
-          面板上的模式仅本次检索生效，不会改动库设置 ·{' '}
+          {canVectorize && '面板上的模式仅本次检索生效 · '}
           {rerankAvailable ? (
             <>
               精排模型：{rerankModelName}

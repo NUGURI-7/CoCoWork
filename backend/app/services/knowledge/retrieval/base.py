@@ -28,7 +28,7 @@ class RetrievalParams(BaseModel):
         default=0.0, ge=0.0, le=1.0,
         description="相似度阈值，低于此分的命中不返回；默认 0 = 不过滤",
     )
-    mode: RetrievalMode = Field(default=RetrievalMode.VECTOR, description="检索模式")
+    mode: RetrievalMode | None = Field(default=None, description="检索模式，省略时沿用知识库设置")
     vector_weight: float = Field(
         default=0.9, ge=0.0, le=1.0,
         description="hybrid 专用：向量路票权（关键词路 = 1-此值），其他 mode 忽略；"

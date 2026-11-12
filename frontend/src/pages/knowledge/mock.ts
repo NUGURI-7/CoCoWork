@@ -23,9 +23,9 @@ export type DocDisplayStatus =
   | 'uploaded' // pending + stage='uploaded'（已传完、等解析）
   | 'queued' // processing + stage='queued'（已入队、worker 还没取走）
   | 'parsing' // processing + parsing / splitting
-  | 'parsed' // 段落已入库、尚不可检索，等用户建索引
+  | 'parsed' // 段落和关键词词条已入库，可手动向量化
   | 'indexing' // processing + embedding
-  | 'completed' // 已建索引、可检索
+  | 'completed' // 完成当前库所需的处理
   | 'parse_failed' // failed，stage 停在解析那几步
   | 'index_failed' // failed + stage='embedding'
 
@@ -61,7 +61,7 @@ export const docStatusMeta: Record<DocDisplayStatus, StatusMeta> = {
     badgeClass: 'bg-muted text-muted-foreground border-border',
   },
   uploaded: {
-    label: '未解析',
+    label: '待解析',
     dot: 'bg-muted-foreground',
     badgeClass: 'bg-muted text-muted-foreground border-border',
   },
@@ -79,12 +79,12 @@ export const docStatusMeta: Record<DocDisplayStatus, StatusMeta> = {
   },
   // 停下来等用户动手的状态，用品牌色区别于「进行中」的黄与「完成」的绿
   parsed: {
-    label: '待建索引',
+    label: '待向量化',
     dot: 'bg-brand',
     badgeClass: 'bg-brand-subtle text-brand border-brand-border',
   },
   indexing: {
-    label: '建索引中',
+    label: '向量化中',
     dot: 'bg-warning',
     pulse: true,
     badgeClass: 'bg-warning/15 text-warning-foreground border-warning/40',
@@ -95,7 +95,7 @@ export const docStatusMeta: Record<DocDisplayStatus, StatusMeta> = {
     badgeClass: 'bg-success/15 text-success border-success/40',
   },
   parse_failed: { ...FAILED_META, label: '解析失败' },
-  index_failed: { ...FAILED_META, label: '建索引失败' },
+  index_failed: { ...FAILED_META, label: '向量化失败' },
 }
 
 /** 知识库状态徽标（KnowledgeCard / KnowledgeDetailPage header 用） */

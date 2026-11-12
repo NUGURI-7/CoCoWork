@@ -153,7 +153,7 @@ export function UploadDocumentSheet({
   function handleFinish() {
     const doneCount = queue.filter((q) => q.status === 'done').length
     if (doneCount > 0) {
-      toast.success(`已添加 ${doneCount} 篇文档，等待解析`)
+      toast.success(`已上传 ${doneCount} 篇文档，可在文档列表查看解析进度`)
       onUploaded?.()
     }
     onOpenChange(false)
@@ -165,7 +165,7 @@ export function UploadDocumentSheet({
         <SheetHeader>
           <SheetTitle>上传文档</SheetTitle>
           <SheetDescription>
-            支持 MD / TXT / PDF，单文件最大 50 MB。上传后在文档列表里点「解析」开始处理。
+            支持 MD / TXT / PDF，单文件最大 50 MB。上传后自动解析，完成后即可按关键词检索。
           </SheetDescription>
         </SheetHeader>
 
