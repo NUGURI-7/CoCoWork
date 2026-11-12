@@ -63,7 +63,8 @@ class Message(UUIDBaseModel, TimestampMixin):
         MessageRole, max_length=16, description="协议层角色:user/assistant",
     )
     sender_kind = fields.CharEnumField(
-        SenderKind, max_length=16, description="业务层发送方:user/supervisor/member",
+        SenderKind, max_length=16, null=True,
+        description="业务层发送方:user/supervisor/member。只在工作空间会话中填,独立 Agent 会话为空",
     )
     sender_member = fields.ForeignKeyField(
         "models.WorkspaceMember",

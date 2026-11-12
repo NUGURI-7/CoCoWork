@@ -83,6 +83,7 @@ class ConversationService:
         """创建对话。先校验 workspace 归属再挂。"""
         await self._ensure_workspace_owned(user, workspace_id)
         conv = await Conversation.create(
+            created_by=user,
             workspace_id=workspace_id,
             title=data.title,
         )

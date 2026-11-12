@@ -11,23 +11,35 @@ Conversation = workspace 里一条对话流，1 workspace : N conversations。
 - title 可空字符串（新建对话还没起名）；系统可后续根据首条用户消息自动生成
 - `config` jsonb 留扩展口子：对话级临时覆盖（换模型 / 开 thinking / 临时挂 KB），
   对齐 Workspace / Agent / Member 范式
-- 不加 `created_by`：workspace.created_by 已能反查归属（单用户场景）；
-  团队场景未来加权限时再补
+- `created_by` 记发起人，工作空间会话与独立 Agent 会话都填，归属以它为准
+- `workspace` 与 `agent_key` 恰好填一个，由数据库检查约束保证
 - 不加 `last_message_at` / `message_count`：updated_at 触发足够支撑列表排序，
   count 用 ORM annotate，避免冗余维护成本（业界 v1 通用做法）
 - workspace 删则连带删（CASCADE）
 """
 
 from tortoise import fields
+from tortoise.migrations.constraints import CheckConstraint
 
 from app.models.base import TimestampMixin, UUIDBaseModel
 
 
 class Conversation(UUIDBaseModel, TimestampMixin):
-    """workspace 里的一条对话流。"""
+    """一条对话流：属于某个工作空间，或属于某个独立 Agent，二者必居其一。"""
 
+    created_by = fields.ForeignKeyField(
+        "models.User", related_name="conversations", on_delete=fields.CASCADE,
+        db_index=True,
+        description="发起人。会话归属以它为准",
+    )
     workspace = fields.ForeignKeyField(
         "models.Workspace", related_name="conversations", on_delete=fields.CASCADE,
+        null=True,
+        description="工作空间会话填此项；独立 Agent 会话为 NULL",
+    )
+    agent_key = fields.CharField(
+        max_length=64, null=True,
+        description="独立 Agent 会话填该 Agent 在代码里的固定标识；工作空间会话为 NULL",
     )
     title = fields.CharField(max_length=150, default="", description="对话标题")
 
@@ -43,3 +55,9 @@ class Conversation(UUIDBaseModel, TimestampMixin):
 
     class Meta:
         table = "conversations"
+        constraints = (
+            CheckConstraint(
+                check="num_nonnulls(workspace_id, agent_key) = 1",
+                name="conversations_workspace_xor_agent",
+            ),
+        )
