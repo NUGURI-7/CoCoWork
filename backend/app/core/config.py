@@ -1,6 +1,7 @@
 from pathlib import Path
 from urllib.parse import quote
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # backend/app/core/config.py → parents[2] = backend/
@@ -117,6 +118,9 @@ class Settings(BaseSettings):
     # 留空 = baidu 后端在 UI 上不可选（本地 pdfplumber 那条路永远可用，零配置底线）
     BAIDU_DOCPARSE_API_KEY: str = ""
     BAIDU_DOCPARSE_SECRET_KEY: str = ""
+
+    # 门店营销音频制作的千问 AI 平台按量付费 Key。
+    DASHSCOPE_API_KEY: SecretStr = SecretStr("")
 
     # ---------- 沙箱：与 driver 无关 ----------
     SANDBOX_DRIVER: str = "local"  # local（开发者，宿主机直跑）| docker（生产，容器隔离）
