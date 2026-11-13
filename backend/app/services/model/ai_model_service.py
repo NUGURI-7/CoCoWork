@@ -14,6 +14,7 @@ from app.models.model import AIModel, Provider
 from app.models.user import User
 from app.schemas.model import ModelCreate, ModelUpdate
 from app.services.model.model_client import ModelClient
+from app.services.model.references import ensure_models_unused
 from app.services.model.validators import get_validator
 
 logger = logging.getLogger(__name__)
@@ -167,6 +168,7 @@ class AIModelService:
         self, user: User, provider_id: UUID, model_id: UUID,
     ) -> None:
         model = await self.get_by_id(user, provider_id, model_id)
+        await ensure_models_unused([model.id], target="这个模型")
         await model.delete()
 
 

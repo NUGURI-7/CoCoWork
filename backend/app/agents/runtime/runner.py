@@ -159,7 +159,7 @@ async def build_chat_model(slot: ModelSlot) -> BaseChatModel:
             BaseChatModel —— init_chat_model 的产物，可直接 .astream_events 跑
 
         Raises:
-            ValidationException: 模型不存在 / 类型不是 chat
+            ValidationException: 模型不存在 / 已停用 / 类型不是 chat
     """
 
     ai_model = (
@@ -168,7 +168,12 @@ async def build_chat_model(slot: ModelSlot) -> BaseChatModel:
         .first()
     )
     if ai_model is None:
-        raise ValidationException(f"AIModel 不存在：{slot.id}")
+        # 模型 ID 存在 jsonb 里、没有外键，模型被删后配置里还留着它。
+        # 删除入口已经会拦（services/model/references.py），这里兜住拦之前就已坏掉的配置
+        raise ValidationException("配置的对话模型已被删除，请在配置里重新选择模型")
+    if not ai_model.is_enabled:
+        # 停用是管理员的紧急叫停（Key 泄露、费用超限、服务不稳），停了就不该再发请求
+        raise ValidationException("配置的对话模型已停用，请在配置里重新选择模型")
     if ai_model.model_type != _EXPECTED_MODEL_TYPE_CHAT:
         raise ValidationException(
             f"chat 槽位不能配 {ai_model.model_type} 类型的模型"

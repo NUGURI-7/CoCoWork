@@ -3,9 +3,10 @@ from uuid import UUID
 
 from app.core.exceptions.types import NotFound404, ValidationException
 from app.services.model.credentials import dump_credentials
-from app.models.model import Provider
+from app.models.model import AIModel, Provider
 from app.models.user import User
 from app.schemas.model import ProviderCreate, ProviderUpdate
+from app.services.model.references import ensure_models_unused
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,9 @@ class ProviderService:
 
     async def delete(self, user: User, provider_id: UUID) -> None:
         provider = await self.get_by_id(user, provider_id)
+        # 删供应商会连带删掉它下面的所有模型，所以要按这批模型查
+        model_ids = await AIModel.filter(provider_id=provider.id).values_list("id", flat=True)
+        await ensure_models_unused(list(model_ids), target="这个供应商下的模型")
         await provider.delete()
 
 
