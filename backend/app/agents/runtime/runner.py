@@ -354,11 +354,22 @@ async def prepare_stream(
         user: User,
         *,
         message_id: UUID,
+        conversation_id: UUID | None,
+        resource_owner: User,
 ) -> PreparedStream:
     """SSE 流开起来前的同步装配 —— 配置校验 / 取模板 / 装 chat model / 装 graph。
 
     所有可能 raise 的逻辑在此完成 —— FastAPI handler 接 ValidationException → 400 JSON。
     一旦返回 (graph, messages)，调用方就可以放心交给 StreamingResponse（不再有 raise 风险）。
+
+    两个身份分开传：
+    - user：正在聊天的人。产物、取回历史产物都归他
+    - resource_owner：Agent 的创建者。知识库、MCP、Skill 及其凭证按他的归属去查。
+      员工用管理员建的 Agent 时两者不同；Playground 里两者是同一个人
+
+    conversation_id：单 Agent 正式会话传本会话 ID，产物挂到会话上、可跨回复取回；
+    Playground 传 None —— 它的消息不入库，「本对话」不存在（决策 26）。
+    两个参数都刻意不给默认值：漏传时签名照样对、不报错，只是资源或产物静默错位。
 
     Raises:
         ValidationException: 模板不在册 / chat 模型未配 / 槽位类型错
@@ -379,13 +390,12 @@ async def prepare_stream(
 
     chat_model = await build_chat_model(cfg.models.chat)
 
-    # Playground 只有一个 agent 在场，包成单元素列表；workspace 那条路传一串
-    # conversation_id=None：Playground 的消息不入库、产物没有对话归属，
-    # 「本对话」在那边不存在，故不给取回工具（决策 26）
+    # 只有一个 agent 在场，包成单元素列表；workspace 那条路传一串
     mount = await build_skill_mount(
-        [cfg], user, scope_id=user.id, message_id=message_id,
-        conversation_id=None,
-        referenced_artifact_ids=frozenset(),  # 没有对话就没有历史，自然无从引用
+        [cfg], user, resource_owner=resource_owner,
+        scope_id=user.id, message_id=message_id,
+        conversation_id=conversation_id,
+        referenced_artifact_ids=frozenset(),  # 输入不接拖引用，自然没有被引用过的产物
     )
     system_prompt = cfg.system_prompt
     # 护栏排第一位 —— 框架规则 first defined = outermost，它得在最外层才罩得住
@@ -397,7 +407,6 @@ async def prepare_stream(
 
     if mount is not None:
         middleware.append(mount.middleware)
-        # Playground 的产物不挂对话（消息本身就不入库），conversation_id 留空
         collect = partial(
             collect_artifacts,
             mount.backend,
@@ -405,6 +414,7 @@ async def prepare_stream(
             user=user,
             scope_id=user.id,
             message_id=message_id,
+            conversation_id=conversation_id,
         )
         close = mount.close
 
@@ -415,7 +425,9 @@ async def prepare_stream(
         )
 
     # 提成变量而非内联进 build()：下面算展示名要用同一份
-    tools = await assemble_tools(cfg, user)
+    tools = await assemble_tools(cfg, resource_owner)
+    if mount is not None:
+        tools = [*tools, *mount.artifact_tools]
 
     graph = template.build(
         chat_model=chat_model,

@@ -29,10 +29,25 @@ class AgentOut(BaseModel):
     description: str
     template: str
     config: dict[str, Any]
+    is_enabled: bool
     created_at: datetime
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AgentBriefOut(BaseModel):
+    """Agent 选择器的一项 —— 只给员工看得懂、用得上的字段。
+
+    刻意不含 config：管理员建的 Agent 里有模型、Prompt、知识库这些配置，
+    员工端不该看见。
+    """
+
+    id: UUID
+    name: str
+    description: str
+    avatar_url: str | None
+    usable: bool = Field(description="能否发消息；false = 已下线，只能翻看历史会话")
 
 
 class TemplateOut(BaseModel):

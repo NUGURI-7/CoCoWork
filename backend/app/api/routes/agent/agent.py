@@ -6,8 +6,9 @@ from app.agents.templates import list_templates
 from app.core.depends import get_current_user
 from app.core.http import ResponseModel, success
 from app.models.user import User
-from app.schemas.agent import AgentCreate, AgentOut, AgentUpdate, TemplateOut
+from app.schemas.agent import AgentBriefOut, AgentCreate, AgentOut, AgentUpdate, TemplateOut
 from app.services.agent import AgentService, get_agent_service
+from app.services.agent.access import is_usable, list_visible_agents
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -47,6 +48,27 @@ async def list_agent_templates(
     "templates" 会被当成 agent_id 拿去转 UUID，直接 422。
     """
     return success(data=[TemplateOut.model_validate(t) for t in list_templates()])
+
+
+@router.get("/available", summary="列出能使用的 Agent（侧栏选择器）")
+async def list_available_agents(
+        current_user: CurrentUserDep,
+) -> ResponseModel[list[AgentBriefOut]]:
+    """自己建的 + 管理员建的已启用的 + 管理员建的、自己聊过的（已下线，只能翻看）。
+
+    **必须注册在 /{agent_id} 之前**，理由同 /templates。
+    """
+    agents = await list_visible_agents(current_user)
+    return success(data=[
+        AgentBriefOut(
+            id=a.id,
+            name=a.name,
+            description=a.description,
+            avatar_url=a.avatar_url,
+            usable=is_usable(a, current_user),
+        )
+        for a in agents
+    ])
 
 
 @router.get("/{agent_id}", summary="Agent 详情")

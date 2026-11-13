@@ -525,6 +525,7 @@ async def build_workspace_graph(
     mount = await build_skill_mount(
         [cfg, *(c for _, c in member_cfgs)],
         user,
+        resource_owner=user,  # 空间里的 Agent 与配置都归空间的主人，即当前用户
         scope_id=workspace.id,
         message_id=message_id,
         conversation_id=conversation_id,

@@ -36,6 +36,14 @@ class MessageService:
         if not conv_exists:
             raise NotFound404("Conversation 不存在")
 
+        return await self.list_for_conversation(conversation_id)
+
+    async def list_for_conversation(self, conversation_id: UUID) -> list[MessageOut]:
+        """列一条会话的消息及各自的产物，按 created_at 升序。
+
+        不做归属校验:调用方已确认这条会话属于当前用户 —— 工作空间与单 Agent
+        两条路各自校验,共用这里的排序与产物回填。
+        """
         messages = await Message.filter(
             conversation_id=conversation_id,
         ).order_by("created_at")

@@ -50,6 +50,45 @@ def _clean_title(raw: str) -> str:
     return title[:_TITLE_MAX_CHARS]
 
 
+async def generate_conversation_title(
+        conversation_id: UUID, model_id: UUID, content: str,
+) -> str:
+    """用指定模型给一条还没名字的会话起名并写库，返回最终标题。
+
+    工作空间会话与单 Agent 会话共用：两边只是「借哪个模型」不同。
+
+    失败不降级:起名失败抛 503、库里保持空字符串。留空下次进对话才会再试;
+    写个截断版进去等于把一个平庸标题永久锁死(条件写会挡住后续覆盖)。
+    """
+    # 起名单独收窄参数:不继承那个模型原本的 temperature / max_tokens —— 那是给正文
+    # 创作用的,起名要短要稳。只借用它的模型 id
+    slot = ModelSlot(
+        id=model_id,
+        params=ModelParams(temperature=_TITLE_TEMPERATURE, max_tokens=_TITLE_MAX_TOKENS),
+    )
+
+    try:
+        model = await build_chat_model(slot)
+        prompt = _TITLE_PROMPT.format(content=content[:_TITLE_SOURCE_MAX_CHARS])
+        resp = await model.ainvoke([HumanMessage(content=prompt)])
+        title = _clean_title(resp.text)
+    except Exception as e:
+        logger.warning("对话标题生成失败 conversation_id=%s: %s", conversation_id, e)
+        raise AppApiException(code=503, message="标题生成失败") from e
+
+    if not title:
+        raise AppApiException(code=503, message="标题生成失败")
+
+    # 条件写:只在仍然没名字时落。挡住两件事 —— 并发的第二次生成、
+    # 用户在这几秒里手动改了名
+    updated = await Conversation.filter(id=conversation_id, title="").update(title=title)
+    if updated == 0:
+        fresh = await Conversation.filter(id=conversation_id).first()
+        return fresh.title if fresh else title
+
+    return title
+
+
 class ConversationService:
     """Conversation CRUD。
 
@@ -154,36 +193,7 @@ class ConversationService:
         supervisor = AgentConfig.model_validate(conv.workspace.supervisor)
         if supervisor.models.chat is None:
             raise AppApiException(code=503, message="Supervisor 还没配对话模型，无法生成标题")
-
-        # 起名单独收窄参数:不继承管家那套 temperature / max_tokens —— 那是给正文
-        # 创作用的,起名要短要稳。只借用它的模型 id
-        slot = ModelSlot(
-            id=supervisor.models.chat.id,
-            params=ModelParams(
-                temperature=_TITLE_TEMPERATURE, max_tokens=_TITLE_MAX_TOKENS,
-            ),
-        )
-
-        try:
-            model = await build_chat_model(slot)
-            prompt = _TITLE_PROMPT.format(content=content[:_TITLE_SOURCE_MAX_CHARS])
-            resp = await model.ainvoke([HumanMessage(content=prompt)])
-            title = _clean_title(resp.text)
-        except Exception as e:
-            logger.warning("对话标题生成失败 conversation_id=%s: %s", conversation_id, e)
-            raise AppApiException(code=503, message="标题生成失败") from e
-
-        if not title:
-            raise AppApiException(code=503, message="标题生成失败")
-
-        # 条件写:只在仍然没名字时落。挡住两件事 —— 并发的第二次生成、
-        # 用户在这几秒里手动改了名
-        updated = await Conversation.filter(id=conversation_id, title="").update(title=title)
-        if updated == 0:
-            fresh = await Conversation.filter(id=conversation_id).first()
-            return fresh.title if fresh else title
-
-        return title
+        return await generate_conversation_title(conv.id, supervisor.models.chat.id, content)
 
     async def delete(
             self, user: User, workspace_id: UUID, conversation_id: UUID,

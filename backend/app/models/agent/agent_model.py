@@ -32,6 +32,10 @@ class Agent(UUIDBaseModel, TimestampMixin):
         default=dict,
         description="填料：行为（prompt/model）+ 挂载资源（knowledge/tools/skills 的 id 列表）",
     )
+    is_enabled = fields.BooleanField(
+        default=True, db_default=True,
+        description="是否启用。只对管理员建的 Agent 生效：启用则所有人可用，停用则下线",
+    )
 
     @property
     def avatar_url(self) -> str | None:

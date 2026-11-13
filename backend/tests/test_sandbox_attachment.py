@@ -196,4 +196,7 @@ async def test_playground_rejects_artifact_refs():
     spec = AgentSpec(template="general", config=AgentConfig())
 
     with pytest.raises(ValidationException, match="Playground"):
-        await prepare_stream(spec, request, None, message_id=uuid4())
+        await prepare_stream(
+            spec, request, None,
+            message_id=uuid4(), conversation_id=None, resource_owner=None,
+        )

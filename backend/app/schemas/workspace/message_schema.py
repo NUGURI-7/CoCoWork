@@ -27,7 +27,7 @@ class MessageOut(BaseModel):
     id: UUID
     conversation_id: UUID
     role: MessageRole
-    sender_kind: SenderKind
+    sender_kind: SenderKind | None
     sender_member_id: UUID | None
     content: list[dict[str, Any]]
     mentioned_member_ids: list[UUID]
@@ -77,7 +77,7 @@ class MessageAppend(BaseModel):
 
     id: UUID = Field(default_factory=uuid_compat.uuid7)
     role: MessageRole
-    sender_kind: SenderKind
+    sender_kind: SenderKind | None
     sender_member_id: UUID | None = None
     content: list[dict[str, Any]]
     mentioned_member_ids: list[UUID] = []

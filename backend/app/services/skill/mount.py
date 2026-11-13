@@ -127,6 +127,7 @@ async def build_skill_mount(
         cfgs: Sequence[AgentConfig],
         user: User,
         *,
+        resource_owner: User,
         scope_id: UUID,
         message_id: UUID,
         conversation_id: UUID | None,
@@ -143,6 +144,10 @@ async def build_skill_mount(
 
     Args:
         cfgs: 本轮全部参与者的 config
+        user: 正在聊天的人。取回历史产物按他的归属
+        resource_owner: 这些 config 的主人。上传的 Skill 与内置 Skill 的凭证按他的
+            归属去查 —— 员工用管理员建的 Agent 时，Skill 是管理员配的，不是员工的。
+            工作空间与 Playground 里两者是同一个人
         scope_id: 工作区目录的归属键。workspace 对话传 workspace_id（跨对话保留，
             决策 14）；Playground 是试跑场、不属于任何 workspace，传 user_id。
         message_id: 本轮消息 ID，用作交付区目录名
@@ -155,11 +160,11 @@ async def build_skill_mount(
             那个条件够不着。**同样刻意不给默认值**，漏传只会让用户拖进来的文件
             下一轮取不回来，而这事不报错。
     """
-    mounted, uploaded = await _union_skills(cfgs, user)
+    mounted, uploaded = await _union_skills(cfgs, resource_owner)
     if not mounted and not uploaded:
         return None
 
-    credentials = await fetch_builtin_credentials(user, [s.name for s in mounted])
+    credentials = await fetch_builtin_credentials(resource_owner, [s.name for s in mounted])
     skill_dirs = [s.directory for s in mounted]
 
     if settings.SANDBOX_DRIVER == "docker":
