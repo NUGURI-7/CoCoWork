@@ -18,7 +18,16 @@ import {
   type ConversationStatus,
 } from '@/stores/stream-status'
 import { useConversationTitle } from '@/stores/workspace-session'
-import type { Conversation } from '@/types'
+
+/** 列表只用到这几个字段 —— 工作空间会话与单 Agent 会话共用这份行渲染 */
+export interface ConversationLike {
+  id: string
+  title: string
+  updated_at: string
+}
+
+/** 显示标题的算法（真标题 → 占位 → 新对话），各容器从自己的 store 取 */
+export type TitleOf = (conv: Pick<ConversationLike, 'id' | 'title'>) => string
 
 /** 对话状态点：running 墨绿脉冲 / error 红；idle 不画（保持清爽）。 */
 export function StatusDot({ status }: { status: ConversationStatus }) {
@@ -34,13 +43,15 @@ export function StatusDot({ status }: { status: ConversationStatus }) {
 }
 
 interface ConversationListProps {
-  conversations: Conversation[]
+  conversations: ConversationLike[]
   currentId: string | null
   onSelect: (id: string) => void
   /** 删除只发起请求，确认弹窗归各容器持有（须挂 Popover 外避免 hover 收起连带卸载）。 */
   onRequestDelete: (id: string) => void
   /** 重命名。不给则不渲染改名入口（列表本身仍是纯展示，改不改名由容器决定）。 */
   onRename?: (id: string, title: string) => void
+  /** 不传则用工作空间的标题占位 */
+  titleOf?: TitleOf
 }
 
 /**
@@ -55,9 +66,11 @@ export function ConversationList({
   onSelect,
   onRequestDelete,
   onRename,
+  titleOf: titleOfProp,
 }: ConversationListProps) {
   const statuses = useStreamStatusStore((s) => s.statuses)
-  const titleOf = useConversationTitle()
+  const workspaceTitleOf = useConversationTitle()
+  const titleOf = titleOfProp ?? workspaceTitleOf
   // 正在改名的那一行（null = 没有）。同时只允许一行处于编辑态
   const [editingId, setEditingId] = useState<string | null>(null)
   // 按更新时间倒序
@@ -200,10 +213,11 @@ function RenameRow({
 }
 
 interface DeleteConversationDialogProps {
-  conversation: Conversation | undefined
+  conversation: ConversationLike | undefined
   open: boolean
   onOpenChange: (open: boolean) => void
   onConfirm: () => void
+  titleOf?: TitleOf
 }
 
 /**
@@ -217,8 +231,10 @@ export function DeleteConversationDialog({
   open,
   onOpenChange,
   onConfirm,
+  titleOf: titleOfProp,
 }: DeleteConversationDialogProps) {
-  const titleOf = useConversationTitle()
+  const workspaceTitleOf = useConversationTitle()
+  const titleOf = titleOfProp ?? workspaceTitleOf
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>

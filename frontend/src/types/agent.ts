@@ -103,6 +103,28 @@ export interface Agent {
   /** 引用的内置模板 registry key，创建后锁死 */
   template: string
   config: AgentConfig
+  /** 只对管理员建的 Agent 生效：启用则所有人可用，停用则下线 */
+  is_enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+/** 侧栏 Agent 选择器的一项（对齐后端 AgentBriefOut）—— 不含配置 */
+export interface AgentBrief {
+  id: string
+  name: string
+  description: string
+  avatar_url: string | null
+  /** 能否发消息；false = 已下线，只能翻看历史会话 */
+  usable: boolean
+}
+
+/** 单 Agent 会话（对齐后端 AgentConversationOut） */
+export interface AgentConversation {
+  id: string
+  agent_id: string
+  /** 空串 = 标题待生成 */
+  title: string
   created_at: string
   updated_at: string
 }

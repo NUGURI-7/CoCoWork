@@ -97,7 +97,8 @@ export interface WorkspaceMessage {
   id: string
   conversation_id: string
   role: MessageRole
-  sender_kind: SenderKind
+  /** 单 Agent 会话里为 null：只有员工和这一个 Agent，靠 role 就分得清 */
+  sender_kind: SenderKind | null
   /** 发送的成员 id（踢人后置 null 保历史）；user / supervisor 消息恒为 null */
   sender_member_id: string | null
   content: Record<string, unknown>[]

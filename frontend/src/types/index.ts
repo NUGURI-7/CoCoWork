@@ -12,6 +12,8 @@ export type {
   AgentConfig,
   ModelParams,
   Agent,
+  AgentBrief,
+  AgentConversation,
   Message,
 } from './agent'
 export type {
