@@ -247,7 +247,7 @@ section { position: relative; padding: 104px 0; }
 .shot.wide { grid-column: 1 / -1; }
 
 /* ── 如何使用 ──────────────────────────────────────── */
-.steps { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 48px; }
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 40px; }
 .step { display: flex; gap: 18px; padding: 24px 4px; border-bottom: 1px solid var(--line-soft); }
 .step .n {
   flex: none; width: 32px; height: 32px; border-radius: 9px;
@@ -256,6 +256,10 @@ section { position: relative; padding: 104px 0; }
 }
 .step h4 { font-size: 16px; font-weight: 600; margin-bottom: 6px; letter-spacing: -.01em; }
 .step p { font-size: 14.5px; color: var(--ink-soft); }
+.try-go { display: inline-block; margin-top: 12px; font-size: 14px; font-weight: 600; color: var(--brand); }
+.try-go .ar { display: inline-block; transition: transform .26s var(--ease); }
+.try-go:hover { color: var(--brand-lift); }
+.try-go:hover .ar { transform: translateX(3px); }
 code {
   font-family: var(--mono); font-size: .9em;
   background: var(--brand-wash); color: var(--brand);
@@ -284,11 +288,6 @@ code {
 }
 .notice h3 { font-family: var(--display); font-size: 22px; font-weight: 600; letter-spacing: -.02em; margin-bottom: 12px; }
 .notice p { font-size: 14.8px; color: var(--ink-soft); max-width: 46em; }
-.cred {
-  font-family: var(--mono); font-size: 13.5px; color: var(--brand);
-  background: var(--surface); border: 1px solid var(--brand-line);
-  padding: 2px 9px; border-radius: 7px;
-}
 .notice .go { margin-left: auto; }
 
 /* ── 页脚 ──────────────────────────────────────────── */
@@ -580,21 +579,31 @@ footer { position: relative; border-top: 1px solid var(--line); padding: 56px 0 
   <div class="wrap">
     <div class="section-head" data-reveal>
       <div class="kicker"><span>03</span><span class="ln"></span><span>业务场景示例</span></div>
-      <h2>两种业务，两套流程</h2>
+      <h2>三个场景，点开即用</h2>
     </div>
     <div class="steps">
       <div class="step" data-reveal>
         <div class="n">1</div>
         <div>
-          <h4>办公材料制作</h4>
-          <p>资料查询 Agent 和文档制作 Agent 分工，使用同一批产品资料按公司模板制作 PPT 和配套 Word。</p>
+          <h4>文档制作</h4>
+          <p>资料查询和文档制作分工协作，按公司模板产出 PPT、Word 和 PDF。</p>
+          <a class="try-go" href="https://demo.nuguri.org/try/doc-workspace?q=%E5%B8%AE%E6%88%91%E7%94%A8%E4%BA%A7%E5%93%81%E8%B5%84%E6%96%99%E5%81%9A%E4%B8%80%E4%BB%BD%E6%96%B0%E5%93%81%E4%BB%8B%E7%BB%8D%20PPT%EF%BC%8C%E5%86%8D%E9%85%8D%E4%B8%80%E4%BB%BD%20Word%20%E8%AF%B4%E6%98%8E" target="_blank" rel="noopener">立即体验 <span class="ar">→</span></a>
         </div>
       </div>
       <div class="step" data-reveal style="--d:70ms">
         <div class="n">2</div>
         <div>
+          <h4>门店营销音频</h4>
+          <p>填写活动信息，确认播报稿后生成可直接在门店播放的营销音频。</p>
+          <a class="try-go" href="https://demo.nuguri.org/try/store-audio?q=%E5%B8%AE%E6%88%91%E5%81%9A%E4%B8%80%E6%AE%B5%E5%91%A8%E6%9C%AB%E6%BB%A1%20100%20%E5%87%8F%2020%20%E7%9A%84%E9%97%A8%E5%BA%97%E4%BF%83%E9%94%80%E6%92%AD%E6%8A%A5" target="_blank" rel="noopener">立即体验 <span class="ar">→</span></a>
+        </div>
+      </div>
+      <div class="step" data-reveal style="--d:140ms">
+        <div class="n">3</div>
+        <div>
           <h4>合同初审</h4>
           <p>业务工作流按既定规则核对合同主体、报价和条款，输出问题明细与修改建议，供员工复核。</p>
+          <a class="try-go" href="https://demo.nuguri.org/try/contract-review?q=%E5%B8%AE%E6%88%91%E5%88%9D%E5%AE%A1%E8%BF%99%E4%BB%BD%E9%87%87%E8%B4%AD%E5%90%88%E5%90%8C" target="_blank" rel="noopener">立即体验 <span class="ar">→</span></a>
         </div>
       </div>
     </div>
@@ -628,14 +637,13 @@ footer { position: relative; border-top: 1px solid var(--line); padding: 56px 0 
       <div>
         <h3>关于体验环境</h3>
         <p>
-          可使用演示账号 <span class="cred">test01</span> / <span class="cred">testcocowork</span> 登录，
-          其中已配置好可直接查看的示例工作空间；亦可自行注册，注册后需先在「模型」中接入模型方可开始使用。
+          点击上方任一场景即可直接体验，无需注册登录；每个场景每天可体验若干次。
         </p>
         <p style="margin-top:12px">
           本站为演示环境，数据可能随时清空，请勿上传任何敏感或重要资料。
         </p>
       </div>
-      <a class="btn btn-primary btn-lg go" href="https://demo.nuguri.org" target="_blank" rel="noopener">前往体验 <span class="ar">→</span></a>
+      <a class="btn btn-primary btn-lg go" href="#guide">前往体验 <span class="ar">→</span></a>
     </div>
   </div>
 </section>
