@@ -159,7 +159,8 @@ export function MemberRoster({
 
 interface MemberStripProps {
   members: RosterMember[]
-  onRecruit: () => void
+  /** 不传 = 不显示招募按钮（体验访客不能增减成员） */
+  onRecruit?: () => void
 }
 
 /**
@@ -195,15 +196,17 @@ export function MemberStrip({ members, onRecruit }: MemberStripProps) {
             </Tooltip>
           ))}
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="text-muted-foreground hover:text-foreground size-7"
-          onClick={onRecruit}
-          title="招募成员"
-        >
-          <UserPlus className="size-4" />
-        </Button>
+        {onRecruit && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-muted-foreground hover:text-foreground size-7"
+            onClick={onRecruit}
+            title="招募成员"
+          >
+            <UserPlus className="size-4" />
+          </Button>
+        )}
       </div>
     </TooltipProvider>
   )

@@ -17,6 +17,7 @@ import axios, {
   type InternalAxiosRequestConfig,
 } from 'axios'
 import { toast } from 'sonner'
+import { GUEST_FLAG_KEY, signInPath } from '@/lib/demo'
 import type { ResponseModel } from '@/types'
 
 // ============================================================================
@@ -113,10 +114,14 @@ instance.interceptors.response.use(
     } else {
       const status = err.response.status
       if (status === 401) {
-        // Token 过期 / 未登录：清 token 并跳登录页（避免在 /login 自身循环）
+        // Token 过期 / 未登录：清 token 并跳登录页（避免在 /login 自身循环）。
+        // 体验访客去体验说明页；/try 页面自己处理凭证失效（换一个新的临时账号），不跳走
+        const target = signInPath()
         localStorage.removeItem('token')
-        if (!window.location.pathname.startsWith('/login')) {
-          window.location.href = '/login'
+        localStorage.removeItem(GUEST_FLAG_KEY)
+        const here = window.location.pathname
+        if (!here.startsWith('/login') && !here.startsWith('/try')) {
+          window.location.href = target
         }
       } else if (!silent) {
         toast.error(`请求错误 (${status})`)

@@ -39,6 +39,8 @@ interface AgentChatProps {
   onStarted?: () => void
   /** false = Agent 已下线，只能翻看 */
   usable: boolean
+  /** 预填进输入框的文字（官网体验链接带来的示例问题） */
+  initialText?: string
 }
 
 /**
@@ -52,6 +54,7 @@ export function AgentChat({
   isNew = false,
   onStarted,
   usable,
+  initialText,
 }: AgentChatProps) {
   const store = useMemo(
     () =>
@@ -110,12 +113,20 @@ export function AgentChat({
 
   return (
     <ChatProvider store={store}>
-      <AgentChatBody agentName={agentName} usable={usable} />
+      <AgentChatBody agentName={agentName} usable={usable} initialText={initialText} />
     </ChatProvider>
   )
 }
 
-function AgentChatBody({ agentName, usable }: { agentName: string; usable: boolean }) {
+function AgentChatBody({
+  agentName,
+  usable,
+  initialText,
+}: {
+  agentName: string
+  usable: boolean
+  initialText?: string
+}) {
   const isEmpty = useChat((s) => s.messages.length === 0)
   return (
     <>
@@ -126,7 +137,11 @@ function AgentChatBody({ agentName, usable }: { agentName: string; usable: boole
       ) : (
         <MessageList />
       )}
-      <MessageInput disabled={!usable} disabledHint="这个 Agent 已下线，只能查看以前的对话" />
+      <MessageInput
+        disabled={!usable}
+        disabledHint="这个 Agent 已下线，只能查看以前的对话"
+        initialText={initialText}
+      />
     </>
   )
 }

@@ -58,6 +58,8 @@ interface WorkspaceChatProps {
   topFade?: boolean
   /** 这一轮产出了新文件 —— 产出物面板据此重拉。只是个信号，不带数据 */
   onArtifacts?: () => void
+  /** 预填进输入框的文字（官网体验链接带来的示例问题） */
+  initialText?: string
 }
 
 /**
@@ -81,6 +83,7 @@ export function WorkspaceChat({
   supervisorReady,
   topFade = false,
   onArtifacts,
+  initialText,
 }: WorkspaceChatProps) {
   const endpoint = conversationStreamEndpoint(workspaceId, conversationId)
   const store = useMemo(
@@ -192,6 +195,7 @@ export function WorkspaceChat({
           supervisorReady={supervisorReady}
           mentionItems={mentionItems}
           topFade={topFade}
+          initialText={initialText}
         />
       </ChatProvider>
     </SubagentDirectoryProvider>
@@ -202,10 +206,12 @@ function WorkspaceChatBody({
   supervisorReady,
   mentionItems,
   topFade,
+  initialText,
 }: {
   supervisorReady: boolean
   mentionItems: MentionItem[]
   topFade: boolean
+  initialText?: string
 }) {
   const isEmpty = useChat((s) => s.messages.length === 0)
   // 最后一条消息停在人工确认上时锁住输入 —— 这轮回复还没说完，
@@ -229,6 +235,7 @@ function WorkspaceChatBody({
         // 产出物面板的卡片可以拖进来当附件（后端决策 25）。
         // Playground 那条路不传 —— 它没有「本对话」，后端直接拒（决策 26）
         attachable
+        initialText={initialText}
       />
     </>
   )

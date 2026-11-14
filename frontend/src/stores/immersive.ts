@@ -13,17 +13,23 @@
  *
  * 时序：页面用 useLayoutEffect 调 enter/leave —— 在 paint 前同步 active，避免进
  * 一个「上次沉浸」的空间时先闪一下 chrome。
+ *
+ * 体验访客锁在沉浸模式：enter 一律开、set 不生效。按钮由页面按访客身份隐藏。
  */
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+
+import { useAuthStore } from '@/stores/auth'
+
+const isGuest = () => useAuthStore.getState().user?.is_guest === true
 
 interface ImmersiveState {
   /** 当前生效值；AppShell + 页面读它 */
   active: boolean
   /** 每空间偏好，持久化 */
   prefs: Record<string, boolean>
-  /** 进入某空间：active ← 该空间偏好 */
-  enter: (workspaceId: string) => void
+  /** 进入某空间（或单 Agent 对话页）：active ← 该处偏好；访客一律开 */
+  enter: (scopeId: string) => void
   /** 离开页面：active 复位（不动 prefs） */
   leave: () => void
   /** 切换某空间：写 prefs + 同步 active */
@@ -35,10 +41,12 @@ export const useImmersiveStore = create<ImmersiveState>()(
     (set, get) => ({
       active: false,
       prefs: {},
-      enter: (workspaceId) => set({ active: get().prefs[workspaceId] ?? false }),
+      enter: (scopeId) => set({ active: isGuest() || (get().prefs[scopeId] ?? false) }),
       leave: () => set({ active: false }),
-      set: (workspaceId, v) =>
-        set((s) => ({ active: v, prefs: { ...s.prefs, [workspaceId]: v } })),
+      set: (workspaceId, v) => {
+        if (isGuest()) return
+        set((s) => ({ active: v, prefs: { ...s.prefs, [workspaceId]: v } }))
+      },
     }),
     {
       name: 'immersive',

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useLayoutEffect } from 'react'
 import { Link, Outlet, useNavigate, useParams, useRouterState } from '@tanstack/react-router'
 import { ChevronLeft } from 'lucide-react'
 import { ring } from 'ldrs'
@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { useCurrentConversationId } from '@/hooks/useConversationActions'
 import { useAgentConversationTitle, useAgentSession } from '@/stores/agent-session'
 import { disposeAllChatStores } from '@/stores/chat-registry'
+import { useImmersiveStore } from '@/stores/immersive'
 import { useSidebarMode } from '@/stores/sidebar-mode'
 import { useTabTitle } from '@/stores/use-tab-sync'
 
@@ -44,6 +45,14 @@ export default function AgentChatPage() {
   useEffect(() => {
     setMode('agent')
   }, [setMode])
+
+  // 沉浸模式与工作空间同一套：这里没有开关，只有体验访客会被锁进去
+  const enterImmersive = useImmersiveStore((s) => s.enter)
+  const leaveImmersive = useImmersiveStore((s) => s.leave)
+  useLayoutEffect(() => {
+    enterImmersive(`agent:${agentId}`)
+    return () => leaveImmersive()
+  }, [agentId, enterImmersive, leaveImmersive])
 
   useEffect(() => {
     if (agent) setActiveAgent(agent.id)

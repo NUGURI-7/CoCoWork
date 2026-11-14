@@ -32,6 +32,19 @@ interface MessageInputProps {
    * Playground 不传 —— 它的消息不入库、没有「本对话」，后端那条路直接拒（决策 26）。
    */
   attachable?: boolean
+  /** 挂载时预填进输入框的文字（官网体验链接带来的示例问题）；不自动发送 */
+  initialText?: string
+}
+
+/** 纯文本 → TipTap 文档：一行一个段落 */
+function textToDoc(text: string) {
+  return {
+    type: 'doc',
+    content: text.split('\n').map((line) => ({
+      type: 'paragraph',
+      content: line ? [{ type: 'text', text: line }] : [],
+    })),
+  }
 }
 
 /** 一条消息最多附几个 —— 与后端 _MAX_ATTACHMENTS 对齐，超了在这儿就拦住 */
@@ -72,6 +85,7 @@ export function MessageInput({
   disabledHint,
   mentionItems,
   attachable = false,
+  initialText,
 }: MessageInputProps) {
   const isLoading = useChat((s) => s.isLoading)
   const send = useChat((s) => s.send)
@@ -114,6 +128,8 @@ export function MessageInput({
 
   const editor = useEditor({
     immediatelyRender: true,
+    content: initialText ? textToDoc(initialText) : undefined,
+    autofocus: initialText ? 'end' : false,
     extensions: [
       // 纯文本聊天框：关掉 StarterKit 所有富文本节点/标记，只留段落 + 文本 + undo/redo
       StarterKit.configure({

@@ -2,22 +2,36 @@
 import { useCallback, useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { v4 as uuidv4 } from 'uuid'
+import { z } from 'zod'
 
 import { useImmersiveStore } from '@/stores/immersive'
 import { useWorkspaceShell } from '@/pages/workspaces/shell-context'
 import { WorkspaceChat } from '@/pages/workspaces/WorkspaceChat'
 
+/** ?q= 是官网体验链接带来的示例问题，预填进输入框、不自动发送 */
+const searchSchema = z.object({
+  q: z.string().optional(),
+})
+
 export const Route = createFileRoute('/_authenticated/workspaces/$workspaceId/new')({
+  validateSearch: searchSchema,
   component: NewConversationRoute,
 })
 
 function NewConversationRoute() {
   const { workspaceId } = Route.useParams()
+  const { q } = Route.useSearch()
   // 换空间时整块重挂，拿一个新的会话 id
-  return <NewConversation key={workspaceId} workspaceId={workspaceId} />
+  return <NewConversation key={workspaceId} workspaceId={workspaceId} initialText={q} />
 }
 
-function NewConversation({ workspaceId }: { workspaceId: string }) {
+function NewConversation({
+  workspaceId,
+  initialText,
+}: {
+  workspaceId: string
+  initialText?: string
+}) {
   const navigate = useNavigate()
   const { supervisorReady, notifyArtifacts } = useWorkspaceShell()
   const immersive = useImmersiveStore((s) => s.active)
@@ -43,6 +57,7 @@ function NewConversation({ workspaceId }: { workspaceId: string }) {
       supervisorReady={supervisorReady}
       topFade={immersive}
       onArtifacts={notifyArtifacts}
+      initialText={initialText}
     />
   )
 }

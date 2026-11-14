@@ -14,6 +14,8 @@ export interface User {
   avatar_url: string
   is_active: boolean
   is_admin: boolean
+  /** 官网免登录体验自动建的临时账号 */
+  is_guest: boolean
   /** ISO 8601 datetime string */
   created_at: string
   /** ISO 8601 datetime string */

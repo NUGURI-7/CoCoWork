@@ -37,6 +37,7 @@ import { SidebarTrigger } from '@/components/ui/sidebar'
 import { useCurrentConversationId } from '@/hooks/useConversationActions'
 import { cn } from '@/lib/utils'
 import { disposeAllChatStores } from '@/stores/chat-registry'
+import { useAuthStore } from '@/stores/auth'
 import { useImmersiveStore } from '@/stores/immersive'
 import { useTabTitle } from '@/stores/use-tab-sync'
 import { useWorkspaceSession } from '@/stores/workspace-session'
@@ -161,6 +162,8 @@ export default function WorkspaceDetailPage() {
   const setImmersive = useImmersiveStore((s) => s.set)
   const enterImmersive = useImmersiveStore((s) => s.enter)
   const leaveImmersive = useImmersiveStore((s) => s.leave)
+  // 体验访客：锁在沉浸模式，不给退出、招募和全局侧栏的入口
+  const guest = useAuthStore((s) => s.user?.is_guest === true)
 
   // 进本空间同步该空间偏好、离开复位。useLayoutEffect 在 paint 前跑 —— 进一个
   // 「上次沉浸」的空间时不会先闪一下 chrome。换 workspaceId 也会重跑。
@@ -369,9 +372,16 @@ export default function WorkspaceDetailPage() {
             currentId={currentConvId}
             immersive
             leading={
-              <SidebarTrigger className="text-muted-foreground hover:text-foreground -ml-0.5" />
+              guest ? undefined : (
+                <SidebarTrigger className="text-muted-foreground hover:text-foreground -ml-0.5" />
+              )
             }
-            actions={<MemberStrip members={roster} onRecruit={() => setRecruitOpen(true)} />}
+            actions={
+              <MemberStrip
+                members={roster}
+                onRecruit={guest ? undefined : () => setRecruitOpen(true)}
+              />
+            }
             trailing={
               <>
                 <Button
@@ -388,15 +398,17 @@ export default function WorkspaceDetailPage() {
                 >
                   <PanelRight className="size-4" />
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setImmersive(workspaceId, false)}
-                  title="退出沉浸"
-                  className="text-muted-foreground hover:text-foreground size-7"
-                >
-                  <Minimize2 className="size-4" />
-                </Button>
+                {!guest && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setImmersive(workspaceId, false)}
+                    title="退出沉浸"
+                    className="text-muted-foreground hover:text-foreground size-7"
+                  >
+                    <Minimize2 className="size-4" />
+                  </Button>
+                )}
               </>
             }
           />

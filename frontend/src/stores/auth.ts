@@ -20,11 +20,16 @@
 
 import { create } from 'zustand'
 import * as authApi from '@/api/auth'
+import * as demoApi from '@/api/demo'
+import { GUEST_FLAG_KEY } from '@/lib/demo'
 import type { User, UserLoginPayload } from '@/types'
 
 const TOKEN_STORAGE_KEY = 'token'
 
 let expiryTimer: ReturnType<typeof setTimeout> | null = null
+
+/** 进行中的体验登录：同一时刻只建一个临时账号（开发模式下 effect 会执行两次） */
+let pendingGuestSignIn: Promise<User> | null = null
 
 /**
  * 从 JWT 取 exp（Unix 秒）。JWT body 是 base64url 编码 JSON，第二段。
@@ -68,10 +73,15 @@ function scheduleAutoLogout(token: string) {
 
 /**
  * 触发自动登出 —— 清状态 + 跳登录页（保留当前路径作 redirect 回跳目标）。
- * 已在 /login 则不跳（防循环）。
+ * 已在 /login 则不跳（防循环）。体验访客没有密码，改去体验说明页。
  */
 function triggerAutoLogout() {
+  const wasGuest = !!localStorage.getItem(GUEST_FLAG_KEY)
   useAuthStore.getState().logout()
+  if (wasGuest) {
+    if (!window.location.pathname.startsWith('/try')) window.location.href = '/try'
+    return
+  }
   if (window.location.pathname.startsWith('/login')) return
   const redirect = window.location.pathname + window.location.search
   window.location.href = `/login?redirect=${encodeURIComponent(redirect)}`
@@ -92,6 +102,8 @@ interface AuthState {
   // 注：注册不进 store —— 后端注册接口不签发 token，由 Register 页面直接调 authApi.register
   // 后跳 /login 走正式登录建立会话。
   login: (payload: UserLoginPayload) => Promise<User>
+  /** 官网免登录体验：后端建一个临时账号并签发凭证，之后与正常登录无异 */
+  signInAsGuest: () => Promise<User>
   fetchMe: () => Promise<User>
   logout: () => void
 }
@@ -122,9 +134,26 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   login: async (payload) => {
     const data = await authApi.login(payload)
     localStorage.setItem(TOKEN_STORAGE_KEY, data.access_token)
+    localStorage.removeItem(GUEST_FLAG_KEY)
     set({ token: data.access_token, user: data.user })
     scheduleAutoLogout(data.access_token)
     return data.user
+  },
+
+  signInAsGuest: () => {
+    pendingGuestSignIn ??= demoApi
+      .createGuestSession()
+      .then((data) => {
+        localStorage.setItem(TOKEN_STORAGE_KEY, data.access_token)
+        localStorage.setItem(GUEST_FLAG_KEY, '1')
+        set({ token: data.access_token, user: data.user })
+        scheduleAutoLogout(data.access_token)
+        return data.user
+      })
+      .finally(() => {
+        pendingGuestSignIn = null
+      })
+    return pendingGuestSignIn
   },
 
   /**
@@ -141,6 +170,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   logout: () => {
     clearAutoLogoutTimer()
     localStorage.removeItem(TOKEN_STORAGE_KEY)
+    localStorage.removeItem(GUEST_FLAG_KEY)
     set({ token: null, user: null })
   },
 }))

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/stores/auth'
 import { useImmersiveStore } from '@/stores/immersive'
 import { useWorkspaceTabsStore } from '@/stores/tab-store'
 import { useTabSync } from '@/stores/use-tab-sync'
@@ -16,9 +17,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   useTabSync(useWorkspaceTabsStore)
   // 沉浸模式：藏掉顶栏 + TabBar，内容区去掉留白铺满。页面侧负责开关与卸载复位。
   const immersive = useImmersiveStore((s) => s.active)
+  // 体验访客只用对话，不给全局侧栏（知识库、模型、Agent 管理等搭建入口）
+  const guest = useAuthStore((s) => s.user?.is_guest === true)
   return (
     <SidebarProvider className="h-svh">
-      <AppSidebar />
+      {!guest && <AppSidebar />}
       <SidebarInset className="min-w-0">
         {!immersive && (
           <>
