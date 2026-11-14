@@ -41,7 +41,7 @@ class GuestService:
         username = f"guest_{secrets.token_hex(6)}"
         return await User.create(
             username=username,
-            email=f"{username}@guest.invalid",
+            email=f"{username}@guest.nuguri.org",
             password_hash=get_password_hash(secrets.token_urlsafe(32)),
             nick_name="体验访客",
             is_guest=True,

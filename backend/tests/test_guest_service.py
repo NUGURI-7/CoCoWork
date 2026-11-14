@@ -70,7 +70,7 @@ async def test_creates_guest_and_long_lived_token(created):
     user = created[0]
     assert user.is_guest is True
     assert user.username.startswith("guest_") and len(user.username) <= 20
-    assert user.email == f"{user.username}@guest.invalid"
+    assert user.email == f"{user.username}@guest.nuguri.org"
     assert result["user"] is user
 
     payload = jwt.decode(result["access_token"], settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
