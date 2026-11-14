@@ -20,6 +20,7 @@ from skills_ref import SkillProperties, read_properties, validate
 from app.core.encryption import decrypt
 from app.models import User
 from app.models.skill import Skill, SkillSource
+from app.services.access import usable_by
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +101,7 @@ def _required_env(props: SkillProperties) -> tuple[str, ...]:
 
 
 async def fetch_builtin_credentials(user: User, names: Sequence[str]) -> dict[str, str]:
-    """取用户为这些内置 skill 配的 key，合并成一个环境变量 dict。
+    """取这些内置 skill 的 key（自己配的 + 管理员配的），合并成一个环境变量 dict。
 
     没配 key 的内置 skill 在 skills 表里没有行，自然不出现在结果里 ——
     「零行」不是异常状态，是默认状态。
@@ -109,10 +110,12 @@ async def fetch_builtin_credentials(user: User, names: Sequence[str]) -> dict[st
         return {}
 
     rows = await Skill.filter(
-        created_by=user,
+        usable_by(user),
         source_type=SkillSource.BUILTIN,
         name__in=list(names),
     )
+    # 管理员配的在前、自己配的在后：同一个 key 两边都配了，以自己的为准
+    rows = sorted(rows, key=lambda row: row.created_by_id == user.id)
 
     env: dict[str, str] = {}
 

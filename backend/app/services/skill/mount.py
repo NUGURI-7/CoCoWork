@@ -26,6 +26,7 @@ from app.core.config import settings
 from app.core.storage import storage
 from app.models import User
 from app.models.skill import Skill
+from app.services.access import usable_by
 from app.schemas.agent import AgentConfig
 from app.services.sandbox.docker_sandbox import DockerSandbox
 from app.services.sandbox.layout import SandboxPaths, prepare_workspace_dir, container_paths, pack_skills
@@ -104,7 +105,7 @@ async def _union_skills(
     两种来源**分开返回**：内置的下游要的是目录、打成 tar，上传的下游要的是
     zip 字节、直接送进容器解，两条路不同，合成一个列表只会在下游再分一次。
 
-    上传那批的归属校验就是 `created_by=user` 这个查询条件 —— 别人的 id 塞进
+    上传那批按 services/access 的可用规则过滤 —— 不可用的 id 塞进
     配置也查不出来；查不到的 id 静默跳过，对齐 resolve_builtin_skills 与
     assemble_tools 里知识库那段的容错口径（残留配置不该让整个 agent 起不来）。
     """
@@ -117,7 +118,7 @@ async def _union_skills(
     wanted = list(dict.fromkeys(sid for cfg in cfgs for sid in cfg.skills))
     uploaded: list[Skill] = []
     if wanted:
-        rows = await Skill.filter(id__in=wanted, created_by=user)
+        rows = await Skill.filter(usable_by(user), id__in=wanted)
         by_id = {row.id: row for row in rows}
         uploaded = [by_id[sid] for sid in wanted if sid in by_id]
 
@@ -127,7 +128,6 @@ async def build_skill_mount(
         cfgs: Sequence[AgentConfig],
         user: User,
         *,
-        resource_owner: User,
         scope_id: UUID,
         message_id: UUID,
         conversation_id: UUID | None,
@@ -145,9 +145,6 @@ async def build_skill_mount(
     Args:
         cfgs: 本轮全部参与者的 config
         user: 正在聊天的人。取回历史产物按他的归属
-        resource_owner: 这些 config 的主人。上传的 Skill 与内置 Skill 的凭证按他的
-            归属去查 —— 员工用管理员建的 Agent 时，Skill 是管理员配的，不是员工的。
-            工作空间与 Playground 里两者是同一个人
         scope_id: 工作区目录的归属键。workspace 对话传 workspace_id（跨对话保留，
             决策 14）；Playground 是试跑场、不属于任何 workspace，传 user_id。
         message_id: 本轮消息 ID，用作交付区目录名
@@ -160,11 +157,11 @@ async def build_skill_mount(
             那个条件够不着。**同样刻意不给默认值**，漏传只会让用户拖进来的文件
             下一轮取不回来，而这事不报错。
     """
-    mounted, uploaded = await _union_skills(cfgs, resource_owner)
+    mounted, uploaded = await _union_skills(cfgs, user)
     if not mounted and not uploaded:
         return None
 
-    credentials = await fetch_builtin_credentials(resource_owner, [s.name for s in mounted])
+    credentials = await fetch_builtin_credentials(user, [s.name for s in mounted])
     skill_dirs = [s.directory for s in mounted]
 
     if settings.SANDBOX_DRIVER == "docker":

@@ -209,15 +209,13 @@ async def conversation_stream(
     message_id = uuid_compat.uuid7()
     history, truncated = _history_from(past)
 
-    # ④ 装配（可 raise → 400 JSON，SSE 还没起）。资源按 Agent 的创建者去查，
-    #    会话与产物归当前用户 —— 员工用管理员建的 Agent 时两者不是同一个人
+    # ④ 装配（可 raise → 400 JSON，SSE 还没起）
     prepared = await prepare_stream(
         AgentSpec.from_agent(agent),
         ChatStreamRequest(content=body.content, history=[]),
         current_user,
         message_id=message_id,
         conversation_id=conversation.id,
-        resource_owner=agent.created_by,
         checkpointer=get_checkpointer(),
         # 历史里有被截断的结果才挂取回工具 —— 与工作空间同一条规矩：有指引就有工具
         extra_tools=[ToolResultFetchTool(conversation_id=conversation.id)] if truncated else [],
@@ -289,7 +287,6 @@ async def resume_stream(
         current_user,
         message_id=message_id,
         conversation_id=conversation.id,
-        resource_owner=agent.created_by,
         checkpointer=get_checkpointer(),
     )
     collector = MessageCollector()

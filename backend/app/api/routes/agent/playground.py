@@ -48,10 +48,10 @@ async def playground_stream(
 
     # 本轮消息 ID —— 交付区目录名、SSE 帧、（workspace 那条路的）DB 主键共用同一个
     message_id = uuid_compat.uuid7()
-    # Playground 只能跑自己建的 Agent，资源主人就是自己；消息不入库，没有会话
+    # Playground 消息不入库，没有会话
     prepared = await prepare_stream(
         AgentSpec.from_agent(agent), body, current_user,
-        message_id=message_id, conversation_id=None, resource_owner=current_user,
+        message_id=message_id, conversation_id=None,
     )
 
     return StreamingResponse(

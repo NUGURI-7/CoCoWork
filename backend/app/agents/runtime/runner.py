@@ -50,6 +50,7 @@ from app.schemas.agent.chat_schema import (
 )
 from app.schemas.agent.config_schema import AgentConfig
 from app.schemas.agent.config_schema import ModelSlot
+from app.services.access import usable_by
 from app.services.mcp.mcp_runtime import fetch_tools_for_server
 from app.services.model.model_client import ModelClient
 from app.services.skill.mount import build_skill_mount
@@ -272,11 +273,10 @@ async def assemble_tools(cfg: AgentConfig, user: User) -> list[BaseTool]:
     tools.extend(resolve_tools(cfg.builtin_tools))
 
     if cfg.knowledge:
-        # 一次性 prefetch 所有挂载的 KB；filter created_by 顺便归属校验，
-        # 用户配错 / KB 已删的 id 自动被过滤（容错，不让残留配置炸整个 agent）
+        # 一次性 prefetch 所有挂载的 KB；按可用规则过滤，顺便挡掉配错 / 已删的 id
+        # （容错，不让残留配置炸整个 agent）
         kbs = await KnowledgeBase.filter(
-            id__in=cfg.knowledge,
-            created_by=user
+            usable_by(user), id__in=cfg.knowledge,
         ).prefetch_related("rerank_model").all()
 
         for kb in kbs:
@@ -302,9 +302,9 @@ async def assemble_tools(cfg: AgentConfig, user: User) -> list[BaseTool]:
             )
 
     if cfg.mcp_servers:
-        # 拉挂载的、属于本人的、启用中的 server；残留 / 禁用 id 自动过滤
+        # 拉挂载的、当前用户可用的、启用中的 server；残留 / 禁用 id 自动过滤
         servers = await MCPServer.filter(
-            id__in=cfg.mcp_servers, created_by=user, enabled=True
+            usable_by(user), id__in=cfg.mcp_servers, enabled=True
         ).all()
         # 并发连接拉工具；单个 server 失败容错跳过，不连累整个装配
         results = await asyncio.gather(
@@ -362,7 +362,6 @@ async def prepare_stream(
         *,
         message_id: UUID,
         conversation_id: UUID | None,
-        resource_owner: User,
         checkpointer: BaseCheckpointSaver | None = None,
         extra_tools: Sequence[BaseTool] = (),
 ) -> PreparedStream:
@@ -371,10 +370,8 @@ async def prepare_stream(
     所有可能 raise 的逻辑在此完成 —— FastAPI handler 接 ValidationException → 400 JSON。
     一旦返回 (graph, messages)，调用方就可以放心交给 StreamingResponse（不再有 raise 风险）。
 
-    两个身份分开传：
-    - user：正在聊天的人。产物、取回历史产物都归他
-    - resource_owner：Agent 的创建者。知识库、MCP、Skill 及其凭证按他的归属去查。
-      员工用管理员建的 Agent 时两者不同；Playground 里两者是同一个人
+    user：正在聊天的人。产物、取回历史产物都归他；知识库、MCP、Skill 及其凭证按
+    services/access 的可用规则查，不再区分聊天的人和 Agent 的创建者
 
     conversation_id：单 Agent 正式会话传本会话 ID，产物挂到会话上、可跨回复取回；
     Playground 传 None —— 它的消息不入库，「本对话」不存在（决策 26）。
@@ -401,7 +398,7 @@ async def prepare_stream(
 
     # 只有一个 agent 在场，包成单元素列表；workspace 那条路传一串
     mount = await build_skill_mount(
-        [cfg], user, resource_owner=resource_owner,
+        [cfg], user,
         scope_id=user.id, message_id=message_id,
         conversation_id=conversation_id,
         referenced_artifact_ids=frozenset(),  # 输入不接拖引用，自然没有被引用过的产物
@@ -434,7 +431,7 @@ async def prepare_stream(
         )
 
     # 提成变量而非内联进 build()：下面算展示名要用同一份
-    tools = await assemble_tools(cfg, resource_owner)
+    tools = await assemble_tools(cfg, user)
     if mount is not None:
         tools = [*tools, *mount.artifact_tools]
     tools = [*tools, *template.own_tools(), *extra_tools]

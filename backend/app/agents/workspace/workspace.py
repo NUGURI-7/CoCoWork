@@ -57,6 +57,7 @@ from app.models import User, Workspace, WorkspaceMember
 from app.models.skill import Skill
 from app.schemas.agent.chat_schema import ChatStreamRequest
 from app.schemas.agent.config_schema import AgentConfig
+from app.services.access import usable_by
 from app.services.memory import MemoryService, MemorySnapshot
 from app.services.sandbox.artifact import collect_artifacts, group_by_message
 from app.services.sandbox.attachment import describe_unavailable, inject_attachments
@@ -369,19 +370,19 @@ async def build_capability_profile(cfg: AgentConfig, user: User) -> str:
     # 不关心这项技能是随代码分发的还是用户自己传的
     skill_names = [s.name for s in resolve_builtin_skills(cfg.builtin_skills)]
     if cfg.skills:
-        rows = await Skill.filter(id__in=cfg.skills, created_by=user)
+        rows = await Skill.filter(usable_by(user), id__in=cfg.skills)
         skill_names.extend(row.name for row in rows)
     if skill_names:
         tags.append(f"Skill[{','.join(skill_names)}]")
 
     if cfg.knowledge:
-        kbs = await KnowledgeBase.filter(id__in=cfg.knowledge, created_by=user)
+        kbs = await KnowledgeBase.filter(usable_by(user), id__in=cfg.knowledge)
         if kbs:
             tags.append(f"知识库[{','.join(kb.name for kb in kbs)}]")
 
     if cfg.mcp_servers:
         servers = await MCPServer.filter(
-            id__in=cfg.mcp_servers, created_by=user, enabled=True
+            usable_by(user), id__in=cfg.mcp_servers, enabled=True
         )
         if servers:
             tags.append(f"MCP[{','.join(s.name for s in servers)}]")
@@ -525,7 +526,6 @@ async def build_workspace_graph(
     mount = await build_skill_mount(
         [cfg, *(c for _, c in member_cfgs)],
         user,
-        resource_owner=user,  # 空间里的 Agent 与配置都归空间的主人，即当前用户
         scope_id=workspace.id,
         message_id=message_id,
         conversation_id=conversation_id,

@@ -18,6 +18,7 @@ from app.services.knowledge.retrieval.hybrid import HybridRetriever
 from app.services.knowledge.retrieval.keyword import KeywordRetriever
 from app.services.knowledge.retrieval.vector import VectorRetriever
 from app.models import AIModel
+from app.services.access import usable_by
 from app.services.knowledge.retrieval.reranker import rerank_hits, rerank_window
 
 
@@ -45,13 +46,13 @@ class RetrievalService:
                     RetrievalResult（hits + timings：含 retriever 细分耗时 + total_ms）
 
                 Raises:
-                    NotFound404: 知识库不存在或不归当前用户
+                    NotFound404: 知识库不存在或当前用户不可用
                     ValueError: 未注册的 mode（扩 enum 但漏配 retriever 时 fail fast）
         """
         # 1. 归属校验 + 拿到 embedding 模型（带 provider 用于解析凭证）
         kb = await (
             KnowledgeBase
-            .filter(id=kb_id, created_by=user)
+            .filter(usable_by(user), id=kb_id)
             .prefetch_related("embedding_model__provider")
             .first()
         )
@@ -101,10 +102,10 @@ class RetrievalService:
         model = await (
             AIModel
             .filter(
+                usable_by(user, owner="provider__created_by"),
                 id=model_id,
                 model_type="rerank",
                 is_enabled=True,
-                provider__created_by=user,
             )
             .prefetch_related("provider")
             .first()
