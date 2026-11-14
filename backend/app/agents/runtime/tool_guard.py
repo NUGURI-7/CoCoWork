@@ -125,7 +125,7 @@ def _cap_result(result, name: str):
     多模态 content（内容块列表）也不动 —— 按字符截对图片块没有意义。
 
     上限复用 `CoCoTool` 那个常量，不另立一套：一次执行能进多少上下文，这里就是
-    多少，跨轮回放（`view_context_assembler._cap_result`）也是同一个数。
+    多少，跨轮回放（`history_replay.cap_result`）也是同一个数。
     """
     if isinstance(result, Command) or not isinstance(result, ToolMessage):
         return result

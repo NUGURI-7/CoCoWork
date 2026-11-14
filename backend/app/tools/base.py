@@ -42,7 +42,7 @@ ToolSourceType = Literal["builtin", "mcp", "knowledge", "memory"]
 ToolCategory = Literal["data_source", "utility"]
 
 # 单次工具输出能进上下文的字符上限（L1 上下文防爆）。
-# **跨轮回放沿用同一个数** —— 见 view_context_assembler._cap_result：
+# **跨轮回放沿用同一个数** —— 见 history_replay.cap_result：
 # 一次执行能进多少，历史里就是多少，不另立一套标准。
 MAX_TOOL_OUTPUT_CHARS = 4000
 

@@ -23,7 +23,7 @@ from app.agents.runtime.blocks import (
     ToolUseBlock,
     parse_blocks,
 )
-from app.agents.workspace.view_context_assembler import REPLAY_PREVIEW_CHARS
+from app.agents.runtime.history_replay import REPLAY_PREVIEW_CHARS
 from app.models import Message, SenderKind
 from app.tools.base import MAX_TOOL_OUTPUT_CHARS
 

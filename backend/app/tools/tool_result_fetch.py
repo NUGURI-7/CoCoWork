@@ -1,7 +1,7 @@
 """取回被截断的工具结果 —— 把历史里那截省略号背后的全文捞回来。
 
 **为什么需要它**：历史里超过 MAX_TOOL_OUTPUT_CHARS 的工具结果只留前 500 字
-+ 一个 tool_use_id（见 view_context_assembler._cap_result）。全文一直躺在
++ 一个 tool_use_id（见 history_replay.cap_result）。全文一直躺在
 messages.content 的 jsonb 里，这个工具就是那座桥 —— 没有它，截断就退化成
 纯粹的信息丢失。
 
