@@ -9,3 +9,10 @@ class SceneEntryOut(BaseModel):
 
     kind: Literal["agent", "workspace"]
     target_id: UUID
+
+
+class SceneQuotaOut(BaseModel):
+    """当前用户在这个场景今天还能发几条。正式用户不受限，两个字段都为空。"""
+
+    remaining: int | None
+    limit: int | None

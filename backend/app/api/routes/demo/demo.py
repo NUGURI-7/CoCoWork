@@ -1,15 +1,23 @@
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
+from redis import asyncio as aioredis
 
 from app.core.config import settings
 from app.core.depends import get_current_user
 from app.core.exceptions import NotFound404
 from app.core.http import ResponseModel, success
+from app.core.redis import get_redis
 from app.models.user import User
-from app.schemas.demo import SceneEntryOut
+from app.schemas.demo import SceneEntryOut, SceneQuotaOut
 from app.schemas.user import TokenOut, UserOut
-from app.services.demo import GuestService, get_guest_service, resolve_scene
+from app.services.demo import (
+    GuestService,
+    get_guest_service,
+    remaining_scene_messages,
+    resolve_scene,
+)
 
 router = APIRouter(prefix="/demo", tags=["demo"])
 
@@ -51,3 +59,21 @@ async def create_guest_session(
 )
 async def get_scene_entry(scene: str, current_user: CurrentUserDep) -> ResponseModel[SceneEntryOut]:
     return success(data=await resolve_scene(current_user, scene))
+
+
+@router.get(
+    "/quota/{target_id}",
+    summary="当前访客在这个场景今天还剩几次",
+    dependencies=[Depends(require_demo_enabled)],
+)
+async def get_scene_quota(
+    target_id: UUID,
+    current_user: CurrentUserDep,
+    redis: aioredis.Redis = Depends(get_redis),
+) -> ResponseModel[SceneQuotaOut]:
+    if not current_user.is_guest:
+        return success(data=SceneQuotaOut(remaining=None, limit=None))
+    remaining = await remaining_scene_messages(redis, current_user, str(target_id))
+    return success(
+        data=SceneQuotaOut(remaining=remaining, limit=settings.DEMO_MESSAGES_PER_SCENE_PER_DAY)
+    )

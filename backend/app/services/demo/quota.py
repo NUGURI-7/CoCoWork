@@ -64,9 +64,18 @@ async def _ensure_token_budget() -> None:
         raise TooManyRequests429("今天的体验额度已用完，请明天再来")
 
 
-async def _consume_scene_quota(redis: aioredis.Redis, user: User, target_id: str | None) -> None:
+def _scene_key(user: User, target_id: str | None) -> str:
     day = datetime.now(timezone.utc).date().isoformat()
-    key = f"demo:messages:{day}:{user.id}:{target_id}"
+    return f"demo:messages:{day}:{user.id}:{target_id}"
+
+
+async def remaining_scene_messages(redis: aioredis.Redis, user: User, target_id: str) -> int:
+    used = int(await redis.get(_scene_key(user, target_id)) or 0)
+    return max(settings.DEMO_MESSAGES_PER_SCENE_PER_DAY - used, 0)
+
+
+async def _consume_scene_quota(redis: aioredis.Redis, user: User, target_id: str | None) -> None:
+    key = _scene_key(user, target_id)
     async with redis.pipeline(transaction=True) as pipe:
         pipe.incr(key)
         pipe.expire(key, SECONDS_PER_DAY, nx=True)

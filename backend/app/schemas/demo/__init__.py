@@ -1,3 +1,3 @@
-from app.schemas.demo.demo_schema import SceneEntryOut
+from app.schemas.demo.demo_schema import SceneEntryOut, SceneQuotaOut
 
-__all__ = ["SceneEntryOut"]
+__all__ = ["SceneEntryOut", "SceneQuotaOut"]

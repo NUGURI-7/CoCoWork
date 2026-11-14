@@ -79,3 +79,19 @@ async def test_resume_only_checks_budget(budget):
     await module.guest_token_budget(GUEST)
     await module.guest_token_budget(MEMBER)
     assert budget == [1]
+
+
+async def test_remaining_tracks_consumed(budget, monkeypatch):
+    monkeypatch.setattr(settings, "DEMO_MESSAGES_PER_SCENE_PER_DAY", 3)
+
+    class GetRedis(FakeRedis):
+        async def get(self, key):
+            return self.store.get(key)
+
+    redis = GetRedis()
+    assert await module.remaining_scene_messages(redis, GUEST, "audio") == 3
+    await module.guest_send_quota(FakeRequest(path_params={"agent_id": "audio"}), GUEST, redis)
+    assert await module.remaining_scene_messages(redis, GUEST, "audio") == 2
+    assert await module.remaining_scene_messages(redis, GUEST, "ws") == 3
+    redis.store = {k: 99 for k in redis.store}
+    assert await module.remaining_scene_messages(redis, GUEST, "audio") == 0
