@@ -184,6 +184,7 @@ async def conversation_stream(
     content, attachments = await resolve_refs(body.content, current_user)
 
     # ③ 先落 user —— 说出去的话即事实；prepare 失败(400)也不该让输入蒸发
+    await svc.expire_pending(conversation_id)
     await svc.append(
         conversation_id,
         MessageAppend(

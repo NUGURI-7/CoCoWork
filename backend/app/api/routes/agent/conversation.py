@@ -155,6 +155,7 @@ async def conversation_stream(
     past = await Message.filter(conversation_id=conversation.id).order_by("created_at")
 
     # ③ 先落 user —— 说出去的话即事实；下面装配失败（400）也不该让输入蒸发
+    await messages.expire_pending(conversation.id)
     await messages.append(
         conversation.id,
         MessageAppend(

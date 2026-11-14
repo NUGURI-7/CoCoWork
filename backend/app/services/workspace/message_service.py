@@ -3,6 +3,7 @@ from uuid import UUID
 
 from app.core.exceptions import NotFound404
 from app.models import Conversation, Message, MessageStatus, User
+from app.schemas.agent.interrupt_schema import ASK_EXPIRED_ACTION
 from app.schemas.sandbox import ArtifactOut
 from app.schemas.workspace import MessageAppend, MessageOut
 from app.services.sandbox.artifact import group_by_message
@@ -86,6 +87,19 @@ class MessageService:
         )
 
         return MessageOut.model_validate(message)
+
+    async def expire_pending(self, conversation_id: UUID) -> None:
+        """作废会话里还在等确认的表单 —— 用户发新消息时、落库之前调。"""
+        pending = await Message.filter(
+            conversation_id=conversation_id, status=MessageStatus.INTERRUPTED,
+        )
+        for message in pending:
+            for block in reversed(message.content):
+                if block.get("type") == "ask" and block.get("answer") is None:
+                    block["answer"] = {"action": ASK_EXPIRED_ACTION, "values": {}}
+                    break
+            message.status = MessageStatus.STOPPED
+            await message.save(update_fields=["content", "status"])
 
     async def continue_message(
         self, message_id: UUID, data: MessageAppend, *, answer: dict[str, Any],

@@ -33,6 +33,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { ChatStreamHttpError, streamChat } from '@/api/chat-stream'
 import { signFigureUrls } from '@/api/knowledge'
 import { isFileOpTool } from '@/components/chat/blocks/tool-format'
+import { ASK_EXPIRED_ACTION } from '@/types/chat'
 import type {
   ApiContentBlock,
   ApiHistoryMessage,
@@ -267,6 +268,9 @@ export function createChatStore({
   let pendingSenderMemberId: string | undefined
   // reset 时 +1：换了对话之后才返回的签名结果不再并进新对话的表
   let figureGeneration = 0
+  // 续跑那条流的块编号从 0 重新数，会撞上同一条消息里已有的块。message_start
+  // 认出是续写时记下偏移量，之后每帧的 index 都加上它
+  let indexOffset = 0
 
   return createStore<ChatState>()(
     immer((set, get) => {
@@ -322,6 +326,14 @@ export function createChatStore({
       // ===== SSE event 分发（11 case + default warn）=====
       // 包成 closure，set/get 直接从外层闭包拿，避免传 helper 的类型签名地狱
       function dispatch(event: string, payload: unknown) {
+        if (
+          indexOffset &&
+          payload &&
+          typeof (payload as { index?: unknown }).index === 'number'
+        ) {
+          const p = payload as { index: number }
+          payload = { ...p, index: p.index + indexOffset }
+        }
         // 文本增量不立刻落库，先攒着 —— 见 DELTA_FLUSH_MS 处的说明
         if (event === 'content_block_delta') {
           const p = payload as ContentBlockDeltaPayload
@@ -364,8 +376,10 @@ export function createChatStore({
               if (last?.role === 'assistant' && last.id === p.id) {
                 last.status = 'streaming'
                 last.errorMessage = null
+                indexOffset = maxBlockIndex(last.blocks) + 1
                 return
               }
+              indexOffset = 0
               s.messages.push({
                 role: 'assistant',
                 id: p.id,
@@ -774,6 +788,16 @@ export function createChatStore({
 
           // 1) 推 user message + 计算 history（送给后端的 = 之前几轮，不含本轮）
           set((s) => {
+            // 发新消息即放弃之前没提交的表单 —— 与后端 expire_pending 同一口径
+            for (const m of s.messages) {
+              if (m.role !== 'assistant' || m.status !== 'awaiting') continue
+              for (const b of m.blocks) {
+                if (b.type === 'ask' && b.answer === null) {
+                  b.answer = { action: ASK_EXPIRED_ACTION, values: {} }
+                }
+              }
+              m.status = 'completed'
+            }
             s.messages.push({ role: 'user', id: uuid(), content })
             s.isLoading = true
           })
@@ -907,4 +931,15 @@ export function createChatStore({
       }
     }),
   )
+}
+
+/** 一条消息里已用到的最大块编号（含派活块内部的块），续跑时据此错开编号。 */
+function maxBlockIndex(blocks: RenderBlock[]): number {
+  let max = -1
+  for (const b of blocks) {
+    max = Math.max(max, b.index)
+    if (b.type === 'delegate') max = Math.max(max, maxBlockIndex(b.blocks))
+    if (b.type === 'file_ops') for (const op of b.ops) max = Math.max(max, op.index)
+  }
+  return max
 }

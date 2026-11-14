@@ -63,6 +63,9 @@ export interface AskPayload {
   asker_member_id: string | null
 }
 
+/** 表单被新消息顶掉时系统代填的 action（对应后端 ASK_EXPIRED_ACTION），不是按钮。 */
+export const ASK_EXPIRED_ACTION = 'expired'
+
 /** 用户填完提交回去的东西 —— 点了哪个按钮 + 各字段的值。 */
 export interface AskAnswer {
   action: string

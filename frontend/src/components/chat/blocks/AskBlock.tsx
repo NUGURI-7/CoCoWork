@@ -1,5 +1,5 @@
 import { memo, useState } from 'react'
-import { CircleHelp, Check } from 'lucide-react'
+import { Ban, CircleHelp, Check } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import type { AskAnswer, AskBlock as AskBlockType, AskField } from '@/types'
+import { ASK_EXPIRED_ACTION } from '@/types/chat'
 
 interface AskBlockProps {
   block: AskBlockType
@@ -85,14 +86,21 @@ export const AskBlock = memo(function AskBlock({ block, onAnswer }: AskBlockProp
 
   // ---------- 已作答：只读结果 ----------
   if (answered) {
+    const expired = answer.action === ASK_EXPIRED_ACTION
     const cancelled = answer.action === 'cancel'
     return (
       <div className="border-border/60 bg-muted/30 my-2 rounded-lg border px-3 py-2 text-sm">
         <div className="text-muted-foreground flex items-center gap-1.5 text-xs">
-          <Check size={13} />
-          <span>{cancelled ? `已跳过 ${asker} 的提问` : `已回复 ${asker}`}</span>
+          {expired ? <Ban size={13} /> : <Check size={13} />}
+          <span>
+            {expired
+              ? '已失效：之后发了新消息，这张表单不能再提交'
+              : cancelled
+                ? `已跳过 ${asker} 的提问`
+                : `已回复 ${asker}`}
+          </span>
         </div>
-        {!cancelled && (
+        {!cancelled && !expired && (
           // 上下两行而不是左右两列：模型写的 label 可能很长（一句完整的问话），
           // 横排会把答案挤出卡片外
           <div className="mt-1.5 space-y-1.5">

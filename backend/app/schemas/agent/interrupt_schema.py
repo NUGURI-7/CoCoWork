@@ -111,6 +111,10 @@ class AskPayload(BaseModel):
     asker_member_id: UUID | None = None
 
 
+# 表单被新消息顶掉时，系统代填的 action。不是按钮，前端据此显示「已失效」
+ASK_EXPIRED_ACTION = "expired"
+
+
 class AskAnswer(BaseModel):
     """用户提交回来的东西 —— 即 Command(resume=...) 的载荷。
 
