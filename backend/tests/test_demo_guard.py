@@ -27,10 +27,10 @@ def lookups(monkeypatch):
     state = {"is_guest": True, "calls": 0}
 
     class Q:
-        def values_list(self, *a, **k):
+        def first(self):
             return self
 
-        async def first(self):
+        async def values_list(self, *a, **k):
             state["calls"] += 1
             return state["is_guest"]
 

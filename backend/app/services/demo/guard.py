@@ -41,6 +41,6 @@ async def guest_write_guard(
         user_id = UUID(verify_token(credentials.credentials).get("sub", ""))
     except (AppAuthenticationFailed, ValueError):
         return
-    is_guest = await User.filter(id=user_id).values_list("is_guest", flat=True).first()
+    is_guest = await User.filter(id=user_id).first().values_list("is_guest", flat=True)
     if is_guest:
         raise AppUnauthorizedFailed("体验账号不支持此操作")
