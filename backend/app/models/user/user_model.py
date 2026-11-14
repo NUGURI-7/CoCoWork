@@ -22,7 +22,9 @@ class User(UUIDBaseModel, TimestampMixin):
     avatar_url = fields.CharField(max_length=512, default="", description="头像 URL")
     is_active = fields.BooleanField(default=True, description="账户是否启用")
     is_admin = fields.BooleanField(default=False, description="管理员标记")
-    is_guest = fields.BooleanField(default=False, description="官网体验的临时账号")
+    is_guest = fields.BooleanField(
+        default=False, db_default=False, description="官网体验的临时账号",
+    )
 
     class Meta:
         table = "users"

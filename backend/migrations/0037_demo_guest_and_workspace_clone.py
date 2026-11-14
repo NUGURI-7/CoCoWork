@@ -12,7 +12,7 @@ class Migration(migrations.Migration):
         ops.AddField(
             model_name='User',
             name='is_guest',
-            field=fields.BooleanField(default=False, description='官网体验的临时账号'),
+            field=fields.BooleanField(default=False, description='官网体验的临时账号', db_default=False),
         ),
         ops.AddField(
             model_name='Workspace',
