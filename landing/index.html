@@ -636,6 +636,15 @@ footer { position: relative; border-top: 1px solid var(--line); padding: 56px 0 
 </footer>
 
 <script>
+// 本地打开介绍页（文件或 localhost）时，「立即体验」指向本地前端，方便联调；线上不改链接
+(function () {
+  var host = location.hostname;
+  if (location.protocol !== 'file:' && host !== 'localhost' && host !== '127.0.0.1') return;
+  document.querySelectorAll('a.scene').forEach(function (a) {
+    a.href = a.href.replace('https://demo.nuguri.org', 'http://localhost:7777');
+  });
+})();
+
 // 顶部进度条 + 导航吸顶态：一个滚动监听搞定两件事，用 rAF 节流避免抖动
 (function () {
   var hdr = document.getElementById('hdr');
