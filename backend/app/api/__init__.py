@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from app.api.routes.agent import router as agent_router
 from app.api.routes.demo import router as demo_router
@@ -10,8 +10,9 @@ from app.api.routes.user import router as user_router
 from app.api.routes.workspace import router as workspace_router
 from app.api.routes.skill import router as skill_router
 from app.api.routes.sandbox import router as sandbox_router
+from app.services.demo import guest_write_guard
 
-api_router = APIRouter()
+api_router = APIRouter(dependencies=[Depends(guest_write_guard)])
 api_router.include_router(user_router)
 api_router.include_router(model_router)
 api_router.include_router(knowledge_router)
