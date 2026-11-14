@@ -185,7 +185,13 @@ h1 .l > span {
 }
 
 .lead { margin-top: 26px; font-size: 17.5px; color: var(--ink-soft); max-width: 31em; animation: rise .9s var(--ease) 460ms both; }
-.scenes { margin-top: 32px; display: flex; flex-direction: column; gap: 10px; max-width: 34em; animation: rise .9s var(--ease) 580ms both; scroll-margin-top: 96px; }
+.scenes-hint {
+  margin-top: 32px; display: inline-flex; align-items: center; gap: 8px;
+  font-size: 14.5px; font-weight: 600; color: var(--brand);
+  animation: rise .9s var(--ease) 540ms both; scroll-margin-top: 96px;
+}
+.scenes-hint i { width: 6px; height: 6px; border-radius: 50%; background: var(--brand); animation: pulse 2.4s ease-in-out infinite; }
+.scenes { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; max-width: 34em; animation: rise .9s var(--ease) 580ms both; }
 .scene {
   display: flex; align-items: center; gap: 18px; padding: 14px 18px;
   background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
@@ -431,7 +437,8 @@ footer { position: relative; border-top: 1px solid var(--line); padding: 56px 0 
         汇集为不同部门和业务线开发的<strong>业务 Agent 与 AI 工作流</strong>。
         员工可以从同一个入口直接使用业务能力，也可以让多个 Agent 围绕一项任务分工协作。
       </p>
-      <div class="scenes" id="scenes">
+      <p class="scenes-hint" id="scenes"><i></i>免注册登录 · 点击下方任一场景直接体验</p>
+      <div class="scenes">
         <a class="scene" href="https://demo.nuguri.org/try/doc-workspace?q=%E5%B8%AE%E6%88%91%E7%94%A8%E4%BA%A7%E5%93%81%E8%B5%84%E6%96%99%E5%81%9A%E4%B8%80%E4%BB%BD%E6%96%B0%E5%93%81%E4%BB%8B%E7%BB%8D%20PPT%EF%BC%8C%E5%86%8D%E9%85%8D%E4%B8%80%E4%BB%BD%20Word%20%E8%AF%B4%E6%98%8E" target="_blank" rel="noopener">
           <span class="scene-body"><span class="scene-title">文档制作</span><span class="scene-desc">资料查询和文档制作分工协作，按公司模板产出 PPT、Word 和 PDF。</span></span>
           <span class="scene-go">立即体验 <span class="ar">→</span></span>
@@ -445,7 +452,7 @@ footer { position: relative; border-top: 1px solid var(--line); padding: 56px 0 
           <span class="scene-go">立即体验 <span class="ar">→</span></span>
         </a>
       </div>
-      <p class="hero-note">点击任一场景直接体验，无需注册登录 · <a href="https://github.com/NUGURI-7/CoCoWork" target="_blank" rel="noopener">在 GitHub 查看</a></p>
+      <p class="hero-note"><a href="https://github.com/NUGURI-7/CoCoWork" target="_blank" rel="noopener">在 GitHub 查看源码</a></p>
     </div>
 
     <!-- 演示动画：与登录页同一套 -->
