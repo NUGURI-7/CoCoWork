@@ -12,6 +12,7 @@ class User(UUIDBaseModel, TimestampMixin):
     - `nick_name`：UI 显示用，注册不填则保持空字符串
     - `is_active`：账户启用状态；False 视为封禁/注销，鉴权时需检查
     - `is_admin`：管理员标记；预留位，实际权限模型在 RBAC 阶段细化
+    - `is_guest`：官网免登录体验时自动创建的临时账号；受体验限额约束、到期由定时任务清理
     """
 
     username = fields.CharField(max_length=20, unique=True, description="用户名（登录凭证）")
@@ -21,6 +22,7 @@ class User(UUIDBaseModel, TimestampMixin):
     avatar_url = fields.CharField(max_length=512, default="", description="头像 URL")
     is_active = fields.BooleanField(default=True, description="账户是否启用")
     is_admin = fields.BooleanField(default=False, description="管理员标记")
+    is_guest = fields.BooleanField(default=False, description="官网体验的临时账号")
 
     class Meta:
         table = "users"

@@ -45,3 +45,9 @@ class Conflict409(AppApiException):
 
     def __init__(self, message: str = "资源冲突", code: int = 409, data: Any = None):
         super().__init__(code=code, message=message, data=data)
+
+class TooManyRequests429(AppApiException):
+    """429 超出调用限额（体验建号、体验额度）"""
+
+    def __init__(self, message: str = "请求过于频繁", code: int = 429, data: Any = None):
+        super().__init__(code=code, message=message, data=data)

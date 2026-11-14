@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.routes.agent import router as agent_router
+from app.api.routes.demo import router as demo_router
 from app.api.routes.knowledge import router as knowledge_router
 from app.api.routes.mcp import router as mcp_router
 from app.api.routes.model import router as model_router
@@ -20,3 +21,4 @@ api_router.include_router(tool_router)
 api_router.include_router(skill_router)
 api_router.include_router(sandbox_router)
 api_router.include_router(workspace_router)
+api_router.include_router(demo_router)

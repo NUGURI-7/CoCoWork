@@ -1,7 +1,10 @@
 from pathlib import Path
 from urllib.parse import quote
 
-from pydantic import SecretStr
+from typing import Literal
+from uuid import UUID
+
+from pydantic import BaseModel, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # backend/app/core/config.py → parents[2] = backend/
@@ -18,6 +21,13 @@ def _under_base(p: str) -> Path:
     """
     path = Path(p)
     return (path if path.is_absolute() else BASE_DIR / path).resolve()
+
+
+class DemoScene(BaseModel):
+    """官网一个体验场景指向哪里：单 Agent 直接用，工作空间按模板给访客复制一份。"""
+
+    kind: Literal["agent", "workspace"]
+    target_id: UUID
 
 
 class Settings(BaseSettings):
@@ -48,6 +58,17 @@ class Settings(BaseSettings):
     ADMIN_USERNAME: str = "admin"
     ADMIN_EMAIL: str = "nuguri990717@gmail.com"
     ADMIN_PASSWORD: str = "020121"  # 留空则 seed 脚本跳过创建
+
+    # ==================== 官网免登录体验 ====================
+    DEMO_ENABLED: bool = False  # 只在演示站打开；关闭时体验登录与场景入口一律不可用
+    DEMO_SCENES: dict[str, DemoScene] = {}  # 场景名 → 目标，环境变量里写 JSON
+    DEMO_TOKEN_EXPIRE_MINUTES: int = 7 * 24 * 60
+    DEMO_GUESTS_PER_IP_PER_DAY: int = 3
+    DEMO_MESSAGES_PER_SCENE_PER_DAY: int = 5
+    DEMO_MAX_INPUT_CHARS: int = 2000
+    DEMO_DAILY_TOKEN_BUDGET: int = 2_000_000  # 全部临时账号一天合计
+    DEMO_MAX_UPLOAD_SIZE: int = 5 * 1024 * 1024
+    DEMO_GUEST_RETENTION_DAYS: int = 7
 
     # ==================== Redis ====================
     REDIS_HOST: str = "127.0.0.1"

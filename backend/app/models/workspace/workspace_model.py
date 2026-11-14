@@ -38,6 +38,10 @@ class Workspace(UUIDBaseModel, TimestampMixin):
         default=dict,
         description="工作空间自身配置：路由策略 / 开场白 / 共享资源 id / 招募白名单 / UI 偏好",
     )
+    cloned_from = fields.ForeignKeyField(
+        "models.Workspace", related_name="clones", null=True, on_delete=fields.SET_NULL,
+        description="复制来源的模板工作空间；自己新建的为空",
+    )
 
     class Meta:
         table = "workspaces"

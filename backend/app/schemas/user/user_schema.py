@@ -35,6 +35,7 @@ class UserOut(BaseModel):
     avatar_url: str
     is_active: bool
     is_admin: bool
+    is_guest: bool
     created_at: datetime
     updated_at: datetime
 
