@@ -10,6 +10,7 @@ from app.core.storage import storage
 from app.models.knowledge import Paragraph
 from app.models.user import User
 from app.schemas.knowledge import FigureOut, RetrievalHit
+from app.services.access import usable_by
 
 # 直链有效期（秒）。页面打开时图就加载完了，1 小时足够；翻页 / 刷新会重新签
 FIGURE_URL_EXPIRES = 3600
@@ -43,11 +44,11 @@ async def attach_hit_figures(hits: list[RetrievalHit]) -> None:
 
 
 async def sign_paragraph_figures(user: User, paragraph_ids: list[UUID]) -> dict[str, str]:
-    """一批段 id → {图标识: 直链}。只签本人知识库下的段，其余静默跳过、不报错也不泄漏存在性。"""
+    """一批段 id → {图标识: 直链}。只签当前用户可用的知识库下的段，其余静默跳过、不报错也不泄漏存在性。"""
     if not paragraph_ids:
         return {}
     rows = await Paragraph.filter(
-        id__in=paragraph_ids, knowledge_base__created_by=user,
+        usable_by(user, owner="knowledge_base__created_by"), id__in=paragraph_ids,
     ).values("id", "meta")
     urls: dict[str, str] = {}
     for row in rows:

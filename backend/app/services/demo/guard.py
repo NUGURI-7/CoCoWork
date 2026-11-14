@@ -23,6 +23,7 @@ _CONVERSATION_WRITES = (
 GUEST_WRITABLE_ROUTES = frozenset(
     {
         f"{settings.API_PREFIX}/demo/guest-session",
+        f"{settings.API_PREFIX}/knowledge-bases/figure-urls",
         *(f"{settings.API_PREFIX}/agents/{{agent_id}}{p}" for p in _CONVERSATION_WRITES),
         *(f"{settings.API_PREFIX}/workspaces/{{workspace_id}}{p}" for p in _CONVERSATION_WRITES),
     }
