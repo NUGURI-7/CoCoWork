@@ -4,13 +4,16 @@ import { Bot, Plus } from 'lucide-react'
 import { ring } from 'ldrs'
 
 import { listAgents } from '@/api/agent'
+import { listAvailableAgents } from '@/api/agent-conversation'
 import { listAllModels } from '@/api/model'
 import { Button } from '@/components/ui/button'
 import { useHorizontalWheelScroll } from '@/hooks/use-horizontal-wheel-scroll'
 import { useTemplates } from '@/hooks/use-templates'
-import type { Agent, Template } from '@/types'
+import { useAuthStore } from '@/stores/auth'
+import type { Agent, AgentBrief, Template } from '@/types'
 import { AgentCard } from './AgentCard'
 import { CreateAgentDialog } from './CreateAgentDialog'
+import { ProvidedAgentCard } from './ProvidedAgentCard'
 import { TemplateCard } from './TemplateCard'
 
 ring.register()
@@ -27,7 +30,13 @@ export default function AgentsPage() {
     () => new Map(),
   )
   const templateScrollRef = useHorizontalWheelScroll<HTMLDivElement>()
+  const businessScrollRef = useHorizontalWheelScroll<HTMLDivElement>()
   const { templates } = useTemplates()
+  const isAdmin = useAuthStore((s) => s.user?.is_admin === true)
+  // 员工：管理员提供的、已启用的 Agent（与侧栏 Agent 选择器同一份数据）
+  const [provided, setProvided] = useState<AgentBrief[]>([])
+  const generalTemplates = templates.filter((t) => t.category === 'general')
+  const businessTemplates = templates.filter((t) => t.category === 'business')
 
   const refetch = useCallback(async () => {
     setLoading(true)
@@ -44,6 +53,13 @@ export default function AgentsPage() {
   useEffect(() => {
     refetch()
   }, [refetch])
+
+  useEffect(() => {
+    if (isAdmin) return
+    listAvailableAgents()
+      .then((list) => setProvided(list.filter((a) => !a.own && a.usable)))
+      .catch(() => {})
+  }, [isAdmin])
 
   // 一次性拉 chat 模型反查表（mount 时拉，创建/删除 agent 不重拉）
   useEffect(() => {
@@ -83,6 +99,38 @@ export default function AgentsPage() {
         </Button>
       </div>
 
+      {/* 员工：管理员提供的业务 Agent，点了直接进对话 */}
+      {!isAdmin && provided.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+            公司提供
+          </h2>
+          <div className="-mx-2 -my-2 overflow-x-auto px-2 py-2">
+            <div className="flex gap-3">
+              {provided.map((a) => (
+                <ProvidedAgentCard key={a.id} agent={a} />
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* 管理员：业务模板，用来建给全员用的业务 Agent */}
+      {isAdmin && businessTemplates.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+            业务模板
+          </h2>
+          <div ref={businessScrollRef} className="-mx-2 -my-2 overflow-x-auto px-2 py-2">
+            <div className="flex gap-3">
+              {businessTemplates.map((t) => (
+                <TemplateCard key={t.key} template={t} onClick={handleTemplateClick} />
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* ② 模板池横向卡片条 */}
       <section className="space-y-3">
         <h2 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
@@ -90,7 +138,7 @@ export default function AgentsPage() {
         </h2>
         <div ref={templateScrollRef} className="-mx-2 -my-2 overflow-x-auto px-2 py-2">
           <div className="flex gap-3">
-            {templates.map((t) => (
+            {generalTemplates.map((t) => (
               <TemplateCard key={t.key} template={t} onClick={handleTemplateClick} />
             ))}
           </div>

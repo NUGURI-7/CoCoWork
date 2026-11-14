@@ -48,6 +48,7 @@ class AgentBriefOut(BaseModel):
     description: str
     avatar_url: str | None
     usable: bool = Field(description="能否发消息；false = 已下线，只能翻看历史会话")
+    own: bool = Field(description="是不是自己建的；前端据此把管理员提供的单独列成一栏")
 
 
 class TemplateOut(BaseModel):
@@ -64,6 +65,7 @@ class TemplateOut(BaseModel):
     name: str
     description: str
     form: Literal["loop", "graph"] = Field(description="编排形态，前端据此显示徽标")
+    category: Literal["general", "business"] = Field(description="business 只对管理员列出")
     config_fields: list[str] | None = Field(
         default=None, description="管理员可配置的项；为空表示全部开放",
     )

@@ -1,9 +1,9 @@
 """Agent 的可见与可用规则 —— 所有「这个人能不能看到 / 用这个 Agent」的判断都走这里。
 
 两类 Agent，规则不同：
-- **自己建的**：只有自己能看、能用；启用开关对它不生效
-- **管理员建的**：启用时所有人能看、能用；停用后只对聊过它的人可见（标「已下线」），
-  任何人都不能再发消息。管理员始终能看到所有管理员建的 Agent
+- **自己建的**：只有自己能看、能用；启用开关对它不生效。用通用模板建的都属于这类，管理员建的也一样
+- **公共 Agent**（管理员用业务模板建的）：启用时所有人能看、能用；停用后只对聊过它的人可见
+  （标「已下线」），任何人都不能再发消息。管理员始终能看到所有公共 Agent
 
 查询条件拼成 Q 表达式进 WHERE，而不是查出来再在内存里筛 —— 归属条件进得了 SQL，
 就不存在「查到了但忘了判权限」这个状态。
@@ -13,13 +13,21 @@ from uuid import UUID
 
 from tortoise.expressions import Q, Subquery
 
+from app.agents.templates import list_templates
 from app.core.exceptions import Conflict409, NotFound404
 from app.models import Agent, Conversation, User
 
 
+def _business_template_keys() -> list[str]:
+    return [t.key for t in list_templates() if t.category == "business"]
+
+
 def _visible_filter(user: User) -> Q:
-    """能看到的 Agent：自己建的 + 管理员建的已启用的 + 管理员建的、自己聊过的。"""
-    shared = Q(created_by__is_admin=True)
+    """能看到的 Agent：自己建的 + 公共 Agent（管理员用业务模板建的）中已启用的或自己聊过的。
+
+    用通用模板建的 Agent 只归建的人，管理员建的也一样。
+    """
+    shared = Q(created_by__is_admin=True, template__in=_business_template_keys())
     if user.is_admin:
         return Q(created_by_id=user.id) | shared
     chatted = Q(id__in=Subquery(

@@ -39,15 +39,18 @@ async def list_agents(
 async def list_agent_templates(
         current_user: CurrentUserDep,
 ) -> ResponseModel[list[TemplateOut]]:
-    """模板池 = 进程内注册表，与用户无关；登录态只用来挡未认证访问。
+    """模板池 = 进程内注册表。业务模板只对管理员列出 —— 员工不能用它建 Agent。
 
-    不经 service：这里没有业务逻辑可装（不查库、不分用户、无权限差异），
-    转一层只会得到一个一行的空壳。
+    不经 service：这里只有一行身份过滤，不查库，转一层只会得到一个空壳。
 
     **必须注册在 /{agent_id} 之前** —— FastAPI 按注册顺序匹配，否则
     "templates" 会被当成 agent_id 拿去转 UUID，直接 422。
     """
-    return success(data=[TemplateOut.model_validate(t) for t in list_templates()])
+    templates = [
+        t for t in list_templates()
+        if current_user.is_admin or t.category == "general"
+    ]
+    return success(data=[TemplateOut.model_validate(t) for t in templates])
 
 
 @router.get("/available", summary="列出能使用的 Agent（侧栏选择器）")
@@ -66,6 +69,7 @@ async def list_available_agents(
             description=a.description,
             avatar_url=a.avatar_url,
             usable=is_usable(a, current_user),
+            own=a.created_by_id == current_user.id,
         )
         for a in agents
     ])

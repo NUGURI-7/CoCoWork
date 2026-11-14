@@ -26,6 +26,8 @@ export interface Template {
   description: string
   /** 编排形态，决定徽标与默认图标 */
   form: TemplateKind
+  /** general = 员工可自建；business = 代码写好的业务流程，只对管理员列出 */
+  category: 'general' | 'business'
   /** 可配置项（chat_model / system_prompt / knowledge / builtin_tools / skills / mcp_servers）；null = 全部开放 */
   config_fields: string[] | null
 }
@@ -119,6 +121,8 @@ export interface AgentBrief {
   avatar_url: string | null
   /** 能否发消息；false = 已下线，只能翻看历史会话 */
   usable: boolean
+  /** 是不是自己建的；false = 管理员提供给全员的 */
+  own: boolean
 }
 
 /** 单 Agent 会话（对齐后端 AgentConversationOut） */

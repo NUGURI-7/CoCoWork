@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from app.agents.templates import get_template
-from app.core.exceptions import ValidationException, NotFound404
+from app.core.exceptions import AppUnauthorizedFailed, NotFound404, ValidationException
 from app.models import User, Agent
 from app.schemas.agent import AgentCreate, AgentOut, AgentUpdate
 
@@ -14,8 +14,11 @@ class AgentService:
 
     async def create(self, user: User, data: AgentCreate) -> AgentOut:
         # template 存的是内置模板 registry 的 key —— 校验在册
-        if get_template(data.template) is None:
+        template = get_template(data.template)
+        if template is None:
             raise ValidationException(f"模板不存在：{data.template}")
+        if template.category == "business" and not user.is_admin:
+            raise AppUnauthorizedFailed("业务 Agent 只能由管理员创建")
 
         agent = await Agent.create(
             created_by = user,

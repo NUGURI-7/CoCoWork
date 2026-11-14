@@ -1,6 +1,6 @@
 """门店营销音频制作：查资料写稿 → 店员确认 → 后台制作 MP3。"""
 
-from typing import Annotated, Any, ClassVar, TypedDict
+from typing import Annotated, Any, ClassVar, Literal, TypedDict
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware
@@ -115,6 +115,7 @@ class StoreMarketingAudioTemplate(GraphTemplate):
         "店员改稿、选音色和配乐后，制作可试听、下载的 MP3。"
     )
     config_fields: ClassVar[tuple[str, ...] | None] = ("chat_model", "knowledge")
+    category: ClassVar[Literal["general", "business"]] = "business"
 
     def own_tools(self) -> list[BaseTool]:
         return [PromotionLookupTool(), SubmitDraftTool()]
