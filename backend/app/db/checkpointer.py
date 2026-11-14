@@ -40,6 +40,12 @@ def _conninfo() -> str:
         user=settings.PG_USER,
         password=settings.PG_PASSWORD,
         dbname=settings.PG_DATABASE,
+        # TCP 保活：每 30 秒探一次，连接不会因空闲被中间设备（代理 / NAT / 负载均衡）
+        # 静默掐掉；真断了 30+3×10 秒内就能发现，不会一直等一条死连接
+        keepalives=1,
+        keepalives_idle=30,
+        keepalives_interval=10,
+        keepalives_count=3,
     )
 
 # 进程内单例：整个进程只造一次，所有装配点共用。
