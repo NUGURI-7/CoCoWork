@@ -30,6 +30,7 @@ from app.agents.runtime import AgentSpec, MessageCollector, prepare_stream, run_
 from app.agents.runtime.blocks import TextBlock as ReplayTextBlock, parse_blocks
 from app.agents.runtime.history_replay import has_oversized, replay_own_turn
 from app.core.depends import get_current_user
+from app.services.demo import guest_send_quota, guest_token_budget
 from app.core.exceptions import NotFound404
 from app.db.checkpointer import get_checkpointer
 from app.core.http import ResponseModel, success
@@ -179,7 +180,11 @@ async def generate_title(
     return success(data=ConversationTitleOut(title=title))
 
 
-@router.post("/{conversation_id}/stream", summary="发送消息（流式回复）")
+@router.post(
+    "/{conversation_id}/stream",
+    summary="发送消息（流式回复）",
+    dependencies=[Depends(guest_send_quota)],
+)
 async def conversation_stream(
         conversation_id: UUID,
         body: AgentConversationStreamIn,
@@ -264,7 +269,11 @@ async def conversation_stream(
     return StreamingResponse(stream(), media_type=SSE_MEDIA_TYPE)
 
 
-@router.post("/{conversation_id}/messages/{message_id}/resume", summary="提交表单，从存档接着执行")
+@router.post(
+    "/{conversation_id}/messages/{message_id}/resume",
+    summary="提交表单，从存档接着执行",
+    dependencies=[Depends(guest_token_budget)],
+)
 async def resume_stream(
         conversation_id: UUID,
         message_id: UUID,

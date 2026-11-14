@@ -67,7 +67,6 @@ class Settings(BaseSettings):
     DEMO_MESSAGES_PER_SCENE_PER_DAY: int = 5
     DEMO_MAX_INPUT_CHARS: int = 2000
     DEMO_DAILY_TOKEN_BUDGET: int = 2_000_000  # 全部临时账号一天合计
-    DEMO_MAX_UPLOAD_SIZE: int = 5 * 1024 * 1024
     DEMO_GUEST_RETENTION_DAYS: int = 7
 
     # ==================== Redis ====================

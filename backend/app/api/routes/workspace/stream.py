@@ -26,6 +26,7 @@ from app.agents.runtime.events import EventType, sse_event
 from app.agents.workspace.history_budget import should_compact
 from app.agents.workspace.workspace import build_workspace_graph, validate_responder
 from app.core.depends import get_current_user
+from app.services.demo import guest_send_quota, guest_token_budget
 from app.core.exceptions import NotFound404
 from app.core.exceptions.types import AppApiException
 from app.core.observability import TraceContext
@@ -145,7 +146,11 @@ async def _load_interrupted(
     return conversation, message, responder
 
 
-@router.post("/stream", summary="Workspace 对话流（supervisor 应答）")
+@router.post(
+    "/stream",
+    summary="Workspace 对话流（supervisor 应答）",
+    dependencies=[Depends(guest_send_quota)],
+)
 async def conversation_stream(
         workspace_id: UUID,
         conversation_id: UUID,
@@ -329,6 +334,7 @@ async def conversation_stream(
 @router.post(
     "/messages/{message_id}/resume",
     summary="提交人工确认的答案，从存档接着往下跑",
+    dependencies=[Depends(guest_token_budget)],
 )
 async def resume_stream(
         workspace_id: UUID,
