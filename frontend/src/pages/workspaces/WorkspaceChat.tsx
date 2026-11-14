@@ -19,6 +19,8 @@ import {
 import type { MentionItem } from '@/components/chat/MentionList'
 import { MessageInput } from '@/components/chat/MessageInput'
 import { MessageList } from '@/components/chat/MessageList'
+import { GuestQuotaHint } from '@/pages/demo/GuestQuotaHint'
+import { GUEST_QUOTA_EXHAUSTED_HINT, useGuestQuota } from '@/pages/demo/guest-quota'
 import { getOrCreateChatStore } from '@/stores/chat-registry'
 import { createChatStore, type ChatState } from '@/stores/chat-store'
 import { useWorkspaceSession } from '@/stores/workspace-session'
@@ -192,6 +194,7 @@ export function WorkspaceChat({
     <SubagentDirectoryProvider value={directory}>
       <ChatProvider store={store}>
         <WorkspaceChatBody
+          workspaceId={workspaceId}
           supervisorReady={supervisorReady}
           mentionItems={mentionItems}
           topFade={topFade}
@@ -203,17 +206,21 @@ export function WorkspaceChat({
 }
 
 function WorkspaceChatBody({
+  workspaceId,
   supervisorReady,
   mentionItems,
   topFade,
   initialText,
 }: {
+  workspaceId: string
   supervisorReady: boolean
   mentionItems: MentionItem[]
   topFade: boolean
   initialText?: string
 }) {
   const isEmpty = useChat((s) => s.messages.length === 0)
+  const remaining = useGuestQuota(workspaceId)
+  const exhausted = remaining === 0
   // 最后一条消息停在人工确认上时锁住输入 —— 这轮回复还没说完，
   // 用户得先处理那张表单（填了或跳过）才能继续说话
   const awaitingAnswer = useChat((s) => {
@@ -224,12 +231,15 @@ function WorkspaceChatBody({
   return (
     <>
       {isEmpty ? <EmptyHint /> : <MessageList topFade={topFade} />}
+      <GuestQuotaHint remaining={remaining} />
       <MessageInput
-        disabled={!supervisorReady || awaitingAnswer}
+        disabled={!supervisorReady || awaitingAnswer || exhausted}
         disabledHint={
           awaitingAnswer
             ? '先回复上面那个问题，或者点「跳过」'
-            : '先在右侧「空间配置」里给 Supervisor 选一个对话模型'
+            : exhausted
+              ? GUEST_QUOTA_EXHAUSTED_HINT
+              : '先在右侧「空间配置」里给 Supervisor 选一个对话模型'
         }
         mentionItems={mentionItems}
         // 产出物面板的卡片可以拖进来当附件（后端决策 25）。

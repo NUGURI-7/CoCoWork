@@ -10,6 +10,8 @@ import {
 import { ChatProvider, useChat } from '@/components/chat/ChatProvider'
 import { MessageInput } from '@/components/chat/MessageInput'
 import { MessageList } from '@/components/chat/MessageList'
+import { GuestQuotaHint } from '@/pages/demo/GuestQuotaHint'
+import { GUEST_QUOTA_EXHAUSTED_HINT, useGuestQuota } from '@/pages/demo/guest-quota'
 import { useAgentSession } from '@/stores/agent-session'
 import { getOrCreateChatStore } from '@/stores/chat-registry'
 import { createChatStore, type ChatState } from '@/stores/chat-store'
@@ -113,21 +115,30 @@ export function AgentChat({
 
   return (
     <ChatProvider store={store}>
-      <AgentChatBody agentName={agentName} usable={usable} initialText={initialText} />
+      <AgentChatBody
+        agentId={agentId}
+        agentName={agentName}
+        usable={usable}
+        initialText={initialText}
+      />
     </ChatProvider>
   )
 }
 
 function AgentChatBody({
+  agentId,
   agentName,
   usable,
   initialText,
 }: {
+  agentId: string
   agentName: string
   usable: boolean
   initialText?: string
 }) {
   const isEmpty = useChat((s) => s.messages.length === 0)
+  const remaining = useGuestQuota(agentId)
+  const exhausted = remaining === 0
   return (
     <>
       {isEmpty ? (
@@ -137,9 +148,10 @@ function AgentChatBody({
       ) : (
         <MessageList />
       )}
+      <GuestQuotaHint remaining={remaining} />
       <MessageInput
-        disabled={!usable}
-        disabledHint="这个 Agent 已下线，只能查看以前的对话"
+        disabled={!usable || exhausted}
+        disabledHint={usable ? GUEST_QUOTA_EXHAUSTED_HINT : '这个 Agent 已下线，只能查看以前的对话'}
         initialText={initialText}
       />
     </>

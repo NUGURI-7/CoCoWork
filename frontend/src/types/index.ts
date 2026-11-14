@@ -23,7 +23,7 @@ export type {
   UserStatusPayload,
   TokenPayload,
 } from './user'
-export type { SceneEntry } from './demo'
+export type { SceneEntry, SceneQuota } from './demo'
 export type {
   ProviderType,
   ModelType,
