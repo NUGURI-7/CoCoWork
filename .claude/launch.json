@@ -28,6 +28,13 @@
       "cwd": "backend",
       "runtimeExecutable": "uv",
       "runtimeArgs": ["run", "worker"]
+    },
+    {
+      "name": "landing",
+      "cwd": "landing",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "7780"],
+      "port": 7780
     }
   ]
 }
