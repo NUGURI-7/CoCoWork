@@ -18,11 +18,17 @@ from app.core.redis import redis_client
 from app.db.checkpointer import init_checkpointer, shutdown_checkpointer
 from app.db.postgresql import TORTOISE_CONFIG
 from app.tasks.checkpoint_cleanup_task import cleanup_checkpoints_task
+from app.tasks.demo_cleanup_task import purge_expired_guests_task
 from app.tasks.document_task import index_document_task, parse_document_task
 from app.tasks.marketing_audio_task import produce_marketing_audio_task
 from app.tasks.memory_digest_task import digest_memory_task
 from app.tasks.registry import (
-    CLEANUP_CHECKPOINTS, DIGEST_MEMORY, INDEX_DOCUMENT, PARSE_DOCUMENT, PRODUCE_MARKETING_AUDIO,
+    CLEANUP_CHECKPOINTS,
+    DIGEST_MEMORY,
+    INDEX_DOCUMENT,
+    PARSE_DOCUMENT,
+    PRODUCE_MARKETING_AUDIO,
+    PURGE_EXPIRED_GUESTS,
 )
 from app.tasks.queue import queue
 
@@ -55,6 +61,7 @@ settings = {
     # 定时任务。函数不用再进上面的 functions —— SAQ 会自己把 cron 的函数并进去
     "cron_jobs": [
         CLEANUP_CHECKPOINTS.to_cron_job(cleanup_checkpoints_task),
+        PURGE_EXPIRED_GUESTS.to_cron_job(purge_expired_guests_task),
     ],
     "concurrency": 3,  # 同时嚼几个任务；重 IO 任务防打爆上游 API，先保守设 3
     "startup": startup,

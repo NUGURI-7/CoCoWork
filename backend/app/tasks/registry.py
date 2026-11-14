@@ -111,6 +111,11 @@ DIGEST_MEMORY = TaskSpec(name="memory.digest", timeout=120, retries=0)
 CLEANUP_CHECKPOINTS = CronSpec(cron="0 18 * * *", timeout=600)
 
 
+# === 官网体验临时账号 ===
+# 每天清一次，排在存档清理之后半小时。一批最多 200 个，每个要删几个存储目录，给 10 分钟
+PURGE_EXPIRED_GUESTS = CronSpec(cron="30 18 * * *", timeout=600)
+
+
 # === 门店营销音频 ===
 # 配音 + 混音实测十几秒，单次给 120 秒；千问 TTS 偶发失败，总共执行两次
 PRODUCE_MARKETING_AUDIO = TaskSpec(name="marketing_audio.produce", timeout=120, retries=2)
