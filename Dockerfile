@@ -22,6 +22,12 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app/backend
 
+# 门店营销音频的配音整理与混音要调 ffmpeg / ffprobe（见 store_marketing_audio/audio.py）。
+# 放在依赖安装之前：系统包极少变动，这一层能长期命中缓存
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install Python deps (cached layer)
 COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --frozen --no-dev

@@ -10,7 +10,7 @@
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from typing import Any
 from uuid import UUID
 from collections.abc import Awaitable
@@ -22,6 +22,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.tools import BaseTool
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 from uuid_utils import compat as uuid_compat
@@ -53,6 +54,7 @@ from app.services.mcp.mcp_runtime import fetch_tools_for_server
 from app.services.model.model_client import ModelClient
 from app.services.skill.mount import build_skill_mount
 from app.tools import resolve_tools
+from app.tools.ask_human import AskHumanTool
 from app.tools.knowledge_retrieval import KnowledgeRetrievalTool
 
 logger = logging.getLogger(__name__)
@@ -361,6 +363,8 @@ async def prepare_stream(
         message_id: UUID,
         conversation_id: UUID | None,
         resource_owner: User,
+        checkpointer: BaseCheckpointSaver | None = None,
+        extra_tools: Sequence[BaseTool] = (),
 ) -> PreparedStream:
     """SSE 流开起来前的同步装配 —— 配置校验 / 取模板 / 装 chat model / 装 graph。
 
@@ -433,6 +437,10 @@ async def prepare_stream(
     tools = await assemble_tools(cfg, resource_owner)
     if mount is not None:
         tools = [*tools, *mount.artifact_tools]
+    tools = [*tools, *template.own_tools(), *extra_tools]
+    if checkpointer is not None:
+        # 有存档才能停下来等人再接着执行，ask_human 随存档一起挂
+        tools = [*tools, AskHumanTool()]
 
     graph = template.build(
         chat_model=chat_model,
@@ -440,6 +448,8 @@ async def prepare_stream(
         tools=tools,
         middleware=middleware,
     )
+    if checkpointer is not None:
+        graph = graph.copy(update={"checkpointer": checkpointer})
 
     messages = to_lc_messages(request.history, request.content)
     return PreparedStream(

@@ -109,3 +109,8 @@ DIGEST_MEMORY = TaskSpec(name="memory.digest", timeout=120, retries=0)
 # timeout 给 10 分钟：一批最多 5000 个 thread、每个一次数据库往返，
 # 远端库按 50ms 算也就 4 分钟出头，留一倍余量
 CLEANUP_CHECKPOINTS = CronSpec(cron="0 18 * * *", timeout=600)
+
+
+# === 门店营销音频 ===
+# 配音 + 混音实测十几秒，单次给 120 秒；千问 TTS 偶发失败，总共执行两次
+PRODUCE_MARKETING_AUDIO = TaskSpec(name="marketing_audio.produce", timeout=120, retries=2)

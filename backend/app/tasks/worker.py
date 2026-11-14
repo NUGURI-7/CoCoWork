@@ -19,9 +19,10 @@ from app.db.checkpointer import init_checkpointer, shutdown_checkpointer
 from app.db.postgresql import TORTOISE_CONFIG
 from app.tasks.checkpoint_cleanup_task import cleanup_checkpoints_task
 from app.tasks.document_task import index_document_task, parse_document_task
+from app.tasks.marketing_audio_task import produce_marketing_audio_task
 from app.tasks.memory_digest_task import digest_memory_task
 from app.tasks.registry import (
-    CLEANUP_CHECKPOINTS, DIGEST_MEMORY, INDEX_DOCUMENT, PARSE_DOCUMENT,
+    CLEANUP_CHECKPOINTS, DIGEST_MEMORY, INDEX_DOCUMENT, PARSE_DOCUMENT, PRODUCE_MARKETING_AUDIO,
 )
 from app.tasks.queue import queue
 
@@ -49,6 +50,7 @@ settings = {
         (PARSE_DOCUMENT.name, parse_document_task),
         (INDEX_DOCUMENT.name, index_document_task),
         (DIGEST_MEMORY.name, digest_memory_task),
+        (PRODUCE_MARKETING_AUDIO.name, produce_marketing_audio_task),
     ],
     # 定时任务。函数不用再进上面的 functions —— SAQ 会自己把 cron 的函数并进去
     "cron_jobs": [

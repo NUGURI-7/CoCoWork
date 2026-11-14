@@ -14,25 +14,35 @@
 """
 
 import asyncio
+import logging
+from dataclasses import replace
+from functools import partial
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
+from langchain_core.messages import BaseMessage, HumanMessage
+from langgraph.types import Command
 from uuid_utils import compat as uuid_compat
 
 from app.agents.runtime import AgentSpec, MessageCollector, prepare_stream, run_chat_stream
+from app.agents.runtime.blocks import TextBlock as ReplayTextBlock, parse_blocks
+from app.agents.runtime.history_replay import has_oversized, replay_own_turn
 from app.core.depends import get_current_user
+from app.core.exceptions import NotFound404
+from app.db.checkpointer import get_checkpointer
 from app.core.http import ResponseModel, success
 from app.core.observability import TraceContext
 from app.models import Agent, Message, MessageRole, MessageStatus, User
+from app.models.sandbox import SandboxArtifact
 from app.schemas.agent import (
     AgentConversationOut,
     AgentConversationStreamIn,
     ChatStreamRequest,
-    HistoryMessage,
     TextBlock,
 )
+from app.schemas.agent.interrupt_schema import AskAnswer
 from app.schemas.workspace import (
     ConversationTitleIn,
     ConversationTitleOut,
@@ -46,6 +56,9 @@ from app.services.agent.conversation_service import (
     get_agent_conversation_service,
 )
 from app.services.workspace import MessageService, get_message_service
+from app.tools.tool_result_fetch import ToolResultFetchTool
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agents/{agent_id}/conversations", tags=["agent-conversations"])
 
@@ -68,19 +81,46 @@ VisibleAgentDep = Annotated[Agent, Depends(_visible_agent)]
 UsableAgentDep = Annotated[Agent, Depends(_usable_agent)]
 
 
-def _history_from(past: list[Message]) -> list[HistoryMessage]:
-    """库里的历史 → 喂给模型的历史。只回放文本：工具调用、思考、表单等过程块不进上下文。"""
-    history: list[HistoryMessage] = []
+def _history_from(past: list[Message]) -> tuple[list[BaseMessage], bool]:
+    """库里的历史 → 喂给模型的消息，以及其中有没有被截断的工具结果。
+
+    用户发言取文本；Agent 的回复还原成当初的调用形状（工具调用 + 配对结果），
+    与工作空间回放应答者自己那条历史同一套。思考与表单不回放。
+    """
+    history: list[BaseMessage] = []
+    truncated = False
     for message in past:
-        blocks = [
-            TextBlock(text=block["text"])
-            for block in message.content
-            if block.get("type") == "text" and isinstance(block.get("text"), str)
-            and block["text"].strip()
-        ]
-        if blocks:
-            history.append(HistoryMessage(role=message.role.value, content=blocks))
-    return history
+        blocks = parse_blocks(message.content)
+        if message.role == MessageRole.USER:
+            text = "".join(b.text for b in blocks if isinstance(b, ReplayTextBlock) and b.text)
+            if text.strip():
+                history.append(HumanMessage(text))
+        else:
+            truncated = truncated or has_oversized(blocks)
+            history.extend(replay_own_turn(blocks, message.id))
+    return history, truncated
+
+
+def _assistant_append(
+        collector: MessageCollector, *, message_id: UUID, status: MessageStatus,
+) -> MessageAppend:
+    """首轮新建与续跑续写共用同一份字段组装。"""
+    return MessageAppend(
+        id=message_id,
+        role=MessageRole.ASSISTANT,
+        sender_kind=None,
+        content=collector.blocks,
+        status=MessageStatus.ERROR if collector.saw_error else status,
+        error_message=collector.error_message,
+        prompt_tokens=collector.prompt_tokens,
+        completion_tokens=collector.completion_tokens,
+        token_usage=collector.usage_rows,
+    )
+
+
+async def _message_artifacts(message_id: UUID) -> list[SandboxArtifact]:
+    """本条回复挂着的产物（后台任务做出来的文件），回复结束时推给前端。"""
+    return await SandboxArtifact.filter(message_id=message_id).order_by("filename")
 
 
 @router.get("", summary="列出自己在这个 Agent 下的会话")
@@ -167,34 +207,30 @@ async def conversation_stream(
 
     # 本轮 assistant 消息 ID —— SSE 帧、DB 主键、交付区目录名共用，必须赶在装配前生成
     message_id = uuid_compat.uuid7()
+    history, truncated = _history_from(past)
 
     # ④ 装配（可 raise → 400 JSON，SSE 还没起）。资源按 Agent 的创建者去查，
     #    会话与产物归当前用户 —— 员工用管理员建的 Agent 时两者不是同一个人
     prepared = await prepare_stream(
         AgentSpec.from_agent(agent),
-        ChatStreamRequest(content=body.content, history=_history_from(past)),
+        ChatStreamRequest(content=body.content, history=[]),
         current_user,
         message_id=message_id,
         conversation_id=conversation.id,
         resource_owner=agent.created_by,
+        checkpointer=get_checkpointer(),
+        # 历史里有被截断的结果才挂取回工具 —— 与工作空间同一条规矩：有指引就有工具
+        extra_tools=[ToolResultFetchTool(conversation_id=conversation.id)] if truncated else [],
     )
+    # prepare_stream 只收纯文本历史；还原好的调用形状拼在本轮输入之前
+    prepared = replace(prepared, messages=[*history, *prepared.messages])
 
     collector = MessageCollector()
 
     async def persist_assistant(status: MessageStatus) -> None:
         await messages.append(
             conversation.id,
-            MessageAppend(
-                id=message_id,
-                role=MessageRole.ASSISTANT,
-                sender_kind=None,
-                content=collector.blocks,
-                status=MessageStatus.ERROR if collector.saw_error else status,
-                error_message=collector.error_message,
-                prompt_tokens=collector.prompt_tokens,
-                completion_tokens=collector.completion_tokens,
-                token_usage=collector.usage_rows,
-            ),
+            _assistant_append(collector, message_id=message_id, status=status),
         )
         await conversation.save(update_fields=["updated_at"])
 
@@ -205,7 +241,7 @@ async def conversation_stream(
                     prepared.graph,
                     prepared.messages,
                     message_id=message_id,
-                    collect=prepared.collect,
+                    collect=prepared.collect or partial(_message_artifacts, message_id),
                     close=prepared.close,
                     display_names=prepared.display_names,
                     sink=collector.feed,
@@ -219,10 +255,80 @@ async def conversation_stream(
                     ),
             ):
                 yield sse
-            status = MessageStatus.DONE
+            status = (
+                MessageStatus.INTERRUPTED if collector.saw_interrupt else MessageStatus.DONE
+            )
         finally:
             # 用户中断时本 task 已被 cancel；shield 保证落库协程跑完 ——
             # 中断恰恰是最不能丢落库的路径：半截消息也是历史
             await asyncio.shield(persist_assistant(status))
+
+    return StreamingResponse(stream(), media_type=SSE_MEDIA_TYPE)
+
+
+@router.post("/{conversation_id}/messages/{message_id}/resume", summary="提交表单，从存档接着执行")
+async def resume_stream(
+        conversation_id: UUID,
+        message_id: UUID,
+        body: AskAnswer,
+        agent: UsableAgentDep,
+        current_user: CurrentUserDep,
+        svc: ConversationsDep,
+        messages: MessageServiceDep,
+) -> StreamingResponse:
+    conversation = await svc.get_owned(current_user, agent, conversation_id)
+    pending = await Message.filter(
+        id=message_id, conversation_id=conversation.id, status=MessageStatus.INTERRUPTED,
+    ).exists()
+    if not pending:
+        raise NotFound404("这条消息不存在，或已经不在等待确认的状态")
+
+    prepared = await prepare_stream(
+        AgentSpec.from_agent(agent),
+        ChatStreamRequest(content=[TextBlock(text="")], history=[]),
+        current_user,
+        message_id=message_id,
+        conversation_id=conversation.id,
+        resource_owner=agent.created_by,
+        checkpointer=get_checkpointer(),
+    )
+    collector = MessageCollector()
+
+    async def persist_continuation(status: MessageStatus) -> None:
+        updated = await messages.continue_message(
+            message_id,
+            _assistant_append(collector, message_id=message_id, status=status),
+            answer=body.model_dump(mode="json"),
+        )
+        if updated is None:
+            logger.warning("续写落库落空，消息已不在中断态 message_id=%s", message_id)
+        await conversation.save(update_fields=["updated_at"])
+
+    async def stream():
+        status = MessageStatus.STOPPED
+        try:
+            async for sse in run_chat_stream(
+                    prepared.graph,
+                    Command(resume=body.model_dump(mode="json")),
+                    message_id=message_id,
+                    collect=prepared.collect or partial(_message_artifacts, message_id),
+                    close=prepared.close,
+                    display_names=prepared.display_names,
+                    sink=collector.feed,
+                    usage=lambda: collector.usage_summary,
+                    trace=TraceContext(
+                        user_id=str(current_user.id),
+                        session_id=str(conversation.id),
+                        name="agent_chat_resume",
+                        tags=["agent_chat", "resume"],
+                        metadata={"agent_id": str(agent.id)},
+                    ),
+            ):
+                yield sse
+            status = (
+                MessageStatus.INTERRUPTED if collector.saw_interrupt else MessageStatus.DONE
+            )
+        finally:
+            await asyncio.shield(persist_continuation(status))
 
     return StreamingResponse(stream(), media_type=SSE_MEDIA_TYPE)

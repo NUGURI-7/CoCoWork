@@ -7,7 +7,7 @@
  */
 
 import { useState } from 'react'
-import { File, FileImage, FileSpreadsheet, FileText } from 'lucide-react'
+import { File, FileAudio, FileImage, FileSpreadsheet, FileText } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { getArtifactDownloadUrl } from '@/api/artifact'
@@ -102,6 +102,7 @@ export function isTextKind(kind: PreviewKind): boolean {
 /** MIME → 图标。前缀匹配优先，兜底通用文件图标。 */
 export function iconFor(contentType: string) {
   if (contentType.startsWith('image/')) return FileImage
+  if (contentType.startsWith('audio/')) return FileAudio
   if (contentType === 'text/csv' || contentType.includes('spreadsheet')) {
     return FileSpreadsheet
   }

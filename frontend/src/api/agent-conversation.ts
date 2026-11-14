@@ -62,3 +62,12 @@ export function listAgentMessages(agentId: string, conversationId: string) {
 export function agentConversationStreamEndpoint(agentId: string, conversationId: string): string {
   return `/agents/${agentId}/conversations/${conversationId}/stream`
 }
+
+/** 提交人工确认的答案，从存档接着执行 —— 续写到同一条消息上。 */
+export function agentConversationResumeEndpoint(
+  agentId: string,
+  conversationId: string,
+  messageId: string,
+): string {
+  return `/agents/${agentId}/conversations/${conversationId}/messages/${messageId}/resume`
+}

@@ -26,6 +26,8 @@ export interface Template {
   description: string
   /** 编排形态，决定徽标与默认图标 */
   form: TemplateKind
+  /** 可配置项（chat_model / system_prompt / knowledge / builtin_tools / skills / mcp_servers）；null = 全部开放 */
+  config_fields: string[] | null
 }
 
 // ============ AgentConfig（对齐后端 schemas/agent/config_schema.py） ============

@@ -43,6 +43,12 @@ class AgentTemplate(ABC):
     base_prompt: ClassVar[str] = ""
     builtin_tools: ClassVar[list[str]] = []  # 内置工具 key 占位
     recommended_slots: ClassVar[list[str]] = []  # 建议挂载类型，仅提示
+    # 管理员可配置的项；None = 全部开放（通用模板）。业务模板只开放 chat_model、knowledge
+    config_fields: ClassVar[tuple[str, ...] | None] = None
+
+    def own_tools(self) -> list[BaseTool]:
+        """模板自带的工具，每次运行新建。装配时并入工具列表，随 tools 交给 build()。"""
+        return []
 
     @abstractmethod
     def build(

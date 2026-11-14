@@ -232,6 +232,9 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
   const { templates } = useTemplates()
   const template = findTemplate(templates, agent.template)
   const templateKind = template?.form ?? 'loop'
+  // 业务模板只开放部分配置项；模板列表还没回来时先按全部开放显示
+  const allows = (field: string) =>
+    !template?.config_fields || template.config_fields.includes(field)
   const selectedToolIds = form.tool_ids
 
   return (
@@ -333,14 +336,16 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
                 </AccordionItem>
               </Accordion>
 
-              <Field label="System Prompt">
-                <Textarea
-                  value={form.system_prompt}
-                  placeholder="留空 = 使用模板默认行为"
-                  onChange={(e) => patch('system_prompt', e.target.value)}
-                  className="min-h-32 resize-y font-mono text-xs leading-relaxed"
-                />
-              </Field>
+              {allows('system_prompt') && (
+                <Field label="System Prompt">
+                  <Textarea
+                    value={form.system_prompt}
+                    placeholder="留空 = 使用模板默认行为"
+                    onChange={(e) => patch('system_prompt', e.target.value)}
+                    className="min-h-32 resize-y font-mono text-xs leading-relaxed"
+                  />
+                </Field>
+              )}
             </div>
           </Section>
 
@@ -357,59 +362,65 @@ export function ConfigPanel({ agent, onSaved }: ConfigPanelProps) {
                 />
               </Field>
 
-              <Field label="内置工具">
-                <MultiSelectPopover
-                  items={tools.map((t) => ({
-                    id: t.name,
-                    name: t.display_name,
-                  }))}
-                  value={selectedToolIds}
-                  onChange={setToolSelection}
-                  placeholder="搜索内置工具..."
-                  emptyLabel="未挂载任何内置工具"
-                />
-              </Field>
+              {allows('builtin_tools') && (
+                <Field label="内置工具">
+                  <MultiSelectPopover
+                    items={tools.map((t) => ({
+                      id: t.name,
+                      name: t.display_name,
+                    }))}
+                    value={selectedToolIds}
+                    onChange={setToolSelection}
+                    placeholder="搜索内置工具..."
+                    emptyLabel="未挂载任何内置工具"
+                  />
+                </Field>
+              )}
 
-              <Field label="Skill">
-                <MultiSelectPopover
-                  items={skills.map((s) => ({
-                    id: skillKey(s),
-                    name: s.name,
-                    meta: s.source_type === 'user' ? '上传' : undefined,
-                  }))}
-                  value={[
-                    ...form.builtin_skill_names.map((n) => `builtin:${n}`),
-                    ...form.skill_ids.map((id) => `user:${id}`),
-                  ]}
-                  onChange={(keys) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      builtin_skill_names: keys
-                        .filter((k) => k.startsWith('builtin:'))
-                        .map((k) => k.slice('builtin:'.length)),
-                      skill_ids: keys
-                        .filter((k) => k.startsWith('user:'))
-                        .map((k) => k.slice('user:'.length)),
-                    }))
-                  }
-                  placeholder="搜索 skill..."
-                  emptyLabel="未挂载任何 skill"
-                />
-              </Field>
+              {allows('skills') && (
+                <Field label="Skill">
+                  <MultiSelectPopover
+                    items={skills.map((s) => ({
+                      id: skillKey(s),
+                      name: s.name,
+                      meta: s.source_type === 'user' ? '上传' : undefined,
+                    }))}
+                    value={[
+                      ...form.builtin_skill_names.map((n) => `builtin:${n}`),
+                      ...form.skill_ids.map((id) => `user:${id}`),
+                    ]}
+                    onChange={(keys) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        builtin_skill_names: keys
+                          .filter((k) => k.startsWith('builtin:'))
+                          .map((k) => k.slice('builtin:'.length)),
+                        skill_ids: keys
+                          .filter((k) => k.startsWith('user:'))
+                          .map((k) => k.slice('user:'.length)),
+                      }))
+                    }
+                    placeholder="搜索 skill..."
+                    emptyLabel="未挂载任何 skill"
+                  />
+                </Field>
+              )}
 
-              <Field label="MCP server">
-                <MultiSelectPopover
-                  items={mcpServers.map((s) => ({
-                    id: s.id,
-                    name: s.name,
-                    meta: 'MCP',
-                  }))}
-                  value={form.mcp_server_ids}
-                  onChange={(ids) => patch('mcp_server_ids', ids)}
-                  placeholder="搜索 MCP server..."
-                  emptyLabel="未挂载任何 MCP server"
-                />
-              </Field>
+              {allows('mcp_servers') && (
+                <Field label="MCP server">
+                  <MultiSelectPopover
+                    items={mcpServers.map((s) => ({
+                      id: s.id,
+                      name: s.name,
+                      meta: 'MCP',
+                    }))}
+                    value={form.mcp_server_ids}
+                    onChange={(ids) => patch('mcp_server_ids', ids)}
+                    placeholder="搜索 MCP server..."
+                    emptyLabel="未挂载任何 MCP server"
+                  />
+                </Field>
+              )}
             </div>
           </Section>
 

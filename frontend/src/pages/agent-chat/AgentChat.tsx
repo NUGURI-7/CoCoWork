@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { useStore } from 'zustand'
 import { ring } from 'ldrs'
 
-import { agentConversationStreamEndpoint, listAgentMessages } from '@/api/agent-conversation'
+import {
+  agentConversationResumeEndpoint,
+  agentConversationStreamEndpoint,
+  listAgentMessages,
+} from '@/api/agent-conversation'
 import { ChatProvider, useChat } from '@/components/chat/ChatProvider'
 import { MessageInput } from '@/components/chat/MessageInput'
 import { MessageList } from '@/components/chat/MessageList'
@@ -55,6 +59,8 @@ export function AgentChat({
         createChatStore({
           endpoint: agentConversationStreamEndpoint(agentId, conversationId),
           sendHistory: false,
+          resumeEndpoint: (messageId) =>
+            agentConversationResumeEndpoint(agentId, conversationId, messageId),
         }),
       ),
     [agentId, conversationId],

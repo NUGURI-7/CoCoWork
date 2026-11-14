@@ -5,3 +5,4 @@
 from app.agents.templates.builtin import general  # noqa: F401
 from app.agents.templates.builtin import reflection  # noqa: F401
 from app.agents.templates.builtin import retrieve_then_read  # noqa: F401
+from app.agents.templates.builtin import store_marketing_audio  # noqa: F401
