@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/sidebar'
 import { SidebarConversations } from '@/pages/workspaces/SidebarConversations'
 import { useAuthStore } from '@/stores/auth'
+import { SidebarBrand } from './SidebarBrand'
 import { UserMenu } from './UserMenu'
 import { mainNav, type NavItem } from './nav.config'
 
@@ -38,20 +39,11 @@ export function AppSidebar() {
       {/* 顶部 logo */}
       <SidebarHeader>
         <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              tooltip="CoCoWork"
-              // 收起态按钮是 size-8 + p-2 → 内容区仅 16px，装不下 24px 的 logo 会顶偏；
-              // 这里把内边距收到 4px，让内容区正好等于 logo 尺寸、自然居中
-              className="h-10 gap-3 [&>svg]:size-7 group-data-[collapsible=icon]:p-1! group-data-[collapsible=icon]:[&>svg]:size-6"
-              onClick={() => handleNav('/')}
-            >
-              <LogoMark />
-              <span className="font-display text-xl leading-none font-semibold tracking-tight">
-                CoCoWork
-              </span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
+          <SidebarBrand
+            icon={<LogoMark className="size-full" />}
+            title="CoCoWork"
+            onHome={() => handleNav('/')}
+          />
         </SidebarMenu>
       </SidebarHeader>
 

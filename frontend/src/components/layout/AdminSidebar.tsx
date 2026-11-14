@@ -12,6 +12,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
+import { SidebarBrand } from './SidebarBrand'
 import { UserMenu } from './UserMenu'
 import { adminNav, type AdminNavItem } from './admin-nav.config'
 
@@ -32,18 +33,11 @@ export function AdminSidebar() {
     <Sidebar variant="inset" collapsible="icon">
       <SidebarHeader>
         <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              tooltip="管理后台"
-              className="h-10 gap-3"
-              onClick={() => handleNav('/admin')}
-            >
-              <ShieldCheck />
-              <span className="font-display text-xl leading-none font-semibold tracking-tight">
-                管理后台
-              </span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
+          <SidebarBrand
+            icon={<ShieldCheck className="size-4!" />}
+            title="管理后台"
+            onHome={() => handleNav('/admin')}
+          />
         </SidebarMenu>
       </SidebarHeader>
 

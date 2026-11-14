@@ -22,6 +22,7 @@ import { DelegateBlock } from './blocks/DelegateBlock'
 import { TextBlock } from './blocks/TextBlock'
 import { ThinkingBlock } from './blocks/ThinkingBlock'
 import { FileOpsBlock } from './blocks/FileOpsBlock'
+import { ProcessGroup, type ProcessBlock } from './blocks/ProcessGroup'
 import { ToolUseBlock } from './blocks/ToolUseBlock'
 import { useChat } from './ChatProvider'
 import { useSubagentInfo } from './SubagentDirectory'
@@ -57,6 +58,33 @@ function CompactDivider() {
       <span className="bg-border h-px flex-1" />
     </div>
   )
+}
+
+type RenderItem =
+  | { kind: 'block'; block: AssistantMessageType['blocks'][number] }
+  | { kind: 'process'; blocks: ProcessBlock[] }
+
+/** 连续两个及以上的思考 / 工具调用块并成一组，其余块原样。 */
+function groupProcess(blocks: AssistantMessageType['blocks']): RenderItem[] {
+  const items: RenderItem[] = []
+  let run: ProcessBlock[] = []
+  const flush = () => {
+    if (run.length > 1) items.push({ kind: 'process', blocks: run })
+    else for (const b of run) items.push({ kind: 'block', block: b })
+    run = []
+  }
+  for (const block of blocks) {
+    // 询问用户的工具卡片不显示：紧随其后的表单已经把问题展示出来了
+    if (block.type === 'tool_use' && block.name === 'ask_human') continue
+    if (block.type === 'thinking' || block.type === 'tool_use') {
+      run.push(block)
+    } else {
+      flush()
+      items.push({ kind: 'block', block })
+    }
+  }
+  flush()
+  return items
 }
 
 /** 触底容差 —— 离底部多少 px 内算"在底"。 */
@@ -267,7 +295,11 @@ const AssistantMessageRow = memo(function AssistantMessageRow({
 
   const body = (
     <>
-      {message.blocks.map((block) => {
+      {groupProcess(message.blocks).map((item) => {
+        if (item.kind === 'process') {
+          return <ProcessGroup key={`p${item.blocks[0].index}`} blocks={item.blocks} />
+        }
+        const block = item.block
         if (block.type === 'text') {
           return <TextBlock key={block.index} block={block} />
         }
