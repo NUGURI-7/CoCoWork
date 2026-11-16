@@ -51,7 +51,7 @@ print(json.dumps(found))
 " 2>/dev/null"""
 
 
-async def _list_delivery(backend: SandboxBackendProtocol, outputs: str) -> list[tuple[str, int]]:
+async def list_delivery(backend: SandboxBackendProtocol, outputs: str) -> list[tuple[str, int]]:
     """列出交付区里的普通文件，返回 [(文件名, 字节数)]。
 
         **先拿大小、再决定下不下载**：一个超限的大文件如果先下回来再判断，
@@ -95,7 +95,7 @@ async def collect_artifacts(
     Returns:
         已成功入库的产物列表，供 SSE 发给前端
     """
-    entries = await _list_delivery(backend, paths.outputs)
+    entries = await list_delivery(backend, paths.outputs)
     if not entries:
         return []
 

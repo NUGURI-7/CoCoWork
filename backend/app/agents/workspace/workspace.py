@@ -25,14 +25,15 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage
-from langchain_core.runnables import Runnable, RunnableLambda
-from langgraph.errors import GraphRecursionError
+from langchain_core.runnables import Runnable, RunnableBinding, RunnableLambda
+from langgraph.errors import GraphBubbleUp, GraphRecursionError
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 
 from app.db.checkpointer import get_checkpointer
 
 from app.agents.runtime.runner import (
+    MEMBER_RECURSION_LIMIT,
     ArtifactCollector,
     PreparedStream,
     assemble_tools,
@@ -59,7 +60,7 @@ from app.schemas.agent.chat_schema import ChatStreamRequest
 from app.schemas.agent.config_schema import AgentConfig
 from app.services.access import usable_by
 from app.services.memory import MemoryService, MemorySnapshot
-from app.services.sandbox.artifact import collect_artifacts, group_by_message
+from app.services.sandbox.artifact import collect_artifacts, group_by_message, human_size, list_delivery
 from app.services.sandbox.attachment import describe_unavailable, inject_attachments
 from app.services.skill.builtin import resolve_builtin_skills
 from app.services.skill.mount import SkillMount, build_skill_mount
@@ -76,7 +77,7 @@ logger = logging.getLogger(__name__)
 _FALLBACK_EXC = "__subagent_exc__"
 
 
-def _with_failure_fallback(runnable: Runnable, label: str) -> Runnable:
+def _with_failure_fallback(runnable: Runnable, label: str, mount: SkillMount | None = None) -> Runnable:
     """给子 agent 兜底：它炸了不要连累整轮对话。
 
     deepagents 的 task 工具里 `await subagent.ainvoke(...)` 是**裸调**（见
@@ -103,8 +104,12 @@ def _with_failure_fallback(runnable: Runnable, label: str) -> Runnable:
 
     async def _explain(state: dict) -> dict:
         exc = state.get(_FALLBACK_EXC)
+        # 成员向用户提问（interrupt）、图级控制流都走 GraphBubbleUp 冒泡，不是失败：
+        # 原样抛回去让 langgraph 暂停整张图，兜成「出错了」会让 supervisor 误判重派
+        if isinstance(exc, GraphBubbleUp):
+            raise exc
         if isinstance(exc, GraphRecursionError):
-            note = f"{label}没能在限定步数内完成这项任务，没有产出。可以把任务拆小一点再派一次。"
+            note = await _step_limit_note(label, mount)
         else:
             note = f"{label}执行时出错了，没有产出。可以换个成员做，或者把这部分如实告诉用户。"
         # 完整异常只进日志 —— 栈 / 路径 / SQL 不喂给模型（同 adapter 的口径）
@@ -112,6 +117,40 @@ def _with_failure_fallback(runnable: Runnable, label: str) -> Runnable:
         return {"messages": [AIMessage(content=note)]}
 
     return runnable.with_fallbacks([RunnableLambda(_explain)], exception_key=_FALLBACK_EXC)
+
+
+async def _step_limit_note(label: str, mount: SkillMount | None) -> str:
+    """成员撞步数上限时交给 supervisor 的那句话：带上交付区现有文件。
+
+    成员常常是成品已经生成、还在打磨时撞的线；只说「没有产出」，supervisor 只能
+    从头重派。交付区是本轮共用的，会混着其他成员的文件，由 supervisor 按文件名判断。
+    """
+    files: list[tuple[str, int]] = []
+    if mount is not None:
+        try:
+            files = await list_delivery(mount.backend, mount.paths.outputs)
+        except Exception:
+            logger.warning("撞线后列交付区失败 member=%s", label, exc_info=True)
+    if not files:
+        return f"{label}没能在限定步数内完成这项任务，交付区里也没有文件。可以把任务拆小一点再派一次。"
+    listed = "、".join(f"{name}（{human_size(size)}）" for name, size in files)
+    return (
+        f"{label}没能在限定步数内收尾。交付区目前有：{listed}（同一轮其他成员的文件也在这里）。"
+        "如果其中已有这项任务要的成品，就直接交付，不要重派；没有再把任务拆小重派。"
+    )
+
+
+def _with_member_step_limit(runnable: Runnable) -> Runnable:
+    """给成员单独一份步数上限，不沿用 supervisor 的 RECURSION_LIMIT。
+
+    不能用 with_config(recursion_limit=...)：兜底包装（with_fallbacks）调用内层前
+    会把当前环境里 supervisor 的 40 显式填进 config，显式值盖过绑定值，绑了等于没绑。
+    config_factories 在合并之后才执行，它给的值是最终值。
+    """
+    return RunnableBinding(
+        bound=runnable,
+        config_factories=[lambda _config: {"recursion_limit": MEMBER_RECURSION_LIMIT}],
+    )
 
 
 def _workspace_base_prompt(
@@ -344,7 +383,7 @@ async def _member_to_subagent(
         "description": f"{desc}\n能力 · {profile}",
         # 只给成员兜底，不给 supervisor —— supervisor 挂了该让用户看见（走 adapter
         # 那条路），而成员挂了 supervisor 得有机会补救
-        "runnable": _with_failure_fallback(runnable, agent.name),
+        "runnable": _with_member_step_limit(_with_failure_fallback(runnable, agent.name, mount)),
     }
     return subagent, build_display_names(tools)
 

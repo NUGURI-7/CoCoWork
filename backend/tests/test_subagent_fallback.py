@@ -78,3 +78,45 @@ async def test_用户中断不被兜住():
 
     with pytest.raises(asyncio.CancelledError):
         await r.ainvoke({"messages": []})
+
+
+class _FakeMount:
+    """只带 _step_limit_note 用到的两样：backend 与 paths.outputs。"""
+
+    def __init__(self, backend):
+        self.backend = backend
+        self.paths = type("P", (), {"outputs": "/outputs/abc"})()
+
+
+async def test_撞线时带上交付区已有文件():
+    import json
+    from tests.sandbox_fakes import FakeBackend
+
+    mount = _FakeMount(FakeBackend(output=json.dumps([["产品介绍.docx", 120 * 1024]])))
+    r = _with_failure_fallback(RunnableLambda(_raise(GraphRecursionError())), LABEL, mount)
+    out = await r.ainvoke({"messages": []})
+
+    note = out["messages"][-1].content
+    assert "产品介绍.docx" in note
+    assert "不要重派" in note
+
+
+async def test_撞线且交付区为空时提示拆小重派():
+    from tests.sandbox_fakes import FakeBackend
+
+    mount = _FakeMount(FakeBackend(output="[]"))
+    r = _with_failure_fallback(RunnableLambda(_raise(GraphRecursionError())), LABEL, mount)
+    out = await r.ainvoke({"messages": []})
+
+    assert "交付区里也没有文件" in out["messages"][-1].content
+
+
+async def test_成员提问的中断信号原样冒出不被兜住():
+    from langgraph.errors import GraphInterrupt
+    from langgraph.types import Interrupt
+
+    signal = GraphInterrupt((Interrupt(value={"question": "封面怎么配图？"}, id="i1"),))
+    r = _with_failure_fallback(RunnableLambda(_raise(signal)), LABEL)
+
+    with pytest.raises(GraphInterrupt):
+        await r.ainvoke({"messages": []})

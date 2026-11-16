@@ -72,6 +72,11 @@ logger = logging.getLogger(__name__)
 # 对照：Dify 默认 10（可配到 99）、Letta 50、LangGraph 默认 25。
 RECURSION_LIMIT = 40
 
+# 被派活成员各自的步数上限 —— 防失控的保险丝，不是干活的预算：做一份交付物
+# 正常要几十次工具调用，遇到报错再修会更多，卡在「刚好够用」会误杀正常干活的成员。
+# 何时停由 skill 里的完成标准决定，真转起圈来 200 步照样兜得住。
+MEMBER_RECURSION_LIMIT = 200
+
 # provider_type → LangChain model_provider
 # OpenAI 兼容 provider 全走 "openai"（靠 base_url 区分上游），只有 Anthropic 走官方协议。
 # 未知类型 fallback "openai" —— 最宽容 + log warning。
