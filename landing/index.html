@@ -309,9 +309,7 @@ footer { position: relative; border-top: 1px solid var(--line); padding: 56px 0 
 .foot nav { display: flex; gap: 22px; }
 
 /* ════════════════════════════════════════════════════
-   首屏演示动画 —— 与登录页同一套，纯 CSS。
-   一条 8s 公共时间轴，每个元素在轴上占一个窗口；不用 animation-delay
-   错峰，因为 delay 只推迟第一次播放，infinite 循环从第二轮起会全挤在一起。
+   首屏右侧：真实运行截图，套一个窗口外框
    ════════════════════════════════════════════════════ */
 .demo {
   border: 1px solid var(--line); border-radius: 18px; overflow: hidden;
@@ -322,64 +320,7 @@ footer { position: relative; border-top: 1px solid var(--line); padding: 56px 0 
 .dot { width: 10px; height: 10px; border-radius: 50%; background: color-mix(in srgb, var(--ink-faint) 40%, transparent); }
 .demo-tag { margin-left: auto; font-family: var(--mono); font-size: 12px; color: var(--ink-faint); display: flex; align-items: center; gap: 8px; }
 .live { width: 7px; height: 7px; border-radius: 50%; background: var(--brand); animation: pulse 2s ease-in-out infinite; }
-.demo-body { padding: 24px 20px; display: flex; flex-direction: column; gap: 17px; }
-
-.ask { align-self: flex-end; max-width: 84%; background: var(--brand-wash); border: 1px solid var(--brand-line); border-radius: 13px 13px 4px 13px; padding: 11px 15px; font-size: 14.5px; }
-.sup { display: flex; gap: 13px; align-items: flex-start; }
-.av { flex: none; width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 15px; }
-.av.k { background: var(--brand); }
-.av.a { background: #0d80c4; }
-.av.b { background: #cf7a12; }
-.sup .name { font-size: 15px; font-weight: 600; }
-.sup .sub { position: relative; height: 18px; margin-top: 5px; font-size: 13px; color: var(--ink-soft); white-space: nowrap; }
-.sub .a1, .sub .a2 { position: absolute; inset: 0; display: flex; align-items: center; gap: 5px; }
-.tdot { width: 4px; height: 4px; border-radius: 50%; background: var(--ink-faint); }
-
-.branch { position: relative; padding-left: 48px; display: flex; flex-direction: column; gap: 12px; }
-.trunk { position: absolute; left: 21px; top: 2px; bottom: 46px; width: 2px; }
-.trunk::after, .stub::after {
-  content: ''; position: absolute; inset: 0; opacity: .55;
-  background-image: repeating-linear-gradient(to bottom, var(--brand) 0 5px, transparent 5px 10px);
-  background-size: 100% 10px; animation: flowY .9s linear infinite;
-}
-.stub { position: absolute; left: -21px; top: calc(50% - 1px); width: 21px; height: 2px; }
-.stub::after {
-  background-image: repeating-linear-gradient(to right, var(--brand) 0 5px, transparent 5px 10px);
-  background-size: 10px 100%; animation-name: flowX;
-}
-.mem { position: relative; }
-.mem-card { display: flex; align-items: center; gap: 14px; border: 1px solid var(--line); border-radius: 12px; padding: 12px 15px; background: var(--surface); box-shadow: var(--shadow-sm); }
-.mem .t { flex: 1; min-width: 0; }
-.mem .t b { display: block; font-size: 15px; font-weight: 600; }
-.mem .t span { font-family: var(--mono); font-size: 12.5px; color: var(--ink-faint); }
-.state { position: relative; width: 20px; height: 20px; flex: none; }
-.spin, .done { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
-.spin i { width: 15px; height: 15px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--brand) 22%, transparent); border-top-color: var(--brand); animation: spin .9s linear infinite; }
-.done { background: var(--brand); border-radius: 50%; color: #fff; font-size: 12px; }
-.out { display: flex; align-items: center; gap: 12px; border: 1px dashed var(--brand-line); background: color-mix(in srgb, var(--brand-wash) 70%, transparent); border-radius: 12px; padding: 13px 15px; font-size: 14px; }
-.out .fn { font-family: var(--mono); }
-.out .tail { margin-left: auto; font-size: 13px; color: var(--ink-faint); }
-
-.cyc { animation-duration: 8s; animation-timing-function: ease-out; animation-iteration-count: infinite; animation-fill-mode: both; }
-
-@keyframes cw-a { 0%,3% { opacity:0; transform: translateY(6px);} 8%,94% { opacity:1; transform:none;} 100% { opacity:0; transform: translateY(-4px);} }
-@keyframes cw-b { 0%,13% { opacity:0; transform: translateY(6px);} 18%,94% { opacity:1; transform:none;} 100% { opacity:0; transform: translateY(-4px);} }
-@keyframes cw-c { 0%,24% { opacity:0; transform: translateY(6px) scale(.98);} 29%,94% { opacity:1; transform:none;} 100% { opacity:0; transform: translateY(-4px);} }
-@keyframes cw-d { 0%,33% { opacity:0; transform: translateY(6px) scale(.98);} 38%,94% { opacity:1; transform:none;} 100% { opacity:0; transform: translateY(-4px);} }
-@keyframes cw-e { 0%,70% { opacity:0; transform: translateY(8px) scale(.98);} 76%,94% { opacity:1; transform:none;} 100% { opacity:0; transform: translateY(-4px);} }
-@keyframes cw-busy1 { 0%,28% { opacity:0;} 30%,50% { opacity:1;} 53%,100% { opacity:0;} }
-@keyframes cw-done1 { 0%,52% { opacity:0; transform: scale(.6);} 56%,94% { opacity:1; transform:none;} 100% { opacity:0;} }
-@keyframes cw-busy2 { 0%,37% { opacity:0;} 39%,62% { opacity:1;} 65%,100% { opacity:0;} }
-@keyframes cw-done2 { 0%,64% { opacity:0; transform: scale(.6);} 68%,94% { opacity:1; transform:none;} 100% { opacity:0;} }
-/* 主干靠 clip-path 自上而下揭开 —— 不能用 scaleY，缩放会把虚线的节距一起拉长，
-   看起来是线在变形而不是在生长 */
-@keyframes cw-thread { 0%,18% { opacity:1; clip-path: inset(0 0 100% 0);} 42%,94% { opacity:1; clip-path: inset(0 0 0 0);} 100% { opacity:0; clip-path: inset(0 0 0 0);} }
-@keyframes cw-say1 { 0%,17% { opacity:0;} 19%,36% { opacity:1;} 40%,100% { opacity:0;} }
-@keyframes cw-say2 { 0%,40% { opacity:0;} 44%,94% { opacity:1;} 100% { opacity:0;} }
-@keyframes flowY { to { background-position-y: 10px; } }
-@keyframes flowX { to { background-position-x: 10px; } }
-@keyframes spin { to { transform: rotate(360deg); } }
-@keyframes type { 0%,60%,100% { opacity:.25; transform: translateY(0);} 30% { opacity:1; transform: translateY(-2px);} }
+.demo-shot { display: block; width: 100%; height: auto; }
 
 /* ── 无障碍：系统要求减少动效时，全部停在终态 ────────── */
 @media (prefers-reduced-motion: reduce) {
@@ -387,7 +328,6 @@ footer { position: relative; border-top: 1px solid var(--line); padding: 56px 0 
   *, *::before, *::after { animation: none !important; transition: none !important; }
   [data-reveal] { opacity: 1 !important; transform: none !important; }
   .mark path { stroke-dashoffset: 0 !important; }
-  .spin, .a1 { display: none !important; }
 }
 
 /* ── 响应式 ────────────────────────────────────────── */
@@ -455,63 +395,14 @@ footer { position: relative; border-top: 1px solid var(--line); padding: 56px 0 
       <p class="hero-note"><a href="https://github.com/NUGURI-7/CoCoWork" target="_blank" rel="noopener">在 GitHub 查看源码</a></p>
     </div>
 
-    <!-- 演示动画：与登录页同一套 -->
+    <!-- 真实运行截图：资料员交完简报后，PPT / Word / PDF 三个成员并行制作 -->
     <div class="demo">
       <div class="demo-bar">
         <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-        <span class="demo-tag"><span class="live"></span>协作演示</span>
+        <span class="demo-tag"><span class="live"></span>三个成员并行制作</span>
       </div>
-      <div class="demo-body">
-        <div class="ask cyc" style="animation-name:cw-a">帮我把这季度的数据整理一下，做张图</div>
-
-        <div class="sup cyc" style="animation-name:cw-b">
-          <div class="av k">♛</div>
-          <div>
-            <div class="name">管家</div>
-            <div class="sub">
-              <span class="a1 cyc" style="animation-name:cw-say1">
-                正在分派
-                <i class="tdot" style="animation:type 1.2s ease-in-out infinite"></i>
-                <i class="tdot" style="animation:type 1.2s ease-in-out .16s infinite"></i>
-                <i class="tdot" style="animation:type 1.2s ease-in-out .32s infinite"></i>
-              </span>
-              <span class="a2 cyc" style="animation-name:cw-say2">已分派给 2 名成员</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="branch">
-          <span class="trunk cyc" style="animation-name:cw-thread"></span>
-
-          <div class="mem">
-            <span class="stub cyc" style="animation-name:cw-c"></span>
-            <div class="mem-card cyc" style="animation-name:cw-c">
-              <div class="av a">▤</div>
-              <div class="t"><b>数据分析师</b><span>正在检索知识库</span></div>
-              <div class="state">
-                <span class="spin cyc" style="animation-name:cw-busy1"><i></i></span>
-                <span class="done cyc" style="animation-name:cw-done1">✓</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="mem">
-            <span class="stub cyc" style="animation-name:cw-d"></span>
-            <div class="mem-card cyc" style="animation-name:cw-d">
-              <div class="av b">▶</div>
-              <div class="t"><b>图表专员</b><span>正在生成图表</span></div>
-              <div class="state">
-                <span class="spin cyc" style="animation-name:cw-busy2"><i></i></span>
-                <span class="done cyc" style="animation-name:cw-done2">✓</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="out cyc" style="animation-name:cw-e">
-          <span>▦</span><span class="fn">q3_revenue.png</span><span class="tail">已存入产出物</span>
-        </div>
-      </div>
+      <img class="demo-shot" src="img/workspace-parallel.webp" width="1060" height="935"
+           alt="工作空间运行截图：资料员已完成，PPT、Word、PDF 三个制作成员同时在干活">
     </div>
   </div>
 </div>
