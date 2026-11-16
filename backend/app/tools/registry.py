@@ -44,13 +44,20 @@ def get_tool(name: str) -> CoCoTool | None:
 def list_tools() -> list[CoCoTool]:
     return list(_REGISTRY.values())
 
+# 绑本轮沙箱的工具：名字写在 builtin_tools 里当开关，实例由沙箱装配处现建（见 SkillMount.sandbox_tools）
+SANDBOX_BOUND_TOOLS = frozenset({"generate_image", "review_pages"})
+
+
 def resolve_tools(names: list[str]) -> list[CoCoTool]:
     """按 name 列表解析为工具实例 —— 装配器用。
 
     找不到的 name 跳过 + 告警（容错：工具下架 / 配置残留不该让整个 agent 跑不起来）。
+    绑沙箱的工具不在注册表里，由沙箱装配处负责，这里静默跳过。
     """
     resolved: list[CoCoTool] = []
     for name in names:
+        if name in SANDBOX_BOUND_TOOLS:
+            continue
         tool = _REGISTRY.get(name)
         if tool is None:
             logger.warning("未知工具 name，跳过装配：%r", name)

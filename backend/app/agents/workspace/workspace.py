@@ -314,7 +314,7 @@ async def _member_to_subagent(
     # 只要有任何一人挂了它就存在，所以不能拿它当判据。
     if mount is not None and mount.has_skills(member_cfg):
         middleware.append(mount.middleware)
-        tools = [*tools, *mount.artifact_tools]  # 同应答者那份，跟文件工具同进同出
+        tools = [*tools, *mount.artifact_tools, *mount.sandbox_tools(member_cfg)]  # 同应答者那份，跟文件工具同进同出
         system_prompt = f"{system_prompt}\n\n{mount.prompt_for(member_cfg)}"
 
     # 成员也能直接问用户。中断实测是一个一个来的（图撞上第一个就整体冻住，

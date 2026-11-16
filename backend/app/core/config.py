@@ -139,8 +139,10 @@ class Settings(BaseSettings):
     BAIDU_DOCPARSE_API_KEY: str = ""
     BAIDU_DOCPARSE_SECRET_KEY: str = ""
 
-    # 门店营销音频制作的千问 AI 平台按量付费 Key。
+    # 千问 AI 平台按量付费 Key：门店营销音频的配音、文档制作的生图与看图共用。
     DASHSCOPE_API_KEY: SecretStr = SecretStr("")
+    IMAGE_GEN_MODEL: str = "wan2.7-image"   # 文档配图
+    VISION_MODEL: str = "qwen3-vl-plus"     # 渲染后检查页面版式
 
     # ---------- 沙箱：与 driver 无关 ----------
     SANDBOX_DRIVER: str = "local"  # local（开发者，宿主机直跑）| docker（生产，容器隔离）

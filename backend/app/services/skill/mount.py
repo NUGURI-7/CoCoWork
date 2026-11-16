@@ -33,6 +33,8 @@ from app.services.sandbox.layout import SandboxPaths, prepare_workspace_dir, con
 from app.services.skill.builtin import resolve_builtin_skills, fetch_builtin_credentials, BuiltinSkill
 from app.services.skill.prompt import build_skills_prompt, SkillListing
 from app.tools.artifact_fetch import ArtifactFetchTool
+from app.tools.image_generate import ImageGenerateTool
+from app.tools.page_review import PageReviewTool
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +81,16 @@ class SkillMount:
         那种情况字段有值、实际无货，不该给工具。
         """
         return bool(self._skills_of(cfg))
+
+    def sandbox_tools(self, cfg: AgentConfig) -> list[BaseTool]:
+        """这个参与者在 builtin_tools 里开了哪些绑沙箱的工具，按本轮 backend 现建实例。"""
+        enabled = set(cfg.builtin_tools)
+        tools: list[BaseTool] = []
+        if "generate_image" in enabled:
+            tools.append(ImageGenerateTool(backend=self.backend, workspace_dir=self.paths.workspace))
+        if "review_pages" in enabled:
+            tools.append(PageReviewTool(backend=self.backend))
+        return tools
 
     def prompt_for(self, cfg: AgentConfig) -> str:
         """某个参与者的 skill 清单片段 —— 只列它自己挂的，不列同伴的。
