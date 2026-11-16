@@ -84,8 +84,46 @@ MEMBER_RECURSION_LIMIT = 200
 # sink：事件旁路回调 —— runner 每产一个事件，先喂 sink 一份再序列化成 SSE。
 SinkFn = Callable[[EventType, dict[str, Any]], None]
 
-# 收产物的回调：参数已在 prepare_stream 里绑好，调用方只管 await 一下
-ArtifactCollector = Callable[[], Awaitable[list[SandboxArtifact]]]
+# 收产物的回调：参数已在 prepare_stream 里绑好，调用方只管 await 一下。
+# final=False：成员中途交活时的增量收取；收尾那次用默认的 final=True
+ArtifactCollector = Callable[..., Awaitable[list[SandboxArtifact]]]
+
+
+class _DelegationWatch:
+    """认出「某个成员交活了」：supervisor 派活的 task 调用拿到了结果。
+
+    成员内部的工具事件都盖着 delegate_id 戳，派活块自己的不盖，据此只认 supervisor 那层。
+    """
+
+    def __init__(self) -> None:
+        self._open: set[str] = set()
+
+    def finished(self, event: EventType, payload: dict[str, Any]) -> bool:
+        call_id = payload.get("id")
+        if (event == EventType.TOOL_USE_START and payload.get("name") == "task"
+                and "delegate_id" not in payload and call_id):
+            self._open.add(call_id)
+            return False
+        if event == EventType.TOOL_RESULT and call_id in self._open:
+            self._open.discard(call_id)
+            return True
+        return False
+
+
+async def _artifacts_payload(
+        collect: ArtifactCollector, message_id: UUID, *, final: bool,
+) -> dict[str, Any] | None:
+    """收一次产物并拼成 artifacts 帧；没有产物返回 None。"""
+    artifacts = await collect(final=final)
+    if not artifacts:
+        return None
+    return {
+        "message_id": str(message_id),
+        "artifacts": [
+            {"id": str(a.id), "filename": a.filename, "size": a.size, "content_type": a.content_type}
+            for a in artifacts
+        ],
+    }
 
 # 一轮结束的收尾：docker driver 销毁容器，local driver 是空操作
 SandboxCloser = Callable[[], Awaitable[None]]
@@ -530,11 +568,23 @@ async def run_chat_stream(
             config=config,
         )
 
+        delegations = _DelegationWatch()
         async for event, payload in adapt_chat_stream(events, display_names):
             if event == EventType.INTERRUPT:
                 interrupted = True
             _feed_sink(sink, event, payload)
             yield sse_event(event, payload)
+
+            if collect is not None and delegations.finished(event, payload):
+                try:
+                    early = await _artifacts_payload(collect, message_id, final=False)
+                except Exception:
+                    # 中途没收成不要紧：收尾那次还会完整同步
+                    logger.exception("成员交活后收产物失败 message_id=%s", message_id)
+                    early = None
+                if early is not None:
+                    _feed_sink(sink, EventType.ARTIFACTS, early)
+                    yield sse_event(EventType.ARTIFACTS, early)
 
     finally:
         # 暂停不是收尾：卡在表单上时这轮还没跑完。此时收产物会重复收（等用户
@@ -544,20 +594,8 @@ async def run_chat_stream(
         # 产物帧必须赶在 message_stop 之前 —— 前端收到 stop 就把这条消息收口了
         if collect is not None and not interrupted:
             try:
-                artifacts = await collect()
-                if artifacts:
-                    payload = {
-                        "message_id": str(message_id),
-                        "artifacts": [
-                            {
-                                "id": str(a.id),
-                                "filename": a.filename,
-                                "size": a.size,
-                                "content_type": a.content_type,
-                            }
-                            for a in artifacts
-                        ],
-                    }
+                payload = await _artifacts_payload(collect, message_id, final=True)
+                if payload is not None:
                     _feed_sink(sink, EventType.ARTIFACTS, payload)
                     yield sse_event(EventType.ARTIFACTS, payload)
             except Exception:

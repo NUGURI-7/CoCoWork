@@ -81,8 +81,9 @@ async def collect_artifacts(
         scope_id: UUID,
         message_id: UUID,
         conversation_id: UUID | None = None,
+        final: bool = True,
 ) -> list[SandboxArtifact]:
-    """回收本轮交付区里的产物；没有产物就返回空列表。
+    """回收本轮交付区里的产物。
 
     Args:
         backend: 本轮的执行后端 —— 交付区只有它够得着
@@ -91,13 +92,15 @@ async def collect_artifacts(
         scope_id: 工作区归属键，只用于拼 storage_key（Playground=user.id / workspace=workspace.id）
         message_id: 本轮消息 ID，既是交付区目录名也是产物的归组键
         conversation_id: workspace 对话才有；Playground 传 None
+        final: 一轮收尾为 True —— 交付区文件全部重新同步（同名以最后一版为准），
+            全部成功才清空交付区。成员中途交活为 False —— 只收还没收过的文件，
+            不清空交付区：其他成员还在往里写、还要读资料简报。
 
     Returns:
-        已成功入库的产物列表，供 SSE 发给前端
+        本条消息到目前为止的全部产物（不只是这次新收的），前端按整组替换
     """
+    existing = {a.filename: a for a in await SandboxArtifact.filter(message_id=message_id)}
     entries = await list_delivery(backend, paths.outputs)
-    if not entries:
-        return []
 
     failed = False
     wanted: list[str] = []
@@ -111,16 +114,16 @@ async def collect_artifacts(
             )
             failed = True
             continue
+        if not final and name in existing:
+            continue
         wanted.append(name)
 
     if not wanted:
-        return []
+        return _in_order(existing)
 
     # 一次把该要的都要回来。取回的顺序与请求顺序一一对应，strict=True 让
     # 「万一对不齐」当场炸掉，而不是安静地把 A 的字节存成 B 的产物
     responses = await backend.adownload_files([f"{paths.outputs}/{name}" for name in wanted])
-
-    collected: list[SandboxArtifact] = []
 
     for name, response in zip(wanted, responses, strict=True):
         if response.error or response.content is None:
@@ -137,8 +140,9 @@ async def collect_artifacts(
             await storage.save(
                 storage_key, io.BytesIO(response.content), content_type=content_type
             )
-            collected.append(
-                await SandboxArtifact.create(
+            row = existing.get(name)
+            if row is None:
+                row = await SandboxArtifact.create(
                     created_by=user,
                     conversation_id=conversation_id,
                     message_id=message_id,
@@ -149,21 +153,31 @@ async def collect_artifacts(
                     content_type=content_type,
                     storage_key=storage_key,
                 )
-            )
+            else:
+                # 同一轮里成员重做过：对象存储同一个键已被上面覆盖，这里只更新大小与类型
+                row.size = len(response.content)
+                row.content_type = content_type
+                await row.save(update_fields=["size", "content_type", "updated_at"])
+            existing[name] = row
         except Exception:
             # 存储抖动 / 唯一约束撞车 —— 记下来跳过，不连累其余产物，更不连累这轮回复
             logger.exception(
                 "产物回收失败 message_id=%s name=%s key=%s", message_id, name, storage_key
             )
             failed = True
-    if not failed:
+    if final and not failed:
         # 全收走了，交付区没有留存价值。有失败时刻意保留：那些文件还没有任何
         # 下载入口，删了就真没了。
         # docker driver 下容器马上就销毁，删不删都一样；但 local driver 的目录
         # 会逐轮堆在磁盘上，所以这一步不能省。
         await backend.aexecute(f"rm -rf {shlex.quote(paths.outputs)}")
 
-    return collected
+    return _in_order(existing)
+
+
+def _in_order(artifacts: dict[str, SandboxArtifact]) -> list[SandboxArtifact]:
+    """按首次入库先后排，卡片顺序不随重新同步跳动。"""
+    return sorted(artifacts.values(), key=lambda a: a.created_at)
 
 
 async def group_by_message(conversation_id: UUID) -> dict[UUID, list[SandboxArtifact]]:
