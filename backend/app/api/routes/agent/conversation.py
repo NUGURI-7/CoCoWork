@@ -119,8 +119,11 @@ def _assistant_append(
     )
 
 
-async def _message_artifacts(message_id: UUID) -> list[SandboxArtifact]:
-    """本条回复挂着的产物（后台任务做出来的文件），回复结束时推给前端。"""
+async def _message_artifacts(message_id: UUID, *, final: bool = True) -> list[SandboxArtifact]:
+    """本条回复挂着的产物（后台任务做出来的文件），回复结束时推给前端。
+
+    产物由后台任务直接入库，没有交付区要同步，final 只为符合 ArtifactCollector 的签名。
+    """
     return await SandboxArtifact.filter(message_id=message_id).order_by("filename")
 
 

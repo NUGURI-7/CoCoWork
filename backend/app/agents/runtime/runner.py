@@ -11,7 +11,7 @@
 import asyncio
 import logging
 from collections.abc import AsyncIterator, Callable, Sequence
-from typing import Any
+from typing import Any, Protocol
 from uuid import UUID
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
@@ -84,9 +84,13 @@ MEMBER_RECURSION_LIMIT = 200
 # sink：事件旁路回调 —— runner 每产一个事件，先喂 sink 一份再序列化成 SSE。
 SinkFn = Callable[[EventType, dict[str, Any]], None]
 
-# 收产物的回调：参数已在 prepare_stream 里绑好，调用方只管 await 一下。
-# final=False：成员中途交活时的增量收取；收尾那次用默认的 final=True
-ArtifactCollector = Callable[..., Awaitable[list[SandboxArtifact]]]
+class ArtifactCollector(Protocol):
+    """收产物的回调：其余参数已在 prepare_stream 里绑好，调用方只传 final。
+
+    final=False：成员中途交活时的增量收取；收尾那次用默认的 final=True。
+    """
+
+    async def __call__(self, *, final: bool = True) -> list[SandboxArtifact]: ...
 
 
 class _DelegationWatch:

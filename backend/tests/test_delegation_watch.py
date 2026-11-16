@@ -30,3 +30,28 @@ def test_并行派出的多个成员各自交活():
     for cid in ("a", "b", "c"):
         w.finished(EventType.TOOL_USE_START, {"id": cid, "name": "task"})
     assert [w.finished(EventType.TOOL_RESULT, {"id": cid}) for cid in ("b", "a", "c")] == [True, True, True]
+
+
+async def test_单Agent对话的收产物函数能走推送产物帧的流程(monkeypatch):
+    """回归：单 Agent 那条路的收产物函数曾不认 final 参数，收尾时报错、产物卡片推不出去。"""
+    from functools import partial
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    from app.agents.runtime.runner import _artifacts_payload
+    from app.api.routes.agent import conversation
+
+    message_id = uuid4()
+    row = SimpleNamespace(id=uuid4(), filename="播报.mp3", size=1024, content_type="audio/mpeg")
+
+    class _Query:
+        async def _rows(self):
+            return [row]
+
+        def order_by(self, *_):
+            return self._rows()
+
+    monkeypatch.setattr(conversation.SandboxArtifact, "filter", lambda **_: _Query())
+
+    payload = await _artifacts_payload(partial(conversation._message_artifacts, message_id), message_id, final=True)
+    assert payload["artifacts"][0]["filename"] == "播报.mp3"
