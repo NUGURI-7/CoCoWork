@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720" font-family="Microsoft YaHei" lang="zh-CN" data-pptx-page-role="content">
+  <rect id="bg" data-pptx-role="background" x="0" y="0" width="1280" height="720" fill="#F4F7F5" />
+  <g id="header" data-pptx-bounds="64 56 600 100" font-weight="bold"><text x="64" y="84" font-size="15" letter-spacing="3" fill="#2F6B53">WHY COCOWORK</text><text x="64" y="136" font-size="40" fill="#1E2622">为什么需要 CoCoWork</text></g>
+  <g id="pain-1" data-pptx-bounds="64 210 560 128"><text x="64" y="250" font-size="36" font-weight="bold" fill="#2F6B53">01</text><text x="140" y="246" font-size="24" font-weight="bold" fill="#1E2622">能力分散</text><text x="140" y="282" font-size="17" fill="#5F6B65">各部门各自接入大模型，<tspan x="140" dy="26.4">工具、权限和数据口径不统一</tspan></text><line x1="140" y1="338" x2="620" y2="338" stroke="#D5E0DA" stroke-width="1" /></g>
+  <g id="pain-2" data-pptx-bounds="64 358 560 128"><text x="64" y="398" font-size="36" font-weight="bold" fill="#2F6B53">02</text><text x="140" y="394" font-size="24" font-weight="bold" fill="#1E2622">落地门槛高</text><text x="140" y="430" font-size="17" fill="#5F6B65">业务人员不会写提示词，<tspan x="140" dy="26.4">不知道哪些场景已经能用 AI</tspan></text><line x1="140" y1="486" x2="620" y2="486" stroke="#D5E0DA" stroke-width="1" /></g>
+  <g id="pain-3" data-pptx-bounds="64 506 560 128"><text x="64" y="546" font-size="36" font-weight="bold" fill="#2F6B53">03</text><text x="140" y="542" font-size="24" font-weight="bold" fill="#1E2622">成果难复用</text><text x="140" y="578" font-size="17" fill="#5F6B65">好用的流程停留在个人手里，<tspan x="140" dy="26.4">沉淀不成团队的标准能力</tspan></text></g>
+  <defs><clipPath id="clip-team"><rect x="690" y="120" width="526" height="532" rx="24" /></clipPath></defs>
+  <g id="team-photo" data-pptx-bounds="690 120 526 532">
+    <image href="../images/ppt_team.png" x="690" y="120" width="526" height="532" preserveAspectRatio="xMidYMid slice" clip-path="url(#clip-team)" />
+    <rect x="722" y="560" width="300" height="60" rx="12" fill="#2F6B53" />
+    <text x="746" y="598" font-size="19" font-weight="bold" fill="#FFFFFF">把 AI 能力收口到一个门户</text></g>
+</svg>

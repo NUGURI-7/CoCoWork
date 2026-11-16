@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720" font-family="Microsoft YaHei" lang="zh-CN" data-pptx-page-role="section" data-brand-tone="dark">
+  <rect id="bg" data-pptx-role="background" x="0" y="0" width="1280" height="720" fill="#2F6B53"/>
+  <g id="section-rings" data-pptx-role="decoration" data-pptx-bounds="808 208 464 464" fill="none" stroke-width="2">
+    <circle cx="1040" cy="440" r="150" stroke="#3F7C63"/>
+    <circle cx="1040" cy="440" r="230" stroke="#356F58"/>
+    <circle cx="1040" cy="440" r="70" fill="#1F4A39"/></g>
+  <g id="section-title" data-pptx-bounds="64 200 700 300">
+    <text x="64" y="330" font-size="150" font-weight="bold" fill="#3F7C63">02</text>
+    <text x="64" y="410" font-size="52" font-weight="bold" fill="#FFFFFF">效果与流程</text>
+    <text x="64" y="462" font-size="22" fill="#CFE3D8">从提出需求到拿到成品，全程在一个对话里完成</text></g>
+</svg>

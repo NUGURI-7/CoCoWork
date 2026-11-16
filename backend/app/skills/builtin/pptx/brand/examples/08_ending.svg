@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720" font-family="Microsoft YaHei" lang="zh-CN" data-pptx-page-role="ending" data-brand-tone="dark">
+  <rect id="bg" data-pptx-role="background" x="0" y="0" width="1280" height="720" fill="#2F6B53" />
+  <g id="ending-rings" data-pptx-role="decoration" data-pptx-bounds="340 60 600 600" fill="none" stroke-width="2">
+    <circle cx="640" cy="360" r="200" stroke="#3F7C63" />
+    <circle cx="640" cy="360" r="300" stroke="#356F58" /></g>
+  <g id="ending-title" data-pptx-bounds="240 280 800 160" text-anchor="middle">
+    <text x="640" y="350" font-size="64" font-weight="bold" fill="#FFFFFF">谢谢</text>
+    <text x="640" y="410" font-size="22" fill="#CFE3D8">CoCoWork · 企业内部 AI 业务能力门户</text></g>
+</svg>
