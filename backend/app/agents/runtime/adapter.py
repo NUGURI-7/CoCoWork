@@ -273,6 +273,34 @@ def _summarize_tool_result(content: Any) -> str:
     return str(content)[:TOOL_SUMMARY_MAX_CHARS]
 
 
+_BINARY_PLACEHOLDER = "[图片，未存档]"
+
+
+def _without_binary(content: Any) -> Any:
+    """工具结果里的图片 / 文件内容块换成一句占位，其余原样。
+
+    读文件工具读到图片时返回 base64 内容块，供模型当场看图；它不进历史回放
+    （成员过程块整体跳过），前端也不展示，原样落库只会让一条消息涨到几 MB。
+    """
+    if not isinstance(content, list):
+        return content
+
+    def is_binary(item: Any) -> bool:
+        if not isinstance(item, dict):
+            return False
+        if "base64" in item:
+            return True
+        url = item.get("image_url")
+        if isinstance(url, dict):
+            url = url.get("url")
+        return isinstance(url, str) and url.startswith("data:")
+
+    return [
+        {"type": "text", "text": _BINARY_PLACEHOLDER} if is_binary(item) else item
+        for item in content
+    ]
+
+
 def _unwrap_tool_output(output: Any) -> Any:
     """工具返回值归一化 —— Command 解包出内部 ToolMessage，其余原样返回。
 
@@ -527,7 +555,7 @@ async def _on_tool_end(
         "id": tool_call_id,
         "status": "success",
         "result_summary": _summarize_tool_result(content),
-        "result_data": content,
+        "result_data": _without_binary(content),
         # 只转发声明给前端的那份；MCP 适配器等别的来源塞的 artifact 一律丢弃
         "artifact": artifact.model_dump(mode="json") if isinstance(artifact, ClientArtifact) else None,
     }

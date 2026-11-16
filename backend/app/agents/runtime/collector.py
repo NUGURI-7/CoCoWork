@@ -10,9 +10,13 @@ runner 边流边把 (EventType, payload) 喂进来（`run_chat_stream(sink=colle
 等任何要"留一份完整消息"的场景都能复用。
 """
 
+import json
 from typing import Any
 
 from app.agents.runtime.events import EventType
+
+# 成员过程块的入参落库时每个字符串字段留多少字：前端只取一个字段的开头几十字做那一行展示
+_MEMBER_ARG_KEEP_CHARS = 200
 
 
 def _token_count(value: Any) -> int:
@@ -24,6 +28,30 @@ def _token_count(value: Any) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         return 0
     return value if value > 0 else 0
+
+
+def _slim_member_block(block: dict[str, Any]) -> dict[str, Any]:
+    """成员过程里的工具块落库瘦身：完整结果不存，入参每个字符串字段截到开头一段。
+
+    成员过程块不进任何人的历史回放（assembler / replay / budget 都跳过带 subagent 戳的块），
+    前端只展示 result_summary 与入参主字段的开头一截；完整内容只在成员当场干活时有用，
+    落库只会让一条回复涨到 MB 级。完整过程看 Langfuse。
+    """
+    if block.get("type") != "tool_use" or not block.get("subagent"):
+        return block
+    slim = {**block, "result_data": None}
+    try:
+        args = json.loads(block.get("partial_json") or "{}")
+    except ValueError:
+        slim["partial_json"] = ""
+        return slim
+    if isinstance(args, dict):
+        args = {
+            k: v[:_MEMBER_ARG_KEEP_CHARS] if isinstance(v, str) else v
+            for k, v in args.items()
+        }
+        slim["partial_json"] = json.dumps(args, ensure_ascii=False)
+    return slim
 
 
 class MessageCollector:
@@ -52,8 +80,8 @@ class MessageCollector:
 
     @property
     def blocks(self) -> list[dict[str, Any]]:
-        """按 index 升序的完整块列表 —— 落库 content 的最终形态。"""
-        return [self._blocks[i] for i in sorted(self._blocks)]
+        """按 index 升序的块列表 —— 落库 content 的最终形态（成员过程块已瘦身）。"""
+        return [_slim_member_block(self._blocks[i]) for i in sorted(self._blocks)]
 
     @property
     def prompt_tokens(self) -> int:
