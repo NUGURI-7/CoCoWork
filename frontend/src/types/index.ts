@@ -108,6 +108,7 @@ export type {
   ToolUseStopPayload,
   ToolResultPayload,
   KnowledgeHitsArtifact,
+  KnowledgeHit,
   ToolArtifact,
   ErrorPayload,
   Artifact,

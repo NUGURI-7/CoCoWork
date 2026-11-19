@@ -68,6 +68,7 @@ from app.services.workspace.compaction_service import latest_summary
 from app.tools import resolve_tools
 from app.tools.memory_update import MemoryUpdateTool
 from app.tools.ask_human import AskHumanTool
+from app.tools.knowledge_retrieval import CITATION_RELAY_NOTE, citation_rules_for
 from app.tools.tool_result_fetch import ToolResultFetchTool
 
 logger = logging.getLogger(__name__)
@@ -313,12 +314,15 @@ async def _member_to_subagent(
         mount: SkillMount | None,
         *,
         memory_section: str,
-) -> tuple[CompiledSubAgent, dict[str, str]]:
+) -> tuple[CompiledSubAgent, dict[str, str], bool]:
     """把一个招募成员装配成 supervisor 可派活的子 agent。
 
-    返回二元组的第二项 = 这个成员自己那批工具的中文展示名。成员调工具时，
+    返回三元组的第二项 = 这个成员自己那批工具的中文展示名。成员调工具时，
     那些 tool 块带 subagent 戳嵌在前端 DelegateBlock 里渲染，同样是给人看的，
     所以要跟应答者自己的那份并进同一张表。
+
+    第三项 = 这个成员拿到了引用规则（手上有知识库工具）。它的汇报会带 [[cite:…]]
+    记号，supervisor 据此决定要不要补「转述时原样保留记号」那一句。
 
     成员没配 chat 模型时继承 supervisor 的模型（fallback_model）——
     模型只决定「用哪个 LLM」，成员的身份（prompt / tools / 知识库）仍是它自己的；
@@ -365,6 +369,10 @@ async def _member_to_subagent(
         asker_member_id=member.id,
     )]
 
+    citation_rules = citation_rules_for(tools)
+    if citation_rules:
+        system_prompt = f"{system_prompt}\n\n{citation_rules}"
+
     if memory_section:
         system_prompt = f"{system_prompt}\n\n{memory_section}"
 
@@ -385,7 +393,7 @@ async def _member_to_subagent(
         # 那条路），而成员挂了 supervisor 得有机会补救
         "runnable": _with_member_step_limit(_with_failure_fallback(runnable, agent.name, mount)),
     }
-    return subagent, build_display_names(tools)
+    return subagent, build_display_names(tools), citation_rules is not None
 
 
 async def build_capability_profile(cfg: AgentConfig, user: User) -> str:
@@ -623,8 +631,8 @@ async def build_workspace_graph(
             )
             for member, member_cfg in member_cfgs
         ]
-        subagents = [subagent for subagent, _ in built]
-        for _, member_display_names in built:
+        subagents = [subagent for subagent, _, _ in built]
+        for _, member_display_names, _ in built:
             display_names.update(member_display_names)
         if subagents:
             middleware.append(
@@ -636,6 +644,12 @@ async def build_workspace_graph(
         # 只在场上真有人带 skill 时才补这段，否则是废话
         if mount is not None and any(mount.has_skills(c) for _, c in member_cfgs):
             system_prompt = f"{system_prompt}\n\n{_DELEGATE_SKILL_NOTE}"
+        if any(cites for _, _, cites in built):
+            system_prompt = f"{system_prompt}\n\n{CITATION_RELAY_NOTE}"
+
+    citation_rules = citation_rules_for(tools)
+    if citation_rules:
+        system_prompt = f"{system_prompt}\n\n{citation_rules}"
 
     # 记忆垫在整段 system prompt 的最后一节(见 _memory_section 的说明)。
     # 应答者两段都给:supervisor 和被 @ 直连的成员,这一轮都在直接跟用户说话

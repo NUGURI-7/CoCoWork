@@ -5,8 +5,10 @@ import rehypeKatex from 'rehype-katex'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 
+import { citeRefFromHref } from '@/lib/citations'
 import { cn } from '@/lib/utils'
 
+import { CitationBadge } from './CitationBadge'
 import { CodeBlock } from './CodeBlock'
 import { MarkdownImage } from './MarkdownImage'
 import { MermaidBlock } from './MermaidBlock'
@@ -131,6 +133,16 @@ const MarkdownChunk = memo(function MarkdownChunk({
         },
         img({ src, alt }) {
           return <MarkdownImage src={typeof src === 'string' ? src : undefined} alt={alt} />
+        },
+        a({ href, title, children }) {
+          // 引用角标借链接语法进 markdown（见 lib/citations），认到就画角标
+          const citeRef = citeRefFromHref(href)
+          if (citeRef) return <CitationBadge citeRef={citeRef}>{children}</CitationBadge>
+          return (
+            <a href={href} title={title}>
+              {children}
+            </a>
+          )
         },
       }}
     >
