@@ -60,7 +60,8 @@ async def _build_member(tools: list):
         patch.object(ws, "build_capability_profile", fake_profile),
         patch.object(ws, "create_agent", fake_create_agent),
         patch.object(ws, "_base_middleware", lambda model: []),
-        patch.object(ws, "_with_failure_fallback", lambda r, label: r),
+        patch.object(ws, "_with_failure_fallback", lambda r, *_args, **_kw: r),
+        patch.object(ws, "_with_member_step_limit", lambda r, *_args, **_kw: r),
     ):
         result = await ws._member_to_subagent(
             member, AgentConfig(), user=None, fallback_model=None, mount=None,
