@@ -1,0 +1,12 @@
+# GitHub 语言统计（linguist）排除随包的第三方代码，来源见各 Skill 的 SKILL.md「来源」一节。
+# 只影响统计，不影响代码与运行。
+
+# PPT Master 的 SVG → PPTX 引擎与检查器（MIT）
+backend/app/skills/builtin/pptx/engine/** linguist-vendored
+# Tabler Icons（MIT）
+backend/app/skills/builtin/pptx/icons/** linguist-vendored
+# Anthropic skills 的脚本（Apache 2.0）；本项目自写的三个除外
+backend/app/skills/builtin/pptx/scripts/** linguist-vendored
+backend/app/skills/builtin/pptx/scripts/render_pages.py -linguist-vendored
+backend/app/skills/builtin/pptx/scripts/add_icons.py -linguist-vendored
+backend/app/skills/builtin/pptx/scripts/finalize.py -linguist-vendored
