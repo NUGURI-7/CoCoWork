@@ -9,7 +9,7 @@ from langchain_core.messages import AIMessageChunk, ToolMessage
 
 from app.agents.runtime.adapter import adapt_chat_stream
 from app.agents.runtime.events import EventType
-from app.tools.knowledge_retrieval import KnowledgeHitsArtifact
+from app.tools.knowledge_retrieval import KnowledgeHitRef, KnowledgeHitsArtifact
 
 
 async def _stream(events: list[dict]):
@@ -40,9 +40,21 @@ async def _tool_result(artifact) -> dict:
 
 
 async def test_client_artifact_转成json转发():
-    pid = uuid4()
-    payload = await _tool_result(KnowledgeHitsArtifact(paragraph_ids=[pid]))
-    assert payload["artifact"] == {"kind": "knowledge_hits", "paragraph_ids": [str(pid)]}
+    pid, did = uuid4(), uuid4()
+    hit = KnowledgeHitRef(
+        ref="2e3f4a5b", paragraph_id=pid, document_id=did, doc_name="员工手册.pdf",
+        title="第三章 > 3.2 报销流程", page=12, content="报销须在 30 天内提交。",
+    )
+    payload = await _tool_result(KnowledgeHitsArtifact(paragraph_ids=[pid], hits=[hit]))
+    assert payload["artifact"] == {
+        "kind": "knowledge_hits",
+        "paragraph_ids": [str(pid)],
+        "hits": [{
+            "ref": "2e3f4a5b", "paragraph_id": str(pid), "document_id": str(did),
+            "doc_name": "员工手册.pdf", "title": "第三章 > 3.2 报销流程", "page": 12,
+            "content": "报销须在 30 天内提交。",
+        }],
+    }
     assert payload["result_data"] == "命中正文"
 
 

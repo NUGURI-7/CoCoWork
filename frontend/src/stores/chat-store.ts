@@ -41,6 +41,7 @@ import type {
   AskAnswer,
   InterruptPayload,
   KnowledgeHitsArtifact,
+  KnowledgeHit,
   CompactStopPayload,
   AssistantMessage,
   ChatMessage,
@@ -163,6 +164,17 @@ function collectHitParagraphIds(blocks: RenderBlock[], out: Set<string>): void {
   }
 }
 
+/** 一组块里（含派活卡片里的子块）所有知识库命中段的出处，按 ref 并进 out。 */
+function collectCitationHits(blocks: RenderBlock[], out: Record<string, KnowledgeHit>): void {
+  for (const b of blocks) {
+    if (b.type === 'tool_use' && isKnowledgeHits(b.artifact)) {
+      for (const h of b.artifact.hits ?? []) out[h.ref] = h
+    } else if (b.type === 'delegate') {
+      collectCitationHits(b.blocks, out)
+    }
+  }
+}
+
 // ============ State / Actions 类型 ============
 
 export interface ChatState {
@@ -206,6 +218,14 @@ export interface ChatState {
   figureSigning: number
   /** 对当前所有消息里命中过的段重签一遍（进对话时、图片链接过期时调） */
   refreshFigures: () => void
+
+  /**
+   * 引用记号 ref → 命中段出处，汇总整个会话。
+   *
+   * 范围是整个会话而非单条消息：模型可能不重新检索、直接引用前几轮查到的段。
+   * 编号不在这里 —— 编号按每条回答各自从 1 起，由渲染层算。
+   */
+  citationHits: Record<string, KnowledgeHit>
 
   send: (content: ApiContentBlock[], mentionedMemberIds?: string[]) => Promise<void>
   /**
@@ -579,7 +599,15 @@ export function createChatStore({
               }
             })
             // 检索一结束就签：模型拿到结果才开始写回答，写到记号时链接多半已就位
-            if (isKnowledgeHits(p.artifact)) void signFigures(p.artifact.paragraph_ids)
+            if (isKnowledgeHits(p.artifact)) {
+              const hits = p.artifact.hits ?? []
+              if (hits.length > 0) {
+                set((s) => {
+                  for (const h of hits) s.citationHits[h.ref] = h
+                })
+              }
+              void signFigures(p.artifact.paragraph_ids)
+            }
             return
           }
           case 'message_delta': {
@@ -773,6 +801,7 @@ export function createChatStore({
         compactedBeforeIds: [],
         figureUrls: {},
         figureSigning: 0,
+        citationHits: {},
 
         refreshFigures() {
           const ids = new Set<string>()
@@ -917,14 +946,20 @@ export function createChatStore({
             s.compactedBeforeIds = []
             s.figureUrls = {}
             s.figureSigning = 0
+            s.citationHits = {}
           })
           figureGeneration += 1
         },
 
         hydrate(messages) {
+          const hits: Record<string, KnowledgeHit> = {}
+          for (const m of messages) {
+            if (m.role === 'assistant') collectCitationHits(m.blocks, hits)
+          }
           set((s) => {
             s.messages = messages
             s.isLoading = false
+            s.citationHits = hits
           })
           get().refreshFigures()
         },

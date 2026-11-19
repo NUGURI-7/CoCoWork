@@ -20,6 +20,7 @@ import { AttachmentChip } from './AttachmentChip'
 import { AskBlock } from './blocks/AskBlock'
 import { DelegateBlock } from './blocks/DelegateBlock'
 import { TextBlock } from './blocks/TextBlock'
+import { useCiteNumbers } from './citation-context'
 import { ThinkingBlock } from './blocks/ThinkingBlock'
 import { FileOpsBlock } from './blocks/FileOpsBlock'
 import { ProcessGroup, type ProcessBlock } from './blocks/ProcessGroup'
@@ -292,6 +293,7 @@ const AssistantMessageRow = memo(function AssistantMessageRow({
   const identity = useSubagentInfo(
     message.senderMemberId ? memberKey(message.senderMemberId) : '',
   )
+  const citeNumbers = useCiteNumbers(message.blocks)
 
   const body = (
     <>
@@ -301,7 +303,7 @@ const AssistantMessageRow = memo(function AssistantMessageRow({
         }
         const block = item.block
         if (block.type === 'text') {
-          return <TextBlock key={block.index} block={block} />
+          return <TextBlock key={block.index} block={block} citeNumbers={citeNumbers} />
         }
         if (block.type === 'thinking') {
           return <ThinkingBlock key={block.index} block={block} />

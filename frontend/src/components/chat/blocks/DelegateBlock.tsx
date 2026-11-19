@@ -4,6 +4,7 @@ import { ChevronDown, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { softPalette } from '@/lib/avatar-color'
 import type { DelegateBlock as DelegateBlockType } from '@/types'
+import { useCiteNumbers } from '../citation-context'
 import { useSubagentInfo } from '../SubagentDirectory'
 import { TextBlock } from './TextBlock'
 import { ThinkingBlock } from './ThinkingBlock'
@@ -33,6 +34,8 @@ export const DelegateBlock = memo(function DelegateBlock({
   const running = block.status === 'running'
 
   const [collapsed, setCollapsed] = useState(false)
+  // 成员原始汇报单独编号：Supervisor 转丢了记号，展开卡片仍能看到带引用的原话
+  const citeNumbers = useCiteNumbers(block.blocks)
   useEffect(() => {
     if (block.status === 'done' || block.status === 'error') setCollapsed(true)
   }, [block.status])
@@ -87,7 +90,7 @@ export const DelegateBlock = memo(function DelegateBlock({
           )}
           {block.blocks.map((b) => {
             if (b.type === 'text')
-              return <TextBlock key={b.index} block={b} />
+              return <TextBlock key={b.index} block={b} citeNumbers={citeNumbers} />
             if (b.type === 'thinking')
               return <ThinkingBlock key={b.index} block={b} />
             if (b.type === 'file_ops')

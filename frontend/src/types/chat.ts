@@ -232,6 +232,23 @@ export interface KnowledgeHitsArtifact {
   kind: 'knowledge_hits'
   /** 本次命中的段 id —— 拿去换段内插图的签名链接 */
   paragraph_ids: string[]
+  /** 本次命中段的出处 —— 回答里的引用记号靠它查。引用功能上线前的旧消息没有这个字段 */
+  hits?: KnowledgeHit[]
+}
+
+/** 一个命中段的出处，与后端 `KnowledgeHitRef` 同形 */
+export interface KnowledgeHit {
+  /** 段短标识，即回答里 `[[cite:<ref>]]` 的 ref */
+  ref: string
+  paragraph_id: string
+  document_id: string
+  doc_name: string
+  /** 标题链，如「第三章 > 3.2 报销流程」；无标题区域为空串 */
+  title: string
+  /** 起始页，仅 PDF 有 */
+  page: number | null
+  /** 段落原文，插图记号已改写成跨段唯一的 `[[figure:<段短标识>-N]]` */
+  content: string
 }
 
 export type ToolArtifact = KnowledgeHitsArtifact | { kind: string }

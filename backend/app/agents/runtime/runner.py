@@ -56,7 +56,7 @@ from app.services.model.model_client import ModelClient
 from app.services.skill.mount import build_skill_mount
 from app.tools import resolve_tools
 from app.tools.ask_human import AskHumanTool
-from app.tools.knowledge_retrieval import KnowledgeRetrievalTool
+from app.tools.knowledge_retrieval import KnowledgeRetrievalTool, citation_rules_for
 
 logger = logging.getLogger(__name__)
 
@@ -435,6 +435,11 @@ async def prepare_stream(
     if mount is not None:
         tools = [*tools, *mount.artifact_tools]
     tools = [*tools, *template.own_tools(), *extra_tools]
+
+    citation_rules = citation_rules_for(tools)
+    if citation_rules:
+        system_prompt = f"{system_prompt}\n\n{citation_rules}" if system_prompt else citation_rules
+
     if checkpointer is not None:
         # 有存档才能停下来等人再接着执行，ask_human 随存档一起挂
         tools = [*tools, AskHumanTool()]
